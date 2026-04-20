@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Mobile-first resets ─────────────────────────────── */
+* {
+  -webkit-tap-highlight-color: transparent;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  /* Prevent pull-to-refresh bounce on iOS */
+  overscroll-behavior: none;
+}
+
+/* Prevent font size inflation on orientation change (iOS) */
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Full-height screen layout utility */
+.screen {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh; /* dynamic viewport height — handles mobile browser chrome */
+  background: #ffffff;
+  overflow: hidden;
+}
