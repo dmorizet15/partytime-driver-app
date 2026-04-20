@@ -6,10 +6,15 @@ export const GET_DELIVERY_RENTALS = `
       isDraft:      false
     ) {
       id
-      rentalNumber
-      contact { id firstName lastName phone email }
-      deliveryAddress { address address2 city state zip lat lng }
-      deliveryNotes
+      name
+      customerContactPhone
+      deliveryAddressStreetAddress1
+      deliveryAddressStreetAddress2
+      deliveryAddressCity
+      deliveryAddressLocale
+      deliveryAddressPostalCode
+      notes
+      customers { id firstName lastName }
       rentalTransportTruckRelationships {
         position stopType active truckRouteId
         truckRoute {
