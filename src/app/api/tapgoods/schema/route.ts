@@ -1,19 +1,31 @@
 import { NextResponse } from 'next/server'
 import { tapgoodsQuery } from '@/lib/tapgoodsClient'
-const INTROSPECT = `query {
-  rental: __type(name: "Rental") { fields { name type { name kind ofType { name } } } }
-  customer: __type(name: "Customer") { fields { name } }
-  truckRel: __type(name: "RentalTransportTruckRelationship") { fields { name } }
-  truckRoute: __type(name: "TruckRoute") { fields { name } }
-}`
+const Q = `
+  query {
+    getRentals(status: ["reserved", "in_use"] deliveryType: "delivery" isDraft: false) {
+      id
+      name
+      rentalTransportTruckRelationships {
+        active truckRouteId
+        truckRoute { id deliveryDate }
+      }
+    }
+  }
+`
 export async function GET() {
   try {
-    const data = await tapgoodsQuery<any>(INTROSPECT)
-    return NextResponse.json({
-      customerFields: data.customer?.fields?.map((f: any) => f.name).sort(),
-      truckRelFields: data.truckRel?.fields?.map((f: any) => f.name).sort(),
-      truckRouteFields: data.truckRoute?.fields?.map((f: any) => f.name).sort(),
-    })
+    const data = await tapgoodsQuery<any>(Q)
+    const rentals = data.getRentals ?? []
+    const summary = rentals.map((r: any) => ({
+      id: r.id,
+      name: r.name,
+      relationships: r.rentalTransportTruckRelationships?.map((rel: any) => ({
+        active: rel.active,
+        truckRouteId: rel.truckRouteId,
+        deliveryDate: rel.truckRoute?.deliveryDate ?? null,
+      }))
+    }))
+    return NextResponse.json({ totalRentals: rentals.length, rentals: summary })
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 502 })
   }
