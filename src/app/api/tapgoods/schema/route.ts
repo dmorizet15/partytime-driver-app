@@ -17,10 +17,12 @@ async function tryArg(label: string, gql: string) {
 
 export async function GET() {
   const results = await Promise.all([
-    tryArg('beingDelivered', `query { getRentals(beingDelivered: true perPage: 200) { ${FIELDS} } }`),
-    tryArg('truckNeeded',    `query { getRentals(truckNeeded: true perPage: 200) { ${FIELDS} } }`),
-    tryArg('deliveryType=delivery', `query { getRentals(deliveryType: "delivery" perPage: 200) { ${FIELDS} } }`),
-    tryArg('deliveryType=service',  `query { getRentals(deliveryType: "service"  perPage: 200) { ${FIELDS} } }`),
+    tryArg('truckNeeded_p1', `query { getRentals(truckNeeded: true page: 1 perPage: 200) { ${FIELDS} } }`),
+    tryArg('truckNeeded_p2', `query { getRentals(truckNeeded: true page: 2 perPage: 200) { ${FIELDS} } }`),
+    tryArg('truckNeeded_p3', `query { getRentals(truckNeeded: true page: 3 perPage: 200) { ${FIELDS} } }`),
+    tryArg('truckNeeded_p4', `query { getRentals(truckNeeded: true page: 4 perPage: 200) { ${FIELDS} } }`),
+    // Also try status filter with reservation
+    tryArg('status_reservation', `query { getRentals(status: ["reservation"] perPage: 200) { ${FIELDS} } }`),
   ])
   return NextResponse.json({ target: TARGET, results })
 }
