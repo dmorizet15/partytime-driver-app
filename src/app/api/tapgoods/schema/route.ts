@@ -1,84 +1,34 @@
 import { NextResponse } from 'next/server'
 import { tapgoodsQuery } from '@/lib/tapgoodsClient'
 
-const INTROSPECT = `
-  query {
-    relType: __type(name: "RentalTransportTruckRelationship") {
-      fields { name type { name kind ofType { name kind } } }
-    }
-    truckRouteType: __type(name: "TruckRoute") {
-      fields { name type { name kind ofType { name kind } } }
-    }
-  }
-`
-
-const RAW_DATA = `
-  query {
-    getRentals(beingDelivered: true perPage: 200 isDraft: false) {
-      id token name
-      rentalTransportTruckRelationships {
-        position stopType active truckRouteId
-        truckRoute { id deliveryDate truck { name } }
-      }
-    }
-  }
-`
-
-const PICKUP_DATA = `
-  query {
-    getRentals(beingPickedUp: true perPage: 200 isDraft: false) {
-      id token name
-      rentalTransportTruckRelationships {
-        position stopType active truckRouteId
-        truckRoute { id deliveryDate truck { name } }
-      }
-    }
-  }
-`
+// Try fetching D9E44CE5 with different filter combinations
+const Q1 = `query { getRentals(beingDelivered: true perPage: 200 isDraft: false) { id token name deliveryType jobType status } }`
+const Q2 = `query { getRentals(status: ["reserved"] perPage: 200 isDraft: false) { id token name deliveryType jobType status rentalTransportTruckRelationships { active truckRouteId truckRoute { id deliveryDate truck { name } } } } }`
+const Q3 = `query { getRentals(deliveryType: "service" perPage: 200 isDraft: false) { id token name deliveryType jobType status } }`
 
 export async function GET() {
   try {
-    const [schema, delivery, pickup] = await Promise.all([
-      tapgoodsQuery<any>(INTROSPECT),
-      tapgoodsQuery<any>(RAW_DATA),
-      tapgoodsQuery<any>(PICKUP_DATA).catch((e: unknown) => ({ error: String(e) })),
+    const [r1, r2, r3] = await Promise.allSettled([
+      tapgoodsQuery<any>(Q1),
+      tapgoodsQuery<any>(Q2),
+      tapgoodsQuery<any>(Q3),
     ])
 
-    const deliveryStops = (delivery.getRentals ?? []).flatMap((r: any) =>
-      r.rentalTransportTruckRelationships
-        .filter((rel: any) => rel.active && rel.truckRoute)
-        .map((rel: any) => ({
-          source: 'delivery',
-          rentalToken: r.token,
-          rentalName: r.name,
-          position: rel.position,
-          stopType: rel.stopType,
-          truckName: rel.truckRoute?.truck?.name,
-          deliveryDate: rel.truckRoute?.deliveryDate?.slice(0, 10),
-        }))
-    )
+    const target = 'D9E44CE5'
 
-    const pickupStops = Array.isArray((pickup as any).getRentals)
-      ? (pickup as any).getRentals.flatMap((r: any) =>
-          r.rentalTransportTruckRelationships
-            .filter((rel: any) => rel.active && rel.truckRoute)
-            .map((rel: any) => ({
-              source: 'pickup',
-              rentalToken: r.token,
-              rentalName: r.name,
-              position: rel.position,
-              stopType: rel.stopType,
-              truckName: rel.truckRoute?.truck?.name,
-              deliveryDate: rel.truckRoute?.deliveryDate?.slice(0, 10),
-            }))
-        )
-      : { pickupQueryError: (pickup as any).error }
+    const inDelivery = r1.status === 'fulfilled'
+      ? r1.value.getRentals?.find((r: any) => r.token === target) ?? null
+      : { error: String(r1.reason) }
 
-    return NextResponse.json({
-      RentalTransportTruckRelationship: schema.relType?.fields?.map((f: any) => f.name).sort() ?? [],
-      TruckRoute: schema.truckRouteType?.fields?.map((f: any) => f.name).sort() ?? [],
-      stops: { delivery: deliveryStops, pickup: pickupStops },
-    })
+    const inReserved = r2.status === 'fulfilled'
+      ? r2.value.getRentals?.find((r: any) => r.token === target) ?? null
+      : { error: String(r2.reason) }
+
+    const inService = r3.status === 'fulfilled'
+      ? r3.value.getRentals?.find((r: any) => r.token === target) ?? null
+      : { error: String(r3.reason) }
+
+    return NextResponse.json({ target, inDelivery, inReserved, inService })
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 502 })
   }
