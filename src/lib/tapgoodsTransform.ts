@@ -17,8 +17,8 @@ export interface TapGoodsTruckRelationship {
 }
 
 export interface TapGoodsPhoneNumber {
-  number:    string
-  phoneType: string
+  cell?:      string | null
+  phoneType?: string | null
 }
 
 export interface TapGoodsCustomer {
@@ -53,8 +53,8 @@ export interface GetRentalsResponse {
 function getMobilePhone(customers?: TapGoodsCustomer[]): string {
   const c = customers?.[0]
   if (!c?.phoneNumbers?.length) return ''
-  const mobile = c.phoneNumbers.find((p) => /cell|mobile/i.test(p.phoneType ?? ''))
-  return mobile?.number ?? ''
+  const mobile = c.phoneNumbers.find((p) => p.cell && p.cell.trim())
+  return mobile?.cell ?? ''
 }
 
 function isoToDateStr(iso: string): string {
