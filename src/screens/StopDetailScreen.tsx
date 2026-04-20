@@ -304,12 +304,14 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
             </address>
           </DetailRow>
 
-          <DetailRow icon="📞" label="Phone">
-            <a href={`tel:${stop.customer_phone}`}
-               className="text-sm font-medium text-gray-800 underline underline-offset-2">
-              {stop.customer_phone}
-            </a>
-          </DetailRow>
+          {stop.customer_phone && (
+            <DetailRow icon="📞" label="Phone">
+              <a href={`tel:${stop.customer_phone}`}
+                 className="text-sm font-medium text-gray-800 underline underline-offset-2">
+                {stop.customer_phone}
+              </a>
+            </DetailRow>
+          )}
 
           <DetailRow icon="#" label="Order Ref">
             <span className="text-sm font-medium text-gray-800 font-mono tracking-tight">
