@@ -1,25 +1,26 @@
 import { NextResponse }  from 'next/server'
 import { tapgoodsQuery } from '@/lib/tapgoodsClient'
 
-export async function GET() {
+const TARGET = 'D9E44CE5'
+const FIELDS = `token name status`
+
+async function tryArg(label: string, gql: string) {
   try {
-    const data = await tapgoodsQuery<any>(`
-      query {
-        __type(name: "ExternalQuery") {
-          fields {
-            name
-            args { name type { name kind ofType { name kind } } }
-          }
-        }
-      }
-    `)
-    const fields = data.__type?.fields ?? []
-    const getRentals = fields.find((f: any) => f.name === 'getRentals')
-    return NextResponse.json({
-      getRentals_args: getRentals?.args ?? [],
-      all_query_fields: fields.map((f: any) => f.name),
-    })
+    const data = await tapgoodsQuery<{ getRentals: any[] }>(gql)
+    const rentals = data.getRentals ?? []
+    const found   = rentals.find((r: any) => r.token === TARGET)
+    return { label, count: rentals.length, found: found ?? null }
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) })
+    return { label, error: err instanceof Error ? err.message : String(err) }
   }
+}
+
+export async function GET() {
+  const results = await Promise.all([
+    tryArg('beingDelivered', `query { getRentals(beingDelivered: true perPage: 200) { ${FIELDS} } }`),
+    tryArg('truckNeeded',    `query { getRentals(truckNeeded: true perPage: 200) { ${FIELDS} } }`),
+    tryArg('deliveryType=delivery', `query { getRentals(deliveryType: "delivery" perPage: 200) { ${FIELDS} } }`),
+    tryArg('deliveryType=service',  `query { getRentals(deliveryType: "service"  perPage: 200) { ${FIELDS} } }`),
+  ])
+  return NextResponse.json({ target: TARGET, results })
 }
