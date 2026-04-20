@@ -30,7 +30,7 @@ export interface TapGoodsRental {
   deliveryAddressCity?:                string | null
   deliveryAddressLocale?:              string | null
   deliveryAddressPostalCode?:          string | null
-  notes?:                              string | null
+  additionalDeliveryInfo?: string | null
   customers?:                          TapGoodsCustomer[]
   rentalTransportTruckRelationships:   TapGoodsTruckRelationship[]
 }
@@ -117,7 +117,7 @@ export function transformToRoutesAndStops(
       latitude:       undefined,
       longitude:      undefined,
       customer_phone: rental.customerContactPhone          ?? '',
-      notes:          rental.notes                        ?? undefined,
+      notes:          rental.additionalDeliveryInfo                        ?? undefined,
       current_status:     'pending' as StopStatus,
       on_the_way_sent:    false,
       on_the_way_sent_at: undefined,

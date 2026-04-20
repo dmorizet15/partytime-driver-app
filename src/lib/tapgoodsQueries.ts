@@ -13,7 +13,7 @@ export const GET_DELIVERY_RENTALS = `
       deliveryAddressCity
       deliveryAddressLocale
       deliveryAddressPostalCode
-      notes
+      additionalDeliveryInfo
       customers { id firstName lastName }
       rentalTransportTruckRelationships {
         position stopType active truckRouteId
