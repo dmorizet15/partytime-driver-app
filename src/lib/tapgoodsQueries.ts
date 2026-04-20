@@ -1,9 +1,11 @@
 export const GET_DELIVERY_RENTALS = `
-  query GetDeliveryRentals {
+  query GetDeliveryRentals($startDate: ISO8601DateTime, $endDate: ISO8601DateTime) {
     getRentals(
-      status:       ["reserved", "in_use"]
-      deliveryType: "delivery"
-      isDraft:      false
+      beingDelivered: true
+      startDate:      $startDate
+      endDate:        $endDate
+      perPage:        200
+      isDraft:        false
     ) {
       id
       name
