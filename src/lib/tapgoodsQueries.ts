@@ -20,6 +20,10 @@ export const GET_DELIVERY_RENTALS = `
         id
         firstName
         lastName
+        phoneNumbers {
+          cell
+          phoneType
+        }
       }
 
       deliveryAddressStreetAddress1
@@ -70,6 +74,10 @@ export const GET_PICKUP_RENTALS = `
         id
         firstName
         lastName
+        phoneNumbers {
+          cell
+          phoneType
+        }
       }
 
       deliveryAddressStreetAddress1
