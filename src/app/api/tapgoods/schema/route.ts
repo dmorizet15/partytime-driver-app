@@ -4,7 +4,10 @@ const Q = `
   query {
     __schema {
       queryType {
-        fields { name }
+        fields {
+          name
+          args { name type { name kind ofType { name kind } } }
+        }
       }
     }
   }
@@ -12,8 +15,8 @@ const Q = `
 export async function GET() {
   try {
     const data = await tapgoodsQuery<any>(Q)
-    const queries = data.__schema?.queryType?.fields?.map((f: any) => f.name).sort()
-    return NextResponse.json({ availableQueries: queries })
+    const getRentals = data.__schema?.queryType?.fields?.find((f: any) => f.name === 'getRentals')
+    return NextResponse.json({ getRentalsArgs: getRentals?.args })
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 502 })
   }
