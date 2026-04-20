@@ -1,6 +1,8 @@
 // ─── TapGoods → App type transformers ────────────────────────────────────────
 import { Route, Stop, StopStatus } from '@/types'
 
+// ─── Raw TapGoods shapes ──────────────────────────────────────────────────────
+
 export interface TapGoodsTruckRoute {
   id:           string
   deliveryDate: string
@@ -17,7 +19,7 @@ export interface TapGoodsTruckRelationship {
 }
 
 export interface TapGoodsPhoneNumber {
-  cell?:      string | null
+  cell?:      string | null   // confirmed field name from schema introspection
   phoneType?: string | null
 }
 
@@ -50,16 +52,23 @@ export interface GetRentalsResponse {
   getRentals: TapGoodsRental[]
 }
 
+// ─── Phone helper ─────────────────────────────────────────────────────────────
+
 function getMobilePhone(customers?: TapGoodsCustomer[]): string {
   const c = customers?.[0]
   if (!c?.phoneNumbers?.length) return ''
-  const mobile = c.phoneNumbers.find((p) => p.cell && p.cell.trim())
-  return mobile?.cell ?? ''
+  // TapGoods stores the number in the `cell` field (confirmed by introspection)
+  const entry = c.phoneNumbers.find((p) => p.cell && p.cell.trim())
+  return entry?.cell ?? ''
 }
+
+// ─── Date helpers ─────────────────────────────────────────────────────────────
 
 function isoToDateStr(iso: string): string {
   return iso.slice(0, 10)
 }
+
+// ─── Main transform ───────────────────────────────────────────────────────────
 
 export interface TransformResult {
   routes: Route[]
@@ -86,7 +95,12 @@ export function transformToRoutesAndStops(
       if (!rel.truckRoute) continue
       if (isoToDateStr(rel.truckRoute.deliveryDate) !== targetDate) continue
 
-      items.push({ rental, relationship: rel, truckRoute: rel.truckRoute, insertionIndex: globalIdx++ })
+      items.push({
+        rental,
+        relationship:   rel,
+        truckRoute:     rel.truckRoute,
+        insertionIndex: globalIdx++,
+      })
     }
   }
 
@@ -94,7 +108,6 @@ export function transformToRoutesAndStops(
 
   // ── Build Route objects ───────────────────────────────────────────────────
   const routeMap = new Map<string, Route>()
-
   for (const { truckRoute } of items) {
     if (routeMap.has(truckRoute.id)) continue
     const driverNames = (truckRoute.drivers ?? []).map((d) => d.name).join(', ')
@@ -108,9 +121,9 @@ export function transformToRoutesAndStops(
     })
   }
 
-  // ── Group by route ────────────────────────────────────────────────────────
+  // ── Group items by route and sort by (position, insertionIndex) ───────────
+  //    position 0 IS valid in TapGoods (means first stop) — only null is unset
   const itemsByRoute = new Map<string, RentalOnRoute[]>()
-
   for (const item of items) {
     const routeId = item.truckRoute.id
     const arr = itemsByRoute.get(routeId) ?? []
@@ -118,13 +131,10 @@ export function transformToRoutesAndStops(
     itemsByRoute.set(routeId, arr)
   }
 
-  // ── Sort each route by (position, insertionIndex) ─────────────────────────
   for (const arr of Array.from(itemsByRoute.values())) {
     arr.sort((a, b) => {
-      const posA = (a.relationship.position != null && a.relationship.position > 0)
-        ? a.relationship.position : Infinity
-      const posB = (b.relationship.position != null && b.relationship.position > 0)
-        ? b.relationship.position : Infinity
+      const posA = a.relationship.position != null ? a.relationship.position : Infinity
+      const posB = b.relationship.position != null ? b.relationship.position : Infinity
       if (posA !== posB) return posA - posB
       return a.insertionIndex - b.insertionIndex
     })
@@ -132,47 +142,43 @@ export function transformToRoutesAndStops(
 
   // ── Build Stop objects ────────────────────────────────────────────────────
   const stops: Stop[] = []
-
   for (const [, routeItems] of Array.from(itemsByRoute)) {
     routeItems.forEach((item, idx) => {
       const { rental, truckRoute } = item
-      const customer = rental.customers?.[0]
+      const customer    = rental.customers?.[0]
       const customerName = customer
         ? `${customer.firstName ?? ''} ${customer.lastName ?? ''}`.trim()
         : rental.name
 
-      const stop: Stop = {
-        stop_id:          `${truckRoute.id}-${rental.id}`,
-        route_id:         truckRoute.id,
-        stop_sequence:    idx + 1,
-        order_id:         rental.token ?? rental.name,
-        customer_name:    customerName || rental.name,
+      stops.push({
+        stop_id:        `${truckRoute.id}-${rental.id}`,
+        route_id:       truckRoute.id,
+        stop_sequence:  idx + 1,
+        order_id:       rental.token ?? rental.name,
+        customer_name:  customerName || rental.name,
         destination_name: undefined,
-        address_line_1:   rental.deliveryAddressStreetAddress1 ?? '',
-        address_line_2:   rental.deliveryAddressStreetAddress2 ?? undefined,
-        city:             rental.deliveryAddressCity           ?? '',
-        state:            rental.deliveryAddressLocale         ?? '',
-        postal_code:      rental.deliveryAddressPostalCode     ?? '',
-        latitude:         undefined,
-        longitude:        undefined,
-        customer_phone:   getMobilePhone(rental.customers),
-        notes:            rental.additionalDeliveryInfo ?? undefined,
+        address_line_1: rental.deliveryAddressStreetAddress1 ?? '',
+        address_line_2: rental.deliveryAddressStreetAddress2 ?? undefined,
+        city:           rental.deliveryAddressCity           ?? '',
+        state:          rental.deliveryAddressLocale         ?? '',
+        postal_code:    rental.deliveryAddressPostalCode     ?? '',
+        latitude:  undefined,
+        longitude: undefined,
+        customer_phone: getMobilePhone(rental.customers),
+        notes:          rental.additionalDeliveryInfo ?? undefined,
         current_status:      'pending' as StopStatus,
         on_the_way_sent:     false,
         on_the_way_sent_at:  undefined,
         completed_at:        undefined,
-      }
-
-      stops.push(stop)
+      })
     })
   }
 
-  // ── Patch stop_count ──────────────────────────────────────────────────────
+  // ── Patch stop_count + sort routes ────────────────────────────────────────
   const routes = Array.from(routeMap.values())
   for (const route of routes) {
     route.stop_count = stops.filter((s) => s.route_id === route.route_id).length
   }
-
   routes.sort((a, b) => a.route_name.localeCompare(b.route_name))
 
   return { routes, stops }

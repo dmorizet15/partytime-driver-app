@@ -1,109 +1,67 @@
 // ─── TapGoods GraphQL queries ─────────────────────────────────────────────────
+// Field names confirmed via schema introspection:
+//   - phoneNumbers.cell  (not .number)
+//   - isDraft is NOT a selectable field
+//   - beingPickedUp arg does not exist
+//   - truckNeeded: true catches service stops that beingDelivered misses
 
-// Arguments passed directly (no `input:` wrapper).
-// getRentals returns Rental[] directly — no nested { rentals, pagination }.
+const RENTAL_BODY = `
+      id
+      name
+      token
+
+      customers {
+        id
+        firstName
+        lastName
+        phoneNumbers {
+          cell
+          phoneType
+        }
+      }
+
+      deliveryAddressStreetAddress1
+      deliveryAddressStreetAddress2
+      deliveryAddressCity
+      deliveryAddressLocale
+      deliveryAddressPostalCode
+
+      additionalDeliveryInfo
+
+      rentalTransportTruckRelationships {
+        position
+        stopType
+        active
+        truckRouteId
+        truckRoute {
+          id
+          deliveryDate
+          truck { name }
+          drivers { name }
+        }
+      }
+`
 
 // ── Delivery stops ────────────────────────────────────────────────────────────
-// Fetches rentals that have an active delivery truck-route relationship.
 export const GET_DELIVERY_RENTALS = `
   query GetDeliveryRentals {
-    getRentals(
-      beingDelivered: true
-      perPage:        200
-      isDraft:        false
-    ) {
-      id
-      name
-      token
-
-      customers {
-        id
-        firstName
-        lastName
-        phoneNumbers {
-          cell
-          phoneType
-        }
-      }
-
-      deliveryAddressStreetAddress1
-      deliveryAddressStreetAddress2
-      deliveryAddressCity
-      deliveryAddressLocale
-      deliveryAddressPostalCode
-
-      additionalDeliveryInfo
-
-      rentalTransportTruckRelationships {
-        position
-        stopType
-        active
-        truckRouteId
-        truckRoute {
-          id
-          deliveryDate
-          truck {
-            name
-          }
-          drivers {
-            name
-          }
-        }
-      }
+    getRentals(beingDelivered: true perPage: 200) {
+      ${RENTAL_BODY}
     }
   }
 `
 
-// ── Pickup stops ──────────────────────────────────────────────────────────────
-// Fetches rentals that have an active pickup truck-route relationship
-// (e.g. retrieving equipment from a customer after an event).
-// Uses the same field selection as GET_DELIVERY_RENTALS so the two result sets
-// can be safely merged and deduped before passing to the transform.
-export const GET_PICKUP_RENTALS = `
-  query GetPickupRentals {
-    getRentals(
-      beingPickedUp: true
-      perPage:       200
-      isDraft:       false
-    ) {
-      id
-      name
-      token
-
-      customers {
-        id
-        firstName
-        lastName
-        phoneNumbers {
-          cell
-          phoneType
-        }
-      }
-
-      deliveryAddressStreetAddress1
-      deliveryAddressStreetAddress2
-      deliveryAddressCity
-      deliveryAddressLocale
-      deliveryAddressPostalCode
-
-      additionalDeliveryInfo
-
-      rentalTransportTruckRelationships {
-        position
-        stopType
-        active
-        truckRouteId
-        truckRoute {
-          id
-          deliveryDate
-          truck {
-            name
-          }
-          drivers {
-            name
-          }
-        }
+// ── Truck-needed stops (service, setup, teardown, etc.) ───────────────────────
+// truckNeeded: true is a superset of beingDelivered — it also catches service
+// stops (e.g. tent setup/teardown) that have no inventory delivery.
+// Must be paginated: there can be 200+ truck-needed rentals across all dates.
+// The transform filters by truckRoute.deliveryDate so only today's stops survive.
+export function GET_TRUCK_NEEDED_PAGE(page: number): string {
+  return `
+    query GetTruckNeededRentals {
+      getRentals(truckNeeded: true perPage: 200 page: ${page}) {
+        ${RENTAL_BODY}
       }
     }
-  }
-`
+  `
+}
