@@ -1,9 +1,7 @@
 export const GET_DELIVERY_RENTALS = `
-  query GetDeliveryRentals($startDate: ISO8601DateTime, $endDate: ISO8601DateTime) {
+  query GetDeliveryRentals {
     getRentals(
       beingDelivered: true
-      startDate:      $startDate
-      endDate:        $endDate
       perPage:        200
       isDraft:        false
     ) {
