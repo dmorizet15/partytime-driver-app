@@ -196,7 +196,7 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
           <span className="text-base" aria-hidden="true">✅</span>
           <div>
             <div className="text-[11px] font-bold text-green-800 uppercase tracking-wide">Customer Ready</div>
-            <div className="text-xs text-green-700 mt-0.5">{smsReply.customer_name ?? stop.customer_name} confirmed ready for {stop.stop_type === 'pickup' ? 'pickup' : 'delivery'}.</div>
+            <div className="text-xs text-green-700 mt-0.5">{smsReply.customer_name ?? stop?.customer_name} confirmed ready for {stop?.stop_type === 'pickup' ? 'pickup' : 'delivery'}.</div>
           </div>
         </div>
       )
