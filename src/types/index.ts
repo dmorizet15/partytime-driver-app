@@ -5,7 +5,7 @@ export type StopStatus = 'pending' | 'on_the_way_sent' | 'completed'
 export interface Route {
   route_id: string
   route_name: string
-  operating_date: string        // YYYY-MM-DD
+  operating_date: string
   assigned_driver?: string
   stop_count: number
   route_status: 'active' | 'completed' | 'pending'
@@ -17,6 +17,7 @@ export interface Stop {
   route_id: string
   stop_sequence: number
   order_id: string
+  stop_type: 'delivery' | 'pickup'
   customer_name: string
   destination_name?: string
   address_line_1: string
@@ -30,8 +31,8 @@ export interface Stop {
   notes?: string
   current_status: StopStatus
   on_the_way_sent: boolean
-  on_the_way_sent_at?: string   // ISO timestamp
-  completed_at?: string         // ISO timestamp
+  on_the_way_sent_at?: string
+  completed_at?: string
 }
 
 // ─── Workflow event ───────────────────────────────────────────────────────────
@@ -42,13 +43,14 @@ export type WorkflowEventType =
   | 'NAVIGATION_STARTED'
   | 'NAVIGATION_FAILED'
   | 'STOP_COMPLETED'
-  // V1.1 additions
   | 'TAPGOODS_ORDER_OPENED'
   | 'RFID_APP_OPENED_ATTEMPT'
   | 'RFID_APP_OPEN_FAILED'
-  | 'RFID_APP_OPEN_SUCCESS'      // Android only — intent dispatched (not confirmed launched)
+  | 'RFID_APP_OPEN_SUCCESS'
   | 'POD_PHOTO_UPLOADED'
   | 'POD_PHOTO_FAILED'
+  | 'ETA_SMS_SENT'
+  | 'ETA_SMS_FAILED'
 
 export interface WorkflowEvent {
   event_type: WorkflowEventType
@@ -56,6 +58,6 @@ export interface WorkflowEvent {
   stop_id: string
   order_id?: string
   actor: string
-  timestamp: string             // ISO timestamp
+  timestamp: string
   details?: Record<string, unknown>
 }
