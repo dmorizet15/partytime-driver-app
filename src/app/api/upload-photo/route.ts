@@ -41,22 +41,28 @@ export async function POST(request: NextRequest) {
 
     console.log('[upload-photo] Uploading to storage path:', storagePath)
 
-    const { error: uploadError } = await supabase.storage
-      .from('pod-photos')
-      .upload(storagePath, buffer, { contentType: 'image/jpeg', upsert: true })
+    const uploadRes = await fetch(
+      `${supabaseUrl}/storage/v1/object/pod-photos/${storagePath}`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${supabaseKey}`,
+          'Content-Type': 'image/jpeg',
+          'x-upsert': 'true',
+        },
+        body: buffer,
+      }
+    )
 
-    if (uploadError) {
-      console.error('[upload-photo] Storage upload error:', uploadError.message)
-      return NextResponse.json({ success: false, error: uploadError.message }, { status: 500 })
+    if (!uploadRes.ok) {
+      const errText = await uploadRes.text()
+      console.error('[upload-photo] Storage upload error:', uploadRes.status, errText)
+      return NextResponse.json({ success: false, error: errText }, { status: 500 })
     }
 
     console.log('[upload-photo] Storage upload success:', storagePath)
 
-    const { data: urlData } = supabase.storage
-      .from('pod-photos')
-      .getPublicUrl(storagePath)
-
-    const publicUrl = urlData.publicUrl
+    const publicUrl = `${supabaseUrl}/storage/v1/object/public/pod-photos/${storagePath}`
 
     console.log('[upload-photo] Public URL generated:', publicUrl)
 
