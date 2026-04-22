@@ -217,6 +217,14 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
         </div>
       )
     }
+    if (sms_status === 'opted_out') {
+      return (
+        <div className="mt-2.5 flex items-start gap-2 px-3 py-2.5 rounded-xl bg-gray-100 border border-gray-300">
+          <span className="text-base" aria-hidden="true">🚫</span>
+          <div><div className="text-[11px] font-bold text-gray-600 uppercase tracking-wide">Opted Out of SMS</div><div className="text-xs text-gray-500 mt-0.5">Customer has opted out of text messages.</div></div>
+        </div>
+      )
+    }
     return (
       <div className="mt-2.5 flex items-center gap-2 px-3 py-2 rounded-xl bg-gray-50 border border-gray-200">
         <span className="text-sm text-gray-400" aria-hidden="true">💬</span>
