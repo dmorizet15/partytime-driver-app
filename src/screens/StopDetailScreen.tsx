@@ -7,7 +7,6 @@ import AppHeader from '@/components/AppHeader'
 import OTWSentBanner from '@/components/OTWSentBanner'
 import ConfirmationModal from '@/components/ConfirmationModal'
 import { navigationService } from '@/services/NavigationService'
-import { notificationService } from '@/services/NotificationService'
 import { externalAppService } from '@/services/ExternalAppService'
 import { photoUploadService } from '@/services/PhotoUploadService'
 import { logEvent } from '@/services/EventLogger'
@@ -76,6 +75,18 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   }, [navMessage])
 
   useEffect(() => {
+    async function rehydrate() {
+      const status = await getStopSmsStatus(stopId)
+      if (status && status.sms_status) {
+        setSmsReply(status)
+        setEtaStatus('sent')
+        if (status.eta_range) setEtaRange(status.eta_range)
+      }
+    }
+    rehydrate()
+  }, [stopId])
+
+  useEffect(() => {
     if (etaStatus !== 'sent') {
       if (pollIntervalRef.current) { clearInterval(pollIntervalRef.current); pollIntervalRef.current = null }
       return
@@ -108,19 +119,18 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   async function handleSendOtw() {
     if (!stop || otwLoading) return
     setOtwLoading(true)
-    try {
-      const result = await notificationService.sendOnTheWayText(stop)
-      if (result.success && result.sent_at) {
-        markOtw(stop.stop_id, result.sent_at)
-        logEvent('ON_THE_WAY_SENT', routeId, stopId, stop.order_id, { phone: stop.customer_phone, sent_at: result.sent_at })
-      } else {
-        logEvent('ON_THE_WAY_FAILED', routeId, stopId, stop.order_id, { error: result.error })
-        alert('Failed to send On The Way text. Please try again.')
-      }
-    } catch (err) {
-      logEvent('ON_THE_WAY_FAILED', routeId, stopId, stop.order_id, { error: String(err) })
+    const result = await runEtaSend()
+    if (result.success) {
+      const sent_at = new Date().toISOString()
+      markOtw(stop.stop_id, sent_at)
+      setEtaStatus('sent')
+      setEtaRange(result.etaRange ?? null)
+      logEvent('ON_THE_WAY_SENT', routeId, stopId, stop.order_id, { phone: stop.customer_phone, sent_at })
+    } else {
+      logEvent('ON_THE_WAY_FAILED', routeId, stopId, stop.order_id, { error: result.error })
       alert('Failed to send On The Way text. Please try again.')
-    } finally { setOtwLoading(false) }
+    }
+    setOtwLoading(false)
   }
 
   async function handleNavigate() {
@@ -159,17 +169,31 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     else { logEvent('RFID_APP_OPEN_FAILED', routeId, stopId, stop.order_id, { attempted: result.attempted, message: result.message }); if (result.message) setRfidMessage(result.message) }
   }
 
-  async function handleSendEta() {
-    if (!stop || etaStatus === 'sending') return
-    setEtaStatus('sending'); setEtaError(null)
+  async function runEtaSend(): Promise<{ success: boolean; etaRange?: string; error?: string }> {
+    if (!stop) return { success: false, error: 'No stop data' }
     const destination = stop.latitude != null && stop.longitude != null
       ? `${stop.latitude},${stop.longitude}`
       : `${stop.address_line_1}, ${stop.city}, ${stop.state} ${stop.postal_code}`
     const loc = await getDriverLocation()
-    if (!loc) { setEtaStatus('error'); setEtaError('Could not determine your location. Enable location services and try again.'); logEvent('ETA_SMS_FAILED', routeId, stopId, stop.order_id, { error: 'no_gps' }); return }
+    if (!loc) {
+      logEvent('ETA_SMS_FAILED', routeId, stopId, stop.order_id, { error: 'no_gps' })
+      return { success: false, error: 'Could not determine your location. Enable location services and try again.' }
+    }
     const result = await sendEtaSms({ stopId: stop.stop_id, stopType: stop.stop_type, customerPhone: stop.customer_phone, customerName: stop.customer_name, orderId: stop.order_id, driverLat: loc.lat, driverLng: loc.lng, destination })
-    if (result.success) { setEtaStatus('sent'); setEtaRange(result.etaRange ?? null); logEvent('ETA_SMS_SENT', routeId, stopId, stop.order_id, { etaRange: result.etaRange }) }
-    else { setEtaStatus('error'); setEtaError(result.error ?? 'Failed to send ETA text.'); logEvent('ETA_SMS_FAILED', routeId, stopId, stop.order_id, { error: result.error }) }
+    if (result.success) {
+      logEvent('ETA_SMS_SENT', routeId, stopId, stop.order_id, { etaRange: result.etaRange })
+      return { success: true, etaRange: result.etaRange }
+    }
+    logEvent('ETA_SMS_FAILED', routeId, stopId, stop.order_id, { error: result.error })
+    return { success: false, error: result.error ?? 'Failed to send ETA text.' }
+  }
+
+  async function handleSendEta() {
+    if (!stop || etaStatus === 'sending') return
+    setEtaStatus('sending'); setEtaError(null)
+    const result = await runEtaSend()
+    if (result.success) { setEtaStatus('sent'); setEtaRange(result.etaRange ?? null) }
+    else { setEtaStatus('error'); setEtaError(result.error ?? 'Failed to send ETA text.') }
   }
 
   function handleTakePhotoTap() { photoInputRef.current?.click() }
