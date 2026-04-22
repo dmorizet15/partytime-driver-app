@@ -205,7 +205,7 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
       return (
         <div className="mt-2.5 px-3 py-2.5 rounded-xl bg-blue-50 border border-blue-200">
           <div className="flex items-center gap-2 mb-1"><span className="text-base" aria-hidden="true">📩</span><div className="text-[11px] font-bold text-blue-800 uppercase tracking-wide">Delivery Instructions</div></div>
-          <div className="text-sm font-semibold text-blue-900 leading-snug">"{customer_instructions}"</div>
+          <div className="text-sm font-semibold text-blue-900 leading-snug">&ldquo;{customer_instructions}&rdquo;</div>
         </div>
       )
     }
