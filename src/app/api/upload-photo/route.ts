@@ -26,9 +26,11 @@ export async function POST(request: NextRequest) {
     const supabaseUrl = process.env.SUPABASE_URL
     const supabaseKey = process.env.SUPABASE_SERVICE_KEY
     if (!supabaseUrl || !supabaseKey) {
-      console.error('[upload-photo] Missing SUPABASE_URL or SUPABASE_SERVICE_KEY')
+      console.error('[upload-photo] Missing env vars — SUPABASE_URL present:', !!supabaseUrl, '| SUPABASE_SERVICE_KEY present:', !!supabaseKey)
       return NextResponse.json({ success: false, error: 'Server misconfiguration' }, { status: 500 })
     }
+
+    console.log('[upload-photo] Env vars present. stop_id:', stopId, '| route_id:', routeId ?? 'unknown')
 
     const supabase = createClient(supabaseUrl, supabaseKey)
 
@@ -36,6 +38,8 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(bytes)
 
     const storagePath = `${stopId}/${Date.now()}.jpg`
+
+    console.log('[upload-photo] Uploading to storage path:', storagePath)
 
     const { error: uploadError } = await supabase.storage
       .from('pod-photos')
@@ -46,11 +50,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: uploadError.message }, { status: 500 })
     }
 
+    console.log('[upload-photo] Storage upload success:', storagePath)
+
     const { data: urlData } = supabase.storage
       .from('pod-photos')
       .getPublicUrl(storagePath)
 
     const publicUrl = urlData.publicUrl
+
+    console.log('[upload-photo] Public URL generated:', publicUrl)
 
     const { error: dbError } = await supabase
       .from('stops')
@@ -61,11 +69,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: dbError.message }, { status: 500 })
     }
 
+    console.log('[upload-photo] DB upsert success for stop:', stopId)
+
     console.log(`[upload-photo] Uploaded for stop ${stopId} (route: ${routeId ?? 'unknown'}): ${publicUrl}`)
     return NextResponse.json({ success: true, url: publicUrl })
 
   } catch (err) {
-    console.error('[upload-photo] Error:', err)
+    console.error('[upload-photo] Unhandled exception:', err instanceof Error ? err.message : String(err))
     return NextResponse.json({ success: false, error: 'Upload failed — server error' }, { status: 500 })
   }
 }
