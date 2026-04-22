@@ -68,7 +68,8 @@ export async function POST(request: NextRequest) {
 
     const { error: dbError } = await supabase
       .from('stops')
-      .upsert({ stop_id: stopId, pod_photo_url: publicUrl }, { onConflict: 'stop_id' })
+      .update({ pod_photo_url: publicUrl })
+      .eq('stop_id', stopId)
 
     if (dbError) {
       console.error('[upload-photo] DB upsert error:', dbError.message)
