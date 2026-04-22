@@ -31,6 +31,10 @@ export class ApiPhotoUploadService implements IPhotoUploadService {
     if (!response.ok) {
       const text = await response.text()
       console.error('[PhotoUploadService] HTTP error:', response.status, text)
+      try {
+        const json = JSON.parse(text)
+        if (json.error) return { success: false, error: json.error }
+      } catch {}
       return { success: false, error: `Server error ${response.status}` }
     }
 
