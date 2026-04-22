@@ -359,7 +359,7 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
         </div>
         <div className="px-4 pt-5">
           <div className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">Proof of Delivery</div>
-          <input ref={photoInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoSelected} aria-label="Take proof of delivery photo" />
+          <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoSelected} aria-label="Take proof of delivery photo" />
           {pod.status === 'uploaded' && pod.url && (<div className="mb-3">{/* eslint-disable-next-line @next/next/no-img-element */}<img src={pod.url} alt="Proof of delivery" className="w-full rounded-xl border border-gray-200 object-cover max-h-48" /></div>)}
           {pod.status === 'uploaded' && (<div className="flex items-center gap-2 mb-3 px-1"><span className="text-sm" aria-hidden="true">✅</span><span className="text-sm font-semibold text-gray-700">Photo uploaded</span></div>)}
           {pod.status === 'failed' && (<div className="flex items-start gap-2 mb-3 px-1"><span className="text-sm mt-0.5" aria-hidden="true">⚠️</span><div><span className="text-sm font-semibold text-gray-700">Upload failed</span>{pod.error && <p className="text-[11px] text-gray-400 mt-0.5">{pod.error}</p>}</div></div>)}
