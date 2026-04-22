@@ -56,6 +56,8 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   const [etaError, setEtaError] = useState<string | null>(null)
   const [smsReply, setSmsReply] = useState<StopSmsStatus | null>(null)
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const etaCooldownRef = useRef<number>(0)
+  const [etaCooldownMsg, setEtaCooldownMsg] = useState<string | null>(null)
 
   useEffect(() => {
     if (stop) logEvent('STOP_VIEWED', routeId, stopId, stop.order_id)
@@ -73,6 +75,12 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     const t = setTimeout(() => setNavMessage(null), 5000)
     return () => clearTimeout(t)
   }, [navMessage])
+
+  useEffect(() => {
+    if (!etaCooldownMsg) return
+    const t = setTimeout(() => setEtaCooldownMsg(null), 4000)
+    return () => clearTimeout(t)
+  }, [etaCooldownMsg])
 
   useEffect(() => {
     async function rehydrate() {
@@ -118,15 +126,19 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
 
   async function handleSendOtw() {
     if (!stop || otwLoading) return
+    if (Date.now() < etaCooldownRef.current) { setEtaCooldownMsg('ETA text was just sent. Please wait a moment before resending.'); return }
+    etaCooldownRef.current = Infinity
     setOtwLoading(true)
     const result = await runEtaSend()
     if (result.success) {
       const sent_at = new Date().toISOString()
+      etaCooldownRef.current = Date.now() + 30_000
       markOtw(stop.stop_id, sent_at)
       setEtaStatus('sent')
       setEtaRange(result.etaRange ?? null)
       logEvent('ON_THE_WAY_SENT', routeId, stopId, stop.order_id, { phone: stop.customer_phone, sent_at })
     } else {
+      etaCooldownRef.current = 0
       logEvent('ON_THE_WAY_FAILED', routeId, stopId, stop.order_id, { error: result.error })
       alert('Failed to send On The Way text. Please try again.')
     }
@@ -190,10 +202,17 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
 
   async function handleSendEta() {
     if (!stop || etaStatus === 'sending') return
+    if (Date.now() < etaCooldownRef.current) { setEtaCooldownMsg('ETA text was just sent. Please wait a moment before resending.'); return }
+    etaCooldownRef.current = Infinity
     setEtaStatus('sending'); setEtaError(null)
     const result = await runEtaSend()
-    if (result.success) { setEtaStatus('sent'); setEtaRange(result.etaRange ?? null) }
-    else { setEtaStatus('error'); setEtaError(result.error ?? 'Failed to send ETA text.') }
+    if (result.success) {
+      etaCooldownRef.current = Date.now() + 30_000
+      setEtaStatus('sent'); setEtaRange(result.etaRange ?? null)
+    } else {
+      etaCooldownRef.current = 0
+      setEtaStatus('error'); setEtaError(result.error ?? 'Failed to send ETA text.')
+    }
   }
 
   function handleTakePhotoTap() { photoInputRef.current?.click() }
@@ -290,6 +309,7 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
           </button>
           <p className="text-[10px] text-gray-400 text-center">{etaStatus === 'sent' && etaRange ? `ETA sent: ${etaRange} · tap to resend` : 'Texts customer your ETA with reply options'}</p>
           {etaStatus === 'error' && etaError && (<p className="text-[11px] text-red-500 text-center mt-1.5 mb-1 px-3 py-2 bg-red-50 border border-red-200 rounded-lg">{etaError}</p>)}
+          {etaCooldownMsg && (<p className="text-[11px] text-amber-700 text-center mt-1.5 mb-1 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg">{etaCooldownMsg}</p>)}
           {renderEtaReplyBadge()}
           <div className="mb-3.5" />
           <button onClick={handleNavigate} disabled={navLoading || isCompleted} className="w-full flex items-center justify-center gap-2.5 min-h-[54px] rounded-xl text-[15px] font-bold mb-1 border-2 border-gray-900 bg-gray-900 text-white active:bg-gray-700 disabled:opacity-50 transition-colors">
