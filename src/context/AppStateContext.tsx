@@ -136,9 +136,16 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         throw new Error(json.error ?? `HTTP ${res.status}`)
       }
 
+      const mergedStops = (json.stops as Stop[]).map((s) => {
+        try {
+          const saved = localStorage.getItem(`ptd_stop_${s.stop_id}`)
+          if (saved) return { ...s, ...JSON.parse(saved) }
+        } catch {}
+        return s
+      })
       dispatch({
         type:    'LOAD_SUCCESS',
-        payload: { routes: json.routes, stops: json.stops, date },
+        payload: { routes: json.routes, stops: mergedStops, date },
       })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
@@ -174,6 +181,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   // ── Mutations ──────────────────────────────────────────────────────────────
   const markOtw = useCallback((stopId: string, sentAt: string) => {
     dispatch({ type: 'MARK_OTW', payload: { stop_id: stopId, sent_at: sentAt } })
+    try { localStorage.setItem(`ptd_stop_${stopId}`, JSON.stringify({ current_status: 'on_the_way_sent', on_the_way_sent: true, on_the_way_sent_at: sentAt })) } catch {}
   }, [])
 
   const markComplete = useCallback((stopId: string, completedAt: string) => {
@@ -181,6 +189,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       type:    'MARK_COMPLETE',
       payload: { stop_id: stopId, completed_at: completedAt },
     })
+    try { localStorage.setItem(`ptd_stop_${stopId}`, JSON.stringify({ current_status: 'completed', completed_at: completedAt })) } catch {}
   }, [])
 
   return (
