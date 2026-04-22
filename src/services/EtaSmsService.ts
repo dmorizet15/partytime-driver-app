@@ -18,6 +18,7 @@ export interface StopSmsStatus {
   eta_range:                string | null;
   customer_name:            string | null;
   order_id:                 string | null;
+  pod_photo_url:            string | null;
 }
 
 export interface SendEtaParams {

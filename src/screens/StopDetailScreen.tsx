@@ -90,6 +90,7 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
         setEtaStatus('sent')
         if (status.eta_range) setEtaRange(status.eta_range)
       }
+      if (status && status.pod_photo_url) setPod({ status: 'uploaded', url: status.pod_photo_url })
     }
     rehydrate()
   }, [stopId])
