@@ -43,6 +43,7 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   const allStops = getStopsForRoute(routeId)
 
   const [otwLoading, setOtwLoading] = useState(false)
+  const [otwError, setOtwError] = useState<string | null>(null)
   const [navLoading, setNavLoading] = useState(false)
   const [showCompleteModal, setShowCompleteModal] = useState(false)
   const [completeLoading, setCompleteLoading] = useState(false)
@@ -130,6 +131,7 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     if (Date.now() < etaCooldownRef.current) { setEtaCooldownMsg('ETA text was just sent. Please wait a moment before resending.'); return }
     etaCooldownRef.current = Infinity
     setOtwLoading(true)
+    setOtwError(null)
     const result = await runEtaSend()
     if (result.success) {
       const sent_at = new Date().toISOString()
@@ -141,7 +143,7 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     } else {
       etaCooldownRef.current = 0
       logEvent('ON_THE_WAY_FAILED', routeId, stopId, stop.order_id, { error: result.error })
-      alert('Failed to send On The Way text. Please try again.')
+      setOtwError(result.error ?? 'Failed to send On The Way text. Please try again.')
     }
     setOtwLoading(false)
   }
@@ -192,7 +194,7 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
       logEvent('ETA_SMS_FAILED', routeId, stopId, stop.order_id, { error: 'no_gps' })
       return { success: false, error: 'Could not determine your location. Enable location services and try again.' }
     }
-    const result = await sendEtaSms({ stopId: stop.stop_id, stopType: stop.stop_type, customerPhone: stop.customer_phone, customerName: stop.customer_name, orderId: stop.order_id, driverLat: loc.lat, driverLng: loc.lng, destination })
+    const result = await sendEtaSms({ stopId: stop.stop_id, routeId, stopType: stop.stop_type, customerPhone: stop.customer_phone, customerName: stop.customer_name, orderId: stop.order_id, driverLat: loc.lat, driverLng: loc.lng, destination })
     if (result.success) {
       logEvent('ETA_SMS_SENT', routeId, stopId, stop.order_id, { etaRange: result.etaRange })
       return { success: true, etaRange: result.etaRange }
@@ -330,7 +332,9 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
           <button onClick={handleSendOtw} disabled={otwLoading || isCompleted} className={`w-full flex items-center justify-center gap-2.5 min-h-[54px] rounded-xl text-[15px] font-bold mb-1 border-2 transition-colors disabled:opacity-50 ${isOtwSent ? 'border-gray-300 bg-gray-100 text-gray-500 active:bg-gray-200' : 'border-gray-800 bg-white text-gray-900 active:bg-gray-50'}`}>
             <span className="text-lg" aria-hidden="true">💬</span>{otwLoading ? 'Sending…' : isOtwSent ? 'Resend On The Way Text' : 'Send On The Way Text'}
           </button>
-          <p className="text-[10px] text-gray-400 text-center mb-3.5">{isOtwSent ? 'Tap to resend if customer needs another notification' : 'Sends SMS to customer now'}</p>
+          <p className="text-[10px] text-gray-400 text-center mb-1">{isOtwSent ? 'Tap to resend if customer needs another notification' : 'Sends SMS to customer now'}</p>
+          {otwError && (<p className="text-[11px] text-red-500 text-center mt-1.5 mb-1 px-3 py-2 bg-red-50 border border-red-200 rounded-lg">{otwError}</p>)}
+          <div className="mb-3.5" />
           <button onClick={handleSendEta} disabled={etaStatus === 'sending' || isCompleted} className={`w-full flex items-center justify-center gap-2.5 min-h-[54px] rounded-xl text-[15px] font-bold mb-1 border-2 transition-colors disabled:opacity-50 ${etaStatus === 'sent' ? 'border-gray-300 bg-gray-100 text-gray-500 active:bg-gray-200' : 'border-gray-800 bg-white text-gray-900 active:bg-gray-50'}`}>
             <span className="text-lg" aria-hidden="true">🕐</span>{etaStatus === 'sending' ? 'Sending ETA…' : etaStatus === 'sent' ? 'Resend ETA Text' : 'Send ETA Text'}
           </button>

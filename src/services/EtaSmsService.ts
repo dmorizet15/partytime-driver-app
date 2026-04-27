@@ -23,6 +23,7 @@ export interface StopSmsStatus {
 
 export interface SendEtaParams {
   stopId:        string;
+  routeId:       string;
   stopType:      "delivery" | "pickup";
   customerPhone: string;
   customerName:  string;
