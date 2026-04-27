@@ -21,34 +21,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // getSession() handles the initial state on mount
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setUser(session?.user ?? null)
-      if (session?.user) {
-        const p = await getUserRole(session.user.id)
-        setProfile(p)
-      }
-      setLoading(false)
-    })
+    let cancelled = false
 
-    // onAuthStateChange handles subsequent transitions; skip INITIAL_SESSION
-    // to avoid a duplicate profile fetch racing with getSession() above
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        if (event === 'INITIAL_SESSION') return
-        setLoading(true)
+        if (cancelled) return
+        // TOKEN_REFRESHED keeps the same user — skip profile re-fetch
+        if (event === 'TOKEN_REFRESHED') return
+
         setUser(session?.user ?? null)
-        if (session?.user) {
-          const p = await getUserRole(session.user.id)
-          setProfile(p)
-        } else {
-          setProfile(null)
+        try {
+          if (session?.user) {
+            const p = await getUserRole(session.user.id)
+            if (!cancelled) setProfile(p)
+          } else {
+            setProfile(null)
+          }
+        } catch (err) {
+          console.error('[AuthContext] getUserRole error', err)
+          if (!cancelled) setProfile(null)
+        } finally {
+          if (!cancelled) setLoading(false)
         }
-        setLoading(false)
       }
     )
 
-    return () => subscription.unsubscribe()
+    return () => {
+      cancelled = true
+      subscription.unsubscribe()
+    }
   }, [])
 
   return (
