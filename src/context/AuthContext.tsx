@@ -32,7 +32,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(session?.user ?? null)
         try {
           if (session?.user) {
-            const p = await getUserRole(session.user.id)
+            const p = await getUserRole(session.user.id, session.access_token)
             if (!cancelled) setProfile(p)
           } else {
             setProfile(null)

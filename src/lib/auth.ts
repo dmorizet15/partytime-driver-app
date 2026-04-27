@@ -6,22 +6,35 @@ export async function getSession() {
   return session
 }
 
-export async function getUserRole(userId: string): Promise<UserProfile | null> {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('id, role, display_name')
-    .eq('id', userId)
-    .maybeSingle()
-
-  if (error) {
-    console.error('[getUserRole] Supabase error:', error.message, '| code:', error.code, '| userId:', userId)
+// Uses direct fetch with the caller-supplied access token to avoid calling
+// supabase.auth.getSession() internally, which deadlocks when called from
+// inside the onAuthStateChange INITIAL_SESSION handler.
+export async function getUserRole(userId: string, accessToken: string): Promise<UserProfile | null> {
+  try {
+    const res = await fetch(
+      `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}&select=id,role,display_name&limit=1`,
+      {
+        headers: {
+          apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+          Authorization: `Bearer ${accessToken}`,
+          Accept: 'application/json',
+        },
+      }
+    )
+    if (!res.ok) {
+      console.error('[getUserRole] HTTP error:', res.status, '| userId:', userId)
+      return null
+    }
+    const rows: UserProfile[] = await res.json()
+    if (!rows.length) {
+      console.error('[getUserRole] No profile row for userId:', userId)
+      return null
+    }
+    return rows[0]
+  } catch (err) {
+    console.error('[getUserRole] fetch error:', err)
     return null
   }
-  if (!data) {
-    console.error('[getUserRole] No profile row found for userId:', userId)
-    return null
-  }
-  return data as UserProfile
 }
 
 export async function signIn(email: string, password: string) {
