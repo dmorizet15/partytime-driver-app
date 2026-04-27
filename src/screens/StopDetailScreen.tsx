@@ -364,13 +364,45 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
         <div className="px-4 pt-5">
           <div className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">Proof of Delivery</div>
           <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoSelected} aria-label="Take proof of delivery photo" />
-          {pod.status === 'uploaded' && pod.url && (<div className="mb-3">{/* eslint-disable-next-line @next/next/no-img-element */}<img src={pod.url} alt="Proof of delivery" className="w-full rounded-xl border border-gray-200 object-cover max-h-48" /></div>)}
-          {pod.status === 'uploaded' && (<div className="flex items-center gap-2 mb-3 px-1"><span className="text-sm" aria-hidden="true">✅</span><span className="text-sm font-semibold text-gray-700">Photo uploaded</span></div>)}
-          {pod.status === 'failed' && (<div className="flex items-start gap-2 mb-3 px-1"><span className="text-sm mt-0.5" aria-hidden="true">⚠️</span><div><span className="text-sm font-semibold text-gray-700">Upload failed</span>{pod.error && <p className="text-[11px] text-gray-400 mt-0.5">{pod.error}</p>}</div></div>)}
-          <button onClick={handleTakePhotoTap} disabled={pod.status === 'uploading'} className="w-full flex items-center justify-center gap-2.5 min-h-[54px] rounded-xl text-[15px] font-bold mb-1 border-2 border-gray-300 bg-white text-gray-700 active:bg-gray-50 disabled:opacity-50 transition-colors">
-            <span className="text-lg" aria-hidden="true">📷</span>{pod.status === 'uploading' ? 'Uploading…' : pod.status === 'uploaded' ? 'Retake Photo' : pod.status === 'failed' ? 'Retry Photo' : 'Take Photo'}
+          {pod.status === 'uploaded' && pod.url && (
+            <div className="mb-3 rounded-xl overflow-hidden border-2 border-gray-200 shadow-sm">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={pod.url} alt="Proof of delivery" className="w-full object-cover max-h-56" />
+            </div>
+          )}
+          {pod.status === 'uploaded' && (
+            <div className="flex items-center gap-2.5 mb-3 px-3 py-2.5 rounded-xl bg-green-50 border border-green-200">
+              <span className="text-base" aria-hidden="true">✅</span>
+              <div>
+                <div className="text-[11px] font-bold text-green-800 uppercase tracking-wide">Photo Uploaded</div>
+                <div className="text-xs text-green-700 mt-0.5">Proof of delivery saved to server.</div>
+              </div>
+            </div>
+          )}
+          {pod.status === 'failed' && (
+            <div className="flex items-start gap-2.5 mb-3 px-3 py-2.5 rounded-xl bg-red-50 border border-red-200">
+              <span className="text-base mt-0.5" aria-hidden="true">⚠️</span>
+              <div>
+                <div className="text-[11px] font-bold text-red-800 uppercase tracking-wide">Upload Failed</div>
+                {pod.error && <div className="text-xs text-red-600 mt-0.5">{pod.error}</div>}
+              </div>
+            </div>
+          )}
+          <button
+            onClick={handleTakePhotoTap}
+            disabled={pod.status === 'uploading'}
+            className={`w-full flex items-center justify-center gap-2.5 min-h-[54px] rounded-xl text-[15px] font-bold mb-1 border-2 transition-colors disabled:opacity-50 ${
+              pod.status === 'uploaded'
+                ? 'border-gray-300 bg-white text-gray-600 active:bg-gray-50'
+                : 'border-[#0000FF] bg-[#0000FF] text-white active:bg-[#0000CC]'
+            }`}
+          >
+            <span className="text-lg" aria-hidden="true">📷</span>
+            {pod.status === 'uploading' ? 'Uploading…' : pod.status === 'uploaded' ? 'Retake Photo' : pod.status === 'failed' ? 'Retry Photo' : 'Take Photo'}
           </button>
-          <p className="text-[10px] text-gray-400 text-center">{pod.status === 'uploaded' ? 'Tap to replace with a new photo' : 'Opens camera · saved to server'}</p>
+          <p className="text-[10px] text-gray-400 text-center">
+            {pod.status === 'uploading' ? 'Saving to server…' : pod.status === 'uploaded' ? 'Tap to replace with a new photo' : 'Opens camera · saved to server'}
+          </p>
         </div>
         {!isCompleted && (
           <div className="px-4 pt-5">
