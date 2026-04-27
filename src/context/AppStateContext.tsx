@@ -8,6 +8,8 @@ import React, {
   ReactNode,
 } from 'react'
 import { Route, Stop, StopStatus } from '@/types'
+import { useAuthContext } from '@/context/AuthContext'
+import { stopStateService } from '@/services/StopStateService'
 
 // ─── State ────────────────────────────────────────────────────────────────────
 interface AppState {
@@ -95,21 +97,16 @@ function appReducer(state: AppState, action: Action): AppState {
 
 // ─── Context value shape ──────────────────────────────────────────────────────
 interface AppStateContextValue {
-  // Data
   routes:     Route[]
   stops:      Stop[]
-  // Async state
   isLoading:  boolean
   error:      string | null
   loadedDate: string | null
-  // Data access
   getRoutesForDate: (date: string) => Route[]
   getStopsForRoute: (routeId: string) => Stop[]
   getStop:          (stopId: string)  => Stop | undefined
   getRoute:         (routeId: string) => Route | undefined
-  // Async loader
-  loadDay: (date: string) => Promise<void>
-  // Mutations
+  loadDay:      (date: string) => Promise<void>
   markOtw:      (stopId: string, sentAt: string)      => void
   markComplete: (stopId: string, completedAt: string) => void
 }
@@ -120,29 +117,41 @@ const AppStateContext = createContext<AppStateContextValue | null>(null)
 // ─── Provider ─────────────────────────────────────────────────────────────────
 export function AppStateProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(appReducer, INITIAL_STATE)
+  const { user } = useAuthContext()
 
   // ── Async loader ───────────────────────────────────────────────────────────
   const loadDay = useCallback(async (date: string) => {
-    // Skip if we already have fresh data for this date
     if (state.loadedDate === date && !state.error) return
 
     dispatch({ type: 'LOAD_START' })
 
     try {
-      const res = await fetch(`/api/tapgoods/routes?date=${date}`)
+      const res  = await fetch(`/api/tapgoods/routes?date=${date}`)
       const json = await res.json()
 
-      if (!res.ok) {
-        throw new Error(json.error ?? `HTTP ${res.status}`)
-      }
+      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`)
 
-      const mergedStops = (json.stops as Stop[]).map((s) => {
+      const tapStops = json.stops as Stop[]
+      const stopIds  = tapStops.map((s) => s.stop_id)
+
+      // Flush any queued offline OTW writes now that we have connectivity
+      if (user?.id) stopStateService.syncOnReconnect(user.id)
+
+      // Read OTW status from Supabase for this batch of stops
+      const supabaseOtw = await stopStateService.readOtwStatus(stopIds)
+
+      // Merge priority: Supabase OTW > localStorage > TapGoods default
+      const mergedStops = tapStops.map((s) => {
+        if (supabaseOtw.has(s.stop_id)) {
+          return { ...s, ...supabaseOtw.get(s.stop_id) }
+        }
         try {
           const saved = localStorage.getItem(`ptd_stop_${s.stop_id}`)
           if (saved) return { ...s, ...JSON.parse(saved) }
         } catch {}
         return s
       })
+
       dispatch({
         type:    'LOAD_SUCCESS',
         payload: { routes: json.routes, stops: mergedStops, date },
@@ -152,7 +161,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       console.error('[AppState] loadDay error:', message)
       dispatch({ type: 'LOAD_ERROR', payload: { error: message } })
     }
-  }, [state.loadedDate, state.error])
+  }, [state.loadedDate, state.error, user])
 
   // ── Selectors ──────────────────────────────────────────────────────────────
   const getRoutesForDate = useCallback(
@@ -168,28 +177,21 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [state.stops]
   )
 
-  const getStop = useCallback(
-    (stopId: string) => state.stops.find((s) => s.stop_id === stopId),
-    [state.stops]
-  )
-
-  const getRoute = useCallback(
-    (routeId: string) => state.routes.find((r) => r.route_id === routeId),
-    [state.routes]
-  )
+  const getStop  = useCallback((stopId: string)  => state.stops.find((s) => s.stop_id === stopId),  [state.stops])
+  const getRoute = useCallback((routeId: string) => state.routes.find((r) => r.route_id === routeId), [state.routes])
 
   // ── Mutations ──────────────────────────────────────────────────────────────
   const markOtw = useCallback((stopId: string, sentAt: string) => {
     dispatch({ type: 'MARK_OTW', payload: { stop_id: stopId, sent_at: sentAt } })
-    try { localStorage.setItem(`ptd_stop_${stopId}`, JSON.stringify({ current_status: 'on_the_way_sent', on_the_way_sent: true, on_the_way_sent_at: sentAt })) } catch {}
-  }, [])
+    stopStateService.writeOtw(stopId, user?.id ?? '', sentAt)
+  }, [user])
 
   const markComplete = useCallback((stopId: string, completedAt: string) => {
-    dispatch({
-      type:    'MARK_COMPLETE',
-      payload: { stop_id: stopId, completed_at: completedAt },
-    })
-    try { localStorage.setItem(`ptd_stop_${stopId}`, JSON.stringify({ current_status: 'completed', completed_at: completedAt })) } catch {}
+    dispatch({ type: 'MARK_COMPLETE', payload: { stop_id: stopId, completed_at: completedAt } })
+    try {
+      const prev = JSON.parse(localStorage.getItem(`ptd_stop_${stopId}`) ?? '{}')
+      localStorage.setItem(`ptd_stop_${stopId}`, JSON.stringify({ ...prev, current_status: 'completed', completed_at: completedAt }))
+    } catch {}
   }, [])
 
   return (
@@ -217,8 +219,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 export function useAppState(): AppStateContextValue {
   const ctx = useContext(AppStateContext)
-  if (!ctx) {
-    throw new Error('useAppState must be used within an AppStateProvider')
-  }
+  if (!ctx) throw new Error('useAppState must be used within an AppStateProvider')
   return ctx
 }
