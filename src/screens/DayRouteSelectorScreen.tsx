@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter }           from 'next/navigation'
 import { useAppState }         from '@/context/AppStateContext'
 import AppHeader               from '@/components/AppHeader'
+import { signOut }             from '@/lib/auth'
 import { Route }               from '@/types'
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
@@ -56,6 +57,11 @@ export default function DayRouteSelectorScreen() {
     router.push(`/route/${route.route_id}`)
   }
 
+  async function handleSignOut() {
+    await signOut()
+    router.replace('/login')
+  }
+
   // ── Shared date navigator ──────────────────────────────────────────────────
   const DateNav = (
     <div className="flex items-center justify-between px-4 py-3
@@ -103,7 +109,7 @@ export default function DayRouteSelectorScreen() {
   if (isLoading) {
     return (
       <div className="screen">
-        <AppHeader title="Select Route" />
+        <AppHeader title="Select Route" onSignOut={handleSignOut} />
         {DateNav}
         <div className="flex-1 flex flex-col items-center justify-center gap-3
                         text-gray-400">
@@ -119,7 +125,7 @@ export default function DayRouteSelectorScreen() {
   if (error) {
     return (
       <div className="screen">
-        <AppHeader title="Select Route" />
+        <AppHeader title="Select Route" onSignOut={handleSignOut} />
         {DateNav}
         <div className="flex-1 flex flex-col items-center justify-center gap-4 px-6">
           <div className="text-3xl">⚠️</div>

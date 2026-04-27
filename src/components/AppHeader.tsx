@@ -4,9 +4,10 @@ interface AppHeaderProps {
   title: string
   subtitle?: string
   onBack?: () => void
+  onSignOut?: () => void
 }
 
-export default function AppHeader({ title, subtitle, onBack }: AppHeaderProps) {
+export default function AppHeader({ title, subtitle, onBack, onSignOut }: AppHeaderProps) {
   return (
     <div className="bg-gray-900 text-white px-4 py-3 flex items-center gap-3 min-h-[52px] flex-shrink-0">
       {onBack && (
@@ -25,6 +26,16 @@ export default function AppHeader({ title, subtitle, onBack }: AppHeaderProps) {
           <p className="text-xs text-gray-400 mt-0.5 truncate">{subtitle}</p>
         )}
       </div>
+      {onSignOut && (
+        <button
+          onClick={onSignOut}
+          className="text-xs text-gray-400 px-2 py-1 rounded-lg
+                     active:bg-gray-700 transition-colors flex-shrink-0"
+          aria-label="Sign out"
+        >
+          Sign Out
+        </button>
+      )}
     </div>
   )
 }
