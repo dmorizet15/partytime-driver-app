@@ -51,29 +51,34 @@ Follow the Darren AI Protocol in Notion before doing anything.
 
 ## Current Build State (as of April 27, 2026)
 
-### COMPLETE ✅
+### v1.1 COMPLETE ✅ — April 27, 2026
+All phases shipped to production.
+
 - Phase 0: Dashboard repo scaffolded and deployed
 - Phase 0.5: PTR Design System v1.0 defined in Notion
-- Phase 1 — Supabase Auth (both apps, production) ✅ April 27, 2026
+- Phase 1 — Supabase Auth (both apps, production) ✅
   - Migrations 001–005 applied to partytime-east
   - Driver app + dashboard auth live in production
   - Session persistence, refresh, and sign out all working
   - Critical fix: INITIAL_SESSION deadlock in supabase-js v2 — `getUserRole()` uses direct fetch() with access_token to bypass internal getSession() call
-- Phase 2 — Cross-Device OTW State Sync ✅ April 27, 2026
+- Phase 2 — Cross-Device OTW State Sync ✅
   - Migration 006: `stops` table gets `otw_status`, `otw_timestamp`, `otw_set_by`
   - `StopStateService.ts` — writes localStorage first (instant UI), then Supabase async; offline queue flushed on reconnect
   - `AppStateContext.loadDay` merges Supabase OTW > localStorage > TapGoods default
   - OTW state is now cross-device; localStorage remains fallback if Supabase unreachable
+- Phase 3 — Send ETA/OTW wired to `/api/send-eta` ✅
+  - `routeId` added to `SendEtaParams`
+  - OTW failures show inline red banner (replaced `alert()`)
+- Phase 4 — POD photo UI polish ✅
+  - Take Photo/Retry uses PTR primary blue (#0000FF)
+  - Uploaded/failed states use styled PTR cards
+  - Image preview: border-2, shadow, overflow-hidden
 - ETA/SMS Phase 1 live in production (April 21, 2026)
 - TapGoods Phase 1 integration live in production (April 20, 2026)
 
-### NEXT — Phase 3
-- [ ] Wire Send ETA button to `/api/send-eta` — endpoint is already live
-- [ ] Surface sent/failed/already-sent states on stop screen
-- [ ] Confirm correct params: stopId, routeId, phone
-
-### AFTER PHASE 3
-- Phase 4: POD photo UI polish only — no logic changes
+### NEXT — Dashboard Build
+Driver app v1.1 is complete. Next session begins the partytime-dashboard feature build.
+See `~/Projects/partytime-dashboard` and Notion for the dashboard build plan.
 
 ---
 
