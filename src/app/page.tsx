@@ -1,20 +1,40 @@
 'use client'
 
+import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import DayRouteSelectorScreen from '@/screens/DayRouteSelectorScreen'
 
+const pageStyle = {
+  minHeight: '100vh',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  backgroundColor: '#0F1117',
+} as const
+
 export default function HomePage() {
+  const router = useRouter()
   const { user, role, loading } = useAuth()
 
-  if (loading) return null
+  useEffect(() => {
+    if (!loading && !user) {
+      router.replace('/login')
+    }
+  }, [loading, user, router])
 
-  if (!user) return null
+  if (loading || !user) {
+    return (
+      <div style={pageStyle}>
+        <p style={{ color: '#6B7280', fontSize: 14 }}>Loading…</p>
+      </div>
+    )
+  }
 
   if (role !== 'driver' && role !== 'super_admin') {
     return (
-      <div className="min-h-screen flex items-center justify-center"
-           style={{ backgroundColor: '#0F1117' }}>
-        <p className="text-sm" style={{ color: '#EF4444' }}>Access denied.</p>
+      <div style={pageStyle}>
+        <p style={{ color: '#EF4444', fontSize: 14 }}>Access denied.</p>
       </div>
     )
   }
