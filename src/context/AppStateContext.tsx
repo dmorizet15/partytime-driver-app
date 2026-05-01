@@ -126,13 +126,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'LOAD_START' })
 
     try {
-      const res  = await fetch(`/api/tapgoods/routes?date=${date}`)
+      const res  = await fetch(`/api/routes?date=${date}`)
       const json = await res.json()
 
       if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`)
 
-      const tapStops = json.stops as Stop[]
-      const stopIds  = tapStops.map((s) => s.stop_id)
+      const supabaseStops = json.stops as Stop[]
+      const stopIds       = supabaseStops.map((s) => s.stop_id)
 
       // Flush any queued offline OTW writes now that we have connectivity
       if (user?.id) stopStateService.syncOnReconnect(user.id)
@@ -140,8 +140,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       // Read OTW status from Supabase for this batch of stops
       const supabaseOtw = await stopStateService.readOtwStatus(stopIds)
 
-      // Merge priority: Supabase OTW > localStorage > TapGoods default
-      const mergedStops = tapStops.map((s) => {
+      // Merge priority: Supabase OTW > localStorage > server default
+      const mergedStops = supabaseStops.map((s) => {
         if (supabaseOtw.has(s.stop_id)) {
           return { ...s, ...supabaseOtw.get(s.stop_id) }
         }

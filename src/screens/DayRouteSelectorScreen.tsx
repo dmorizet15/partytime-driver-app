@@ -185,6 +185,11 @@ export default function DayRouteSelectorScreen() {
                 <div className="text-[15px] font-bold text-gray-900 truncate">
                   {route.route_name}
                 </div>
+                {(route.truck_name || route.truck_2_name) && (
+                  <div className="text-[11px] text-gray-600 mt-0.5 truncate">
+                    {[route.truck_name, route.truck_2_name].filter(Boolean).join(' · ')}
+                  </div>
+                )}
                 <div className="text-xs text-gray-500 mt-0.5">
                   {route.stop_count} stop{route.stop_count !== 1 ? 's' : ''}
                 </div>

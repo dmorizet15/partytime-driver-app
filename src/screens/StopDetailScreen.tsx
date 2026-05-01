@@ -124,7 +124,8 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   const stopPosition = `Stop ${stop.stop_sequence} of ${allStops.length}`
   const isCompleted = stop.current_status === 'completed'
   const isOtwSent = stop.on_the_way_sent
-  const fullAddressLines = [stop.address_line_1, stop.address_line_2, `${stop.city}, ${stop.state} ${stop.postal_code}`].filter(Boolean)
+  const cityLine = [stop.city, [stop.state, stop.postal_code].filter(Boolean).join(' ')].filter(Boolean).join(', ')
+  const fullAddressLines = [stop.address_line_1, stop.address_line_2, cityLine].filter((line) => line && line.trim().length > 0)
 
   async function handleSendOtw() {
     if (!stop || otwLoading) return
@@ -188,7 +189,9 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     if (!stop) return { success: false, error: 'No stop data' }
     const destination = stop.latitude != null && stop.longitude != null
       ? `${stop.latitude},${stop.longitude}`
-      : `${stop.address_line_1}, ${stop.city}, ${stop.state} ${stop.postal_code}`
+      : [stop.address_line_1, stop.city, [stop.state, stop.postal_code].filter(Boolean).join(' ')]
+          .filter((p) => p && p.trim().length > 0)
+          .join(', ')
     const loc = await getDriverLocation()
     if (!loc) {
       logEvent('ETA_SMS_FAILED', routeId, stopId, stop.order_id, { error: 'no_gps' })
@@ -316,6 +319,11 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
           </div>
         )}
         <div className="px-4 pt-4 pb-4 border-b border-gray-100">
+          {stop.company_name && (
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">
+              {stop.company_name}
+            </div>
+          )}
           <h2 className="text-[21px] font-extrabold text-gray-900 mb-4 leading-snug">{stop.customer_name}</h2>
           <DetailRow icon="📍" label="Address">
             <address className="not-italic text-sm font-medium text-gray-800 leading-snug">
@@ -323,7 +331,22 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
             </address>
           </DetailRow>
           {stop.customer_phone && (<DetailRow icon="📞" label="Phone"><a href={`tel:${stop.customer_phone}`} className="text-sm font-medium text-gray-800 underline underline-offset-2">{stop.customer_phone}</a></DetailRow>)}
-          <DetailRow icon="#" label="Order Ref"><span className="text-sm font-medium text-gray-800 font-mono tracking-tight">{stop.order_id}</span></DetailRow>
+          {stop.order_id && (<DetailRow icon="#" label="Order Ref"><span className="text-sm font-medium text-gray-800 font-mono tracking-tight">{stop.order_id}</span></DetailRow>)}
+          {stop.items_text && (<DetailRow icon="📦" label="Items"><div className="text-sm font-medium text-gray-800 leading-snug">{stop.items_text}</div></DetailRow>)}
+          {stop.payment_state === 'cod' && (
+            <DetailRow icon="💵" label="Payment">
+              <div className="inline-block px-2 py-0.5 rounded bg-amber-100 border border-amber-300 text-amber-900 text-[11px] font-bold uppercase tracking-wide">
+                COD — Collect on Delivery
+              </div>
+            </DetailRow>
+          )}
+          {stop.payment_state === 'balance_due' && (
+            <DetailRow icon="💵" label="Payment">
+              <div className="inline-block px-2 py-0.5 rounded bg-red-100 border border-red-300 text-red-900 text-[11px] font-bold uppercase tracking-wide">
+                Balance Due
+              </div>
+            </DetailRow>
+          )}
           {stop.notes && (<DetailRow icon="📝" label="Notes"><div className="text-sm text-gray-600 italic leading-snug bg-gray-50 border border-dashed border-gray-300 rounded-lg p-2.5">{stop.notes}</div></DetailRow>)}
         </div>
         {isOtwSent && stop.on_the_way_sent_at && <OTWSentBanner sentAt={stop.on_the_way_sent_at} phone={stop.customer_phone} />}
@@ -351,10 +374,14 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
         </div>
         <div className="px-4 pt-2">
           <div className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">Tools</div>
-          <button onClick={handleOpenTapGoods} disabled={tapGoodsLoading} className="w-full flex items-center justify-center gap-2.5 min-h-[54px] rounded-xl text-[15px] font-bold mb-1 border-2 border-gray-300 bg-white text-gray-700 active:bg-gray-50 disabled:opacity-50 transition-colors">
-            <span className="text-lg" aria-hidden="true">📋</span>{tapGoodsLoading ? 'Opening…' : 'View Order (TapGoods)'}
-          </button>
-          <p className="text-[10px] text-gray-400 text-center mb-3.5">Opens pick list for order {stop.order_id}</p>
+          {stop.order_id && (
+            <>
+              <button onClick={handleOpenTapGoods} disabled={tapGoodsLoading} className="w-full flex items-center justify-center gap-2.5 min-h-[54px] rounded-xl text-[15px] font-bold mb-1 border-2 border-gray-300 bg-white text-gray-700 active:bg-gray-50 disabled:opacity-50 transition-colors">
+                <span className="text-lg" aria-hidden="true">📋</span>{tapGoodsLoading ? 'Opening…' : 'View Order (TapGoods)'}
+              </button>
+              <p className="text-[10px] text-gray-400 text-center mb-3.5">Opens pick list for order {stop.order_id}</p>
+            </>
+          )}
           <button onClick={handleOpenRfid} className="w-full flex items-center justify-center gap-2.5 min-h-[54px] rounded-xl text-[15px] font-bold mb-1 border-2 border-gray-300 bg-white text-gray-700 active:bg-gray-50 transition-colors">
             <span className="text-lg" aria-hidden="true">📡</span>Easy RFID Pro App
           </button>

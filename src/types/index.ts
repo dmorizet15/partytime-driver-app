@@ -1,6 +1,9 @@
 // ─── Stop status ─────────────────────────────────────────────────────────────
 export type StopStatus = 'pending' | 'on_the_way_sent' | 'completed'
 
+// Mirrors dashboard PaymentState (src/types/dispatch.ts).
+export type PaymentState = 'paid_in_full' | 'cod' | 'ar_customer' | 'balance_due'
+
 // ─── Route ────────────────────────────────────────────────────────────────────
 export interface Route {
   route_id: string
@@ -9,6 +12,8 @@ export interface Route {
   assigned_driver?: string
   stop_count: number
   route_status: 'active' | 'completed' | 'pending'
+  truck_name?: string
+  truck_2_name?: string
 }
 
 // ─── Stop ────────────────────────────────────────────────────────────────────
@@ -19,6 +24,7 @@ export interface Stop {
   order_id: string
   stop_type: 'delivery' | 'pickup'
   customer_name: string
+  company_name?: string
   destination_name?: string
   address_line_1: string
   address_line_2?: string
@@ -29,6 +35,8 @@ export interface Stop {
   longitude?: number
   customer_phone: string
   notes?: string
+  items_text?: string
+  payment_state?: PaymentState
   current_status: StopStatus
   on_the_way_sent: boolean
   on_the_way_sent_at?: string

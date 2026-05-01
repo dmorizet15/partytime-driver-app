@@ -47,11 +47,18 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
     router.push(`/route/${routeId}/stop/${stop.stop_id}`)
   }
 
+  const trucksLabel = [route.truck_name, route.truck_2_name].filter(Boolean).join(' · ')
+  const subtitleParts = [
+    formatDate(route.operating_date),
+    `${stops.length} stops`,
+    ...(trucksLabel ? [trucksLabel] : []),
+  ]
+
   return (
     <div className="screen">
       <AppHeader
         title={route.route_name}
-        subtitle={`${formatDate(route.operating_date)} · ${stops.length} stops`}
+        subtitle={subtitleParts.join(' · ')}
         onBack={() => router.push('/')}
       />
 
@@ -87,6 +94,11 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
 
               {/* Stop info */}
               <div className="flex-1 min-w-0">
+                {stop.company_name && (
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 truncate">
+                    {stop.company_name}
+                  </div>
+                )}
                 <div
                   className={`text-[14px] font-bold truncate ${
                     isCompleted ? 'text-gray-400 line-through' : 'text-gray-900'
@@ -95,8 +107,13 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
                   {stop.customer_name}
                 </div>
                 <div className="text-[11px] text-gray-500 mt-0.5 truncate">
-                  {stop.address_line_1}, {stop.city}
+                  {[stop.address_line_1, stop.city].filter(Boolean).join(', ')}
                 </div>
+                {stop.items_text && (
+                  <div className="text-[11px] text-gray-400 mt-0.5 truncate">
+                    {stop.items_text}
+                  </div>
+                )}
               </div>
 
               {/* Status badge + chevron */}
