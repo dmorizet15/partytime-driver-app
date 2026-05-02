@@ -19,7 +19,7 @@ Follow the Darren AI Protocol in Notion before doing anything.
 - **Type:** Next.js 14 PWA (Progressive Web App) — mobile-first, Android drivers
 - **GitHub:** `github.com/dmorizet15/partytime-driver-app` (private)
 - **Production URL:** Vercel (auto-deploys from `main`)
-- **Branch strategy:** Work on `dev`, merge to `main` to deploy
+- **Branch strategy:** Commit directly to `main` — Vercel auto-deploys on every push.
 
 ## Related Repo
 - **Dashboard:** `~/Projects/partytime-dashboard`
