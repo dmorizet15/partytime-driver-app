@@ -71,7 +71,8 @@ export async function GET(req: NextRequest) {
       .from('dispatch_stops')
       .select(`
         id, route_id, route_position,
-        customer_name, customer_phone, company_name,
+        customer_name, customer_phone, customer_cell,
+        company_name, client_company,
         address, address_lat, address_lng,
         items, notes, stop_type, payment_state,
         tapgoods_order_token

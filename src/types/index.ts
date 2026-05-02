@@ -24,7 +24,8 @@ export interface Stop {
   order_id: string
   stop_type: 'delivery' | 'pickup'
   customer_name: string
-  company_name?: string
+  company_name?: string      // TapGoods rental.name (the order/rental identifier)
+  client_company?: string    // primary contact's client.companies[0].name (the org)
   destination_name?: string
   address_line_1: string
   address_line_2?: string
@@ -33,7 +34,8 @@ export interface Stop {
   postal_code: string
   latitude?: number
   longitude?: number
-  customer_phone: string
+  customer_phone: string     // legacy: whatever phoneNumbers[0].cell returned (often landline)
+  customer_cell?: string     // explicit Mobile-typed phone — preferred for SMS
   notes?: string
   items_text?: string
   payment_state?: PaymentState

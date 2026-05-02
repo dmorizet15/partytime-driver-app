@@ -193,11 +193,11 @@ export default function DayRouteSelectorScreen() {
                 <div className="text-xs text-gray-500 mt-0.5">
                   {route.stop_count} stop{route.stop_count !== 1 ? 's' : ''}
                 </div>
-                <div className="text-[11px] text-gray-400 mt-0.5">
-                  {route.assigned_driver
-                    ? `Driver: ${route.assigned_driver}`
-                    : 'Unassigned'}
-                </div>
+                {route.assigned_driver && (
+                  <div className="text-[11px] text-gray-400 mt-0.5 truncate">
+                    Driver: {route.assigned_driver}
+                  </div>
+                )}
               </div>
 
               {/* Chevron */}

@@ -27,7 +27,9 @@ export interface SupabaseStopRow {
   route_position:        number | null
   customer_name:         string
   customer_phone:        string | null
+  customer_cell:         string | null
   company_name:          string | null
+  client_company:        string | null
   address:               string | null
   address_lat:           number | null
   address_lng:           number | null
@@ -154,7 +156,8 @@ export function transformSupabase({ routes: routeRows, assignments, stops: stopR
       order_id:       s.tapgoods_order_token ?? '',
       stop_type:      mapStopType(s.stop_type),
       customer_name:  s.customer_name,
-      company_name:   s.company_name ?? undefined,
+      company_name:   s.company_name   ?? undefined,
+      client_company: s.client_company ?? undefined,
       address_line_1: s.address ?? '',
       address_line_2: undefined,
       city:           '',
@@ -163,6 +166,7 @@ export function transformSupabase({ routes: routeRows, assignments, stops: stopR
       latitude:       s.address_lat  ?? undefined,
       longitude:      s.address_lng  ?? undefined,
       customer_phone: s.customer_phone ?? '',
+      customer_cell:  s.customer_cell  ?? undefined,
       notes:          s.notes ?? undefined,
       items_text:     formatItemsText(s.items),
       payment_state:  mapPaymentState(s.payment_state),

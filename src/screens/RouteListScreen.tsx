@@ -99,6 +99,11 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
                     {stop.company_name}
                   </div>
                 )}
+                {stop.client_company && (
+                  <div className="text-[11px] text-gray-600 truncate">
+                    {stop.client_company}
+                  </div>
+                )}
                 <div
                   className={`text-[14px] font-bold truncate ${
                     isCompleted ? 'text-gray-400 line-through' : 'text-gray-900'

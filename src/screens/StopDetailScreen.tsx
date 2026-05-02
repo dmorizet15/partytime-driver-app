@@ -197,7 +197,11 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
       logEvent('ETA_SMS_FAILED', routeId, stopId, stop.order_id, { error: 'no_gps' })
       return { success: false, error: 'Could not determine your location. Enable location services and try again.' }
     }
-    const result = await sendEtaSms({ stopId: stop.stop_id, routeId, stopType: stop.stop_type, customerPhone: stop.customer_phone, customerName: stop.customer_name, orderId: stop.order_id, driverLat: loc.lat, driverLng: loc.lng, destination })
+    // Prefer the explicit Mobile-typed cell number for SMS. Fall back to the
+    // legacy customer_phone field (which may be a landline) only if no cell
+    // is on file — preserves behavior on stops not yet re-synced.
+    const smsTarget = stop.customer_cell?.trim() || stop.customer_phone
+    const result = await sendEtaSms({ stopId: stop.stop_id, routeId, stopType: stop.stop_type, customerPhone: smsTarget, customerName: stop.customer_name, orderId: stop.order_id, driverLat: loc.lat, driverLng: loc.lng, destination })
     if (result.success) {
       logEvent('ETA_SMS_SENT', routeId, stopId, stop.order_id, { etaRange: result.etaRange })
       return { success: true, etaRange: result.etaRange }
@@ -320,8 +324,13 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
         )}
         <div className="px-4 pt-4 pb-4 border-b border-gray-100">
           {stop.company_name && (
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-0.5">
               {stop.company_name}
+            </div>
+          )}
+          {stop.client_company && (
+            <div className="text-[13px] font-medium text-gray-600 mb-1">
+              {stop.client_company}
             </div>
           )}
           <h2 className="text-[21px] font-extrabold text-gray-900 mb-4 leading-snug">{stop.customer_name}</h2>
@@ -330,7 +339,16 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
               {fullAddressLines.map((line, i) => (<span key={i}>{line}{i < fullAddressLines.length - 1 && <br />}</span>))}
             </address>
           </DetailRow>
-          {stop.customer_phone && (<DetailRow icon="📞" label="Phone"><a href={`tel:${stop.customer_phone}`} className="text-sm font-medium text-gray-800 underline underline-offset-2">{stop.customer_phone}</a></DetailRow>)}
+          {stop.customer_cell && (
+            <DetailRow icon="📱" label="Cell">
+              <a href={`tel:${stop.customer_cell}`} className="text-sm font-medium text-gray-800 underline underline-offset-2">{stop.customer_cell}</a>
+            </DetailRow>
+          )}
+          {stop.customer_phone && stop.customer_phone !== stop.customer_cell && (
+            <DetailRow icon="📞" label={stop.customer_cell ? 'Office' : 'Phone'}>
+              <a href={`tel:${stop.customer_phone}`} className="text-sm font-medium text-gray-800 underline underline-offset-2">{stop.customer_phone}</a>
+            </DetailRow>
+          )}
           {stop.order_id && (<DetailRow icon="#" label="Order Ref"><span className="text-sm font-medium text-gray-800 font-mono tracking-tight">{stop.order_id}</span></DetailRow>)}
           {stop.items_text && (<DetailRow icon="📦" label="Items"><div className="text-sm font-medium text-gray-800 leading-snug">{stop.items_text}</div></DetailRow>)}
           {stop.payment_state === 'cod' && (
