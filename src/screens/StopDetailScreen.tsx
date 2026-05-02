@@ -140,7 +140,7 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
       markOtw(stop.stop_id, sent_at)
       setEtaStatus('sent')
       setEtaRange(result.etaRange ?? null)
-      logEvent('ON_THE_WAY_SENT', routeId, stopId, stop.order_id, { phone: stop.customer_phone, sent_at })
+      logEvent('ON_THE_WAY_SENT', routeId, stopId, stop.order_id, { phone: stop.customer_cell?.trim() || stop.customer_phone, sent_at })
     } else {
       etaCooldownRef.current = 0
       logEvent('ON_THE_WAY_FAILED', routeId, stopId, stop.order_id, { error: result.error })
@@ -367,7 +367,7 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
           )}
           {stop.notes && (<DetailRow icon="📝" label="Notes"><div className="text-sm text-gray-600 italic leading-snug bg-gray-50 border border-dashed border-gray-300 rounded-lg p-2.5">{stop.notes}</div></DetailRow>)}
         </div>
-        {isOtwSent && stop.on_the_way_sent_at && <OTWSentBanner sentAt={stop.on_the_way_sent_at} phone={stop.customer_phone} />}
+        {isOtwSent && stop.on_the_way_sent_at && <OTWSentBanner sentAt={stop.on_the_way_sent_at} phone={stop.customer_cell?.trim() || stop.customer_phone} />}
         <div className="px-4 pt-4">
           <div className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">Actions</div>
           <button onClick={handleSendOtw} disabled={otwLoading || isCompleted} className={`w-full flex items-center justify-center gap-2.5 min-h-[54px] rounded-xl text-[15px] font-bold mb-1 border-2 transition-colors disabled:opacity-50 ${isOtwSent ? 'border-gray-300 bg-gray-100 text-gray-500 active:bg-gray-200' : 'border-gray-800 bg-white text-gray-900 active:bg-gray-50'}`}>
