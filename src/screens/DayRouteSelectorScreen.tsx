@@ -329,13 +329,13 @@ export default function DayRouteSelectorScreen() {
                 fontSize: 11, fontWeight: 800, color: C.coral,
                 letterSpacing: '0.18em', textTransform: 'uppercase',
               }}>
-                Couldn't load
+                Couldn&apos;t load
               </div>
               <div style={{
                 marginTop: 6, fontSize: 18, fontWeight: 900, color: C.ink,
                 fontFamily: FONT_DISPLAY, lineHeight: 1.15, letterSpacing: '-0.02em',
               }}>
-                We couldn't reach the server.
+                We couldn&apos;t reach the server.
               </div>
               <div style={{
                 marginTop: 8, fontSize: 12, color: C.muted,
