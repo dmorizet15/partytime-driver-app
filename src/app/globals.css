@@ -2,6 +2,39 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── PTR design tokens (Direction 03 / Editorial) ─────────────────────── */
+/* Mirrors the handoff tokens.css — the canonical source for brand colors. */
+:root {
+  /* Brand */
+  --pt-blue:        #0000FF;
+  --pt-blue-dark:   #0000C8;
+  --pt-blue-deep:   #00006B;
+  --pt-blue-soft:   #E6E6FF;
+  --pt-blue-glow:   #5C5CFF;
+
+  --pt-gold:        #FFB800;
+  --pt-gold-soft:   #FFEFC2;
+  --pt-gold-deep:   #B07F00;
+
+  --pt-coral:       #FF5A3C;
+  --pt-green:       #1FBF6B;
+
+  /* Neutrals */
+  --pt-cream:       #FFF9EE;
+  --pt-paper:       #FFFFFF;
+  --pt-ink:         #0A0B14;
+  --pt-ink-2:       #11132A;
+  --pt-muted:       #6B7488;
+
+  --pt-slate-700:   #2C3448;
+  --pt-slate-500:   #5A6478;
+  --pt-slate-400:   #8893A8;
+  --pt-slate-300:   #B6BECC;
+  --pt-slate-200:   #DDE2EC;
+  --pt-slate-100:   #ECEFF4;
+  --pt-slate-50:    #F6F8FB;
+}
+
 /* ── Mobile-first resets ─────────────────────────────── */
 * {
   -webkit-tap-highlight-color: transparent;
