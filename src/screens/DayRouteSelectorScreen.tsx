@@ -17,7 +17,6 @@ const C = {
   muted:    '#6B7488',
   paper:    '#FFFFFF',
   coral:    '#FF5A3C',
-  green:    '#1FBF6B',
 } as const
 
 const FONT_DISPLAY = "var(--font-archivo), 'Archivo', 'Inter', system-ui, -apple-system, sans-serif"
@@ -85,7 +84,7 @@ function firstNameOf(displayName: string | null | undefined): string | null {
 export default function DayRouteSelectorScreen() {
   const router = useRouter()
   const { profile } = useAuth()
-  const { getRoutesForDate, stops, isLoading, error, loadDay } = useAppState()
+  const { getRoutesForDate, isLoading, error, loadDay } = useAppState()
 
   const [selectedDate, setSelectedDate] = useState<string>(todayStr())
 
@@ -96,22 +95,6 @@ export default function DayRouteSelectorScreen() {
 
   const isToday = selectedDate === todayStr()
   const routes  = getRoutesForDate(selectedDate)
-
-  // COD aggregation across already-loaded stops (no new backend calls)
-  const codStopsByRouteId = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const s of stops) {
-      if (s.payment_state === 'cod') {
-        map.set(s.route_id, (map.get(s.route_id) || 0) + 1)
-      }
-    }
-    return map
-  }, [stops])
-
-  const totalCodCount = useMemo(
-    () => Array.from(codStopsByRouteId.values()).reduce((a, b) => a + b, 0),
-    [codStopsByRouteId]
-  )
 
   const totalStopCount = useMemo(
     () => routes.reduce((a, r) => a + r.stop_count, 0),
@@ -292,52 +275,6 @@ export default function DayRouteSelectorScreen() {
           </div>
         )}
 
-        {/* COD alert — real data from already-loaded stops */}
-        {!isLoading && !error && totalCodCount > 0 && (
-          <div style={{ padding: '14px 18px 0' }}>
-            <div style={{
-              background: '#FFF6DB',
-              border: `1.5px solid ${C.ink}`,
-              borderRadius: 18,
-              padding: '12px 14px',
-              display: 'flex', alignItems: 'center', gap: 12,
-              boxShadow: `4px 4px 0 ${C.gold}`,
-            }}>
-              <div style={{
-                width: 42, height: 42, borderRadius: '50%',
-                background: C.gold, border: `1.5px solid ${C.ink}`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                flexShrink: 0,
-              }} aria-hidden="true">
-                <svg width={20} height={20} viewBox="0 0 24 24" fill="none"
-                     stroke={C.ink} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="2" y="6" width="20" height="12" rx="2"/>
-                  <circle cx="12" cy="12" r="3"/>
-                </svg>
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{
-                  fontSize: 10.5, fontWeight: 900, letterSpacing: '0.18em',
-                  textTransform: 'uppercase', color: C.goldDeep,
-                }}>
-                  Cash on delivery
-                </div>
-                <div style={{
-                  marginTop: 2, fontSize: 15, fontWeight: 800, color: C.ink,
-                  lineHeight: 1.25, fontFamily: FONT_DISPLAY,
-                }}>
-                  {totalCodCount === 1
-                    ? '1 stop requires cash collection'
-                    : `${totalCodCount} stops require cash collection`}
-                </div>
-                <div style={{ marginTop: 2, fontSize: 12, color: C.muted }}>
-                  Marked routes show the COD highlight below.
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Section eyebrow */}
         <div style={{
           padding: '24px 22px 8px',
@@ -427,8 +364,6 @@ export default function DayRouteSelectorScreen() {
               }}
             />
             {routes.map((route, i) => {
-              const cod      = codStopsByRouteId.get(route.route_id) ?? 0
-              const featured = cod > 0
               const meta: string[] = []
               if (route.truck_name)     meta.push(route.truck_name)
               if (route.truck_2_name)   meta.push(route.truck_2_name)
@@ -450,7 +385,7 @@ export default function DayRouteSelectorScreen() {
                   <div style={{
                     width: 28, height: 28, borderRadius: '50%',
                     flexShrink: 0,
-                    background: featured ? C.gold : '#fff',
+                    background: '#fff',
                     border: `2px solid ${C.ink}`, color: C.ink,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: 12, fontWeight: 900,
@@ -463,11 +398,7 @@ export default function DayRouteSelectorScreen() {
                   {/* Right side */}
                   <div style={{
                     flex: 1, minWidth: 0,
-                    background: featured ? '#fff' : 'transparent',
-                    border: featured ? `1.5px solid ${C.ink}` : 'none',
-                    borderRadius: featured ? 16 : 0,
-                    padding: featured ? '12px 14px' : '0 0 6px',
-                    boxShadow: featured ? `4px 4px 0 ${C.ink}` : 'none',
+                    padding: '0 0 6px',
                     position: 'relative', zIndex: 0,
                   }}>
                     <div style={{
@@ -495,24 +426,6 @@ export default function DayRouteSelectorScreen() {
                         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                       }}>
                         {meta.join(' · ')}
-                      </div>
-                    )}
-                    {featured && (
-                      <div style={{ marginTop: 10, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        <span style={{
-                          display: 'inline-flex', alignItems: 'center', gap: 5,
-                          background: C.green, color: '#fff',
-                          padding: '4px 10px', borderRadius: 999,
-                          fontSize: 11, fontWeight: 800,
-                          whiteSpace: 'nowrap',
-                        }}>
-                          <svg width={12} height={12} viewBox="0 0 24 24" fill="none"
-                               stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                            <rect x="2" y="6" width="20" height="12" rx="2"/>
-                            <circle cx="12" cy="12" r="3"/>
-                          </svg>
-                          {cod === 1 ? '1 COD stop' : `${cod} COD stops`}
-                        </span>
                       </div>
                     )}
                   </div>
