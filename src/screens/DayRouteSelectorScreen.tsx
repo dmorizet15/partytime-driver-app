@@ -151,7 +151,12 @@ export default function DayRouteSelectorScreen() {
         <svg
           aria-hidden="true"
           width={180} height={180} viewBox="0 0 100 100"
-          style={{ position: 'absolute', right: -20, top: -10, opacity: 0.15, pointerEvents: 'none' }}
+          style={{
+            position: 'absolute', right: -20, top: -10,
+            opacity: 0.25,
+            transform: 'rotate(25deg)', transformOrigin: 'center',
+            pointerEvents: 'none',
+          }}
         >
           <path d="M50 8l8 28 28 8-28 8-8 28-8-28-28-8 28-8z" fill={C.gold}/>
         </svg>
