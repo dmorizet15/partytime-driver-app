@@ -48,27 +48,21 @@ function ArrowIcon({ size = 18, color = C.ink }: { size?: number; color?: string
   )
 }
 
-// ─── Typographic brand mark — small white rounded square with "PT★" ───────────
+// ─── PTR brand mark — small white rounded square with PTR logo image ─────────
 function BrandMark() {
   return (
     <div style={{
       width: 36, height: 36, borderRadius: 10,
       background: C.paper,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
+      overflow: 'hidden',
       flexShrink: 0,
-      fontFamily: FONT_DISPLAY,
-    }} aria-hidden="true">
-      <span style={{
-        display: 'inline-flex', alignItems: 'baseline',
-        fontWeight: 900, fontSize: 16, letterSpacing: '-0.04em',
-        lineHeight: 1, color: C.blue,
-      }}>
-        PT
-        <sup style={{
-          color: C.gold, fontSize: 9, marginLeft: 1,
-          lineHeight: 1, transform: 'translateY(-2px)',
-        }}>★</sup>
-      </span>
+    }}>
+      <img
+        src="/ptr-mark.png"
+        alt="PartyTime Rentals"
+        style={{ width: '74%', height: '74%', objectFit: 'contain' }}
+      />
     </div>
   )
 }
