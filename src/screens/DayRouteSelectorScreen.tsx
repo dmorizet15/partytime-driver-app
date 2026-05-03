@@ -156,22 +156,37 @@ export default function DayRouteSelectorScreen() {
           }}>
             {formatEyebrowDate(selectedDate)}
           </div>
-          <button
-            onClick={handleSignOut}
-            aria-label="Sign out"
-            style={{
-              background: 'rgba(255,255,255,0.10)',
-              color: '#fff',
-              border: '1px solid rgba(255,255,255,0.18)',
-              padding: '6px 12px',
-              borderRadius: 999,
-              fontSize: 10.5, fontWeight: 800, letterSpacing: '0.12em',
-              textTransform: 'uppercase', cursor: 'pointer',
-              fontFamily: 'inherit',
-            }}
-          >
-            Sign out
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button
+              onClick={handleSignOut}
+              aria-label="Sign out"
+              style={{
+                background: 'rgba(255,255,255,0.10)',
+                color: '#fff',
+                border: '1px solid rgba(255,255,255,0.18)',
+                padding: '6px 12px',
+                borderRadius: 999,
+                fontSize: 10.5, fontWeight: 800, letterSpacing: '0.12em',
+                textTransform: 'uppercase', cursor: 'pointer',
+                fontFamily: 'inherit',
+              }}
+            >
+              Sign out
+            </button>
+            <div style={{
+              width: 32, height: 32, borderRadius: 9,
+              background: C.paper,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              overflow: 'hidden',
+              flexShrink: 0,
+            }}>
+              <img
+                src="/ptr-mark.png"
+                alt="PartyTime Rentals"
+                style={{ width: '74%', height: '74%', objectFit: 'contain' }}
+              />
+            </div>
+          </div>
         </div>
 
         {/* Headline */}
