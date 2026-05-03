@@ -20,8 +20,8 @@ const C = {
   green:    '#1FBF6B',
 } as const
 
-const FONT_DISPLAY = "'Archivo', 'Inter', system-ui, -apple-system, sans-serif"
-const FONT_BODY    = "'Inter', system-ui, -apple-system, sans-serif"
+const FONT_DISPLAY = "var(--font-archivo), 'Archivo', 'Inter', system-ui, -apple-system, sans-serif"
+const FONT_BODY    = "var(--font-inter), 'Inter', system-ui, -apple-system, sans-serif"
 
 // ─── Phase-2 reservation flags ────────────────────────────────────────────────
 // Slots are kept in JSX so flipping these to `true` is a one-line change once
