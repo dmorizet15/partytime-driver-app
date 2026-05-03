@@ -3,8 +3,6 @@
 import { useState, useEffect, useRef, ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAppState } from '@/context/AppStateContext'
-import AppHeader from '@/components/AppHeader'
-import OTWSentBanner from '@/components/OTWSentBanner'
 import ConfirmationModal from '@/components/ConfirmationModal'
 import { navigationService } from '@/services/NavigationService'
 import { externalAppService } from '@/services/ExternalAppService'
@@ -12,29 +10,232 @@ import { photoUploadService } from '@/services/PhotoUploadService'
 import { logEvent } from '@/services/EventLogger'
 import { sendEtaSms, getStopSmsStatus, getDriverLocation } from '@/services/EtaSmsService'
 import type { StopSmsStatus } from '@/services/EtaSmsService'
+import type { PaymentState } from '@/types'
 
 interface StopDetailScreenProps { routeId: string; stopId: string }
 type PodStatus = 'idle' | 'uploading' | 'uploaded' | 'failed'
 interface PodState { status: PodStatus; url?: string; error?: string }
 type EtaStatus = 'idle' | 'sending' | 'sent' | 'error'
 
-function DetailRow({ icon, label, children }: { icon: string; label: string; children: ReactNode }) {
+// ─── Direction 03 (Editorial) tokens ──────────────────────────────────────────
+const C = {
+  blue:     '#0000FF',
+  ink:      '#0A0B14',
+  cream:    '#FFF9EE',
+  gold:     '#FFB800',
+  goldDeep: '#B07F00',
+  goldSoft: '#FFEFC2',
+  muted:    '#6B7488',
+  paper:    '#FFFFFF',
+  off:      '#F4F6FA',
+  coral:    '#FF5A3C',
+  green:    '#1FBF6B',
+} as const
+
+const FONT_DISPLAY = "var(--font-archivo), 'Archivo', 'Inter', system-ui, -apple-system, sans-serif"
+const FONT_BODY    = "var(--font-inter), 'Inter', system-ui, -apple-system, sans-serif"
+const FONT_MONO    = "ui-monospace, SFMono-Regular, Menlo, monospace"
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function formatTime(isoString: string): string {
+  try {
+    return new Date(isoString).toLocaleTimeString('en-US', {
+      hour: 'numeric', minute: '2-digit', hour12: true,
+    })
+  } catch {
+    return '—'
+  }
+}
+
+function formatSentAt(isoStr: string): string {
+  const d = new Date(isoStr)
+  let h = d.getHours()
+  const mins = d.getMinutes()
+  const ampm = h >= 12 ? 'p' : 'a'
+  h = h % 12 || 12
+  return `${h}:${String(mins).padStart(2, '0')}${ampm}`
+}
+
+function paymentLabel(state: PaymentState | undefined): string | null {
+  if (state === 'cod')         return 'COD'
+  if (state === 'balance_due') return 'BAL DUE'
+  return null
+}
+
+// ─── Inline icons ─────────────────────────────────────────────────────────────
+type IconProps = { size?: number; color?: string }
+
+function BackIcon({ size = 18, color = '#fff' }: IconProps) {
   return (
-    <div className="flex gap-2.5 items-start mb-3.5">
-      <span className="text-sm w-5 text-gray-400 flex-shrink-0 mt-0.5" aria-hidden="true">{icon}</span>
-      <div className="flex-1 min-w-0">
-        <div className="text-[9px] font-bold uppercase tracking-wider text-gray-400 mb-0.5">{label}</div>
-        {children}
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+         strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M19 12H5M12 19l-7-7 7-7"/>
+    </svg>
+  )
+}
+function CheckIcon({ size = 14, color = C.gold }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+         strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 12l5 5L20 6"/>
+    </svg>
+  )
+}
+function CashIcon({ size = 14, color = C.ink }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+         strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="2" y="6" width="20" height="12" rx="2"/>
+      <circle cx="12" cy="12" r="3"/>
+    </svg>
+  )
+}
+function PinIcon({ size = 14, color = C.muted }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+         strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 22s7-7 7-12a7 7 0 1 0-14 0c0 5 7 12 7 12z"/>
+      <circle cx="12" cy="10" r="2.5"/>
+    </svg>
+  )
+}
+function PhoneIcon({ size = 14, color = C.muted }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+         strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3.1-8.7A2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8.1 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.8 2.1z"/>
+    </svg>
+  )
+}
+function DocIcon({ size = 14, color = C.muted }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+         strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <polyline points="14 2 14 8 20 8"/>
+      <line x1="8" y1="13" x2="16" y2="13"/>
+      <line x1="8" y1="17" x2="13" y2="17"/>
+    </svg>
+  )
+}
+function BoxIcon({ size = 14, color = C.muted }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+         strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+      <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+      <line x1="12" y1="22.08" x2="12" y2="12"/>
+    </svg>
+  )
+}
+function NoteIcon({ size = 14, color = C.muted }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+         strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <polyline points="14 2 14 8 20 8"/>
+    </svg>
+  )
+}
+function NavigateIcon({ size = 18, color = '#fff' }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+         strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polygon points="3 11 22 2 13 21 11 13 3 11"/>
+    </svg>
+  )
+}
+function ChatIcon({ size = 18, color = C.ink }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+         strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+    </svg>
+  )
+}
+function ClockIcon({ size = 18, color = C.ink }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+         strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9"/>
+      <path d="M12 7v5l3 2"/>
+    </svg>
+  )
+}
+function CameraIcon({ size = 18, color = C.ink }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+         strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 8a2 2 0 0 1 2-2h2.5l1.5-2h6l1.5 2H19a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+      <circle cx="12" cy="13" r="4"/>
+    </svg>
+  )
+}
+function ArrowIcon({ size = 18, color = C.ink }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+         strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M5 12h14M13 5l7 7-7 7"/>
+    </svg>
+  )
+}
+function BanIcon({ size = 14, color = C.muted }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+         strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="10"/>
+      <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+    </svg>
+  )
+}
+
+// ─── Brand mark — small white rounded square with PTR logo ───────────────────
+function BrandMark() {
+  return (
+    <div style={{
+      width: 32, height: 32, borderRadius: 9,
+      background: C.paper,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      overflow: 'hidden', flexShrink: 0,
+    }}>
+      <img
+        src="/ptr-mark.png"
+        alt="PartyTime Rentals"
+        style={{ width: '74%', height: '74%', objectFit: 'contain' }}
+      />
+    </div>
+  )
+}
+
+// ─── Detail row inside the customer/order card ────────────────────────────────
+function DetailRow({
+  icon, label, children,
+}: { icon: ReactNode; label: string; children: ReactNode }) {
+  return (
+    <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: 14 }}>
+      <div style={{
+        width: 22, height: 22, marginTop: 2, flexShrink: 0,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }} aria-hidden="true">
+        {icon}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          fontSize: 10, fontWeight: 800, color: C.muted,
+          letterSpacing: '0.16em', textTransform: 'uppercase',
+          marginBottom: 2,
+        }}>
+          {label}
+        </div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: C.ink, lineHeight: 1.35 }}>
+          {children}
+        </div>
       </div>
     </div>
   )
 }
 
-function formatTime(isoString: string): string {
-  try { return new Date(isoString).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) }
-  catch { return '—' }
-}
-
+// ─── Screen ───────────────────────────────────────────────────────────────────
 export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenProps) {
   const router = useRouter()
   const { getRoute, getStop, getStopsForRoute, markOtw, markComplete } = useAppState()
@@ -48,7 +249,6 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   const [showCompleteModal, setShowCompleteModal] = useState(false)
   const [completeLoading, setCompleteLoading] = useState(false)
   const [tapGoodsLoading, setTapGoodsLoading] = useState(false)
-  const [rfidMessage, setRfidMessage] = useState<string | null>(null)
   const [navMessage, setNavMessage] = useState<string | null>(null)
   const [pod, setPod] = useState<PodState>({ status: 'idle' })
   const photoInputRef = useRef<HTMLInputElement>(null)
@@ -64,12 +264,6 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     if (stop) logEvent('STOP_VIEWED', routeId, stopId, stop.order_id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stopId])
-
-  useEffect(() => {
-    if (!rfidMessage) return
-    const t = setTimeout(() => setRfidMessage(null), 5000)
-    return () => clearTimeout(t)
-  }, [rfidMessage])
 
   useEffect(() => {
     if (!navMessage) return
@@ -110,22 +304,66 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     return () => { if (pollIntervalRef.current) { clearInterval(pollIntervalRef.current); pollIntervalRef.current = null } }
   }, [etaStatus, stopId])
 
+  // ── Stop not found ──────────────────────────────────────────────────────────
   if (!stop || !route) {
     return (
-      <div className="screen">
-        <AppHeader title="Stop not found" onBack={() => router.push(`/route/${routeId}`)} />
-        <div className="flex-1 flex items-center justify-center text-gray-400 text-sm p-8 text-center">This stop could not be found.</div>
+      <div className="screen" style={{ background: C.cream, fontFamily: FONT_BODY, color: C.ink }}>
+        <div style={{
+          padding: '48px 22px', flex: 1,
+          display: 'flex', flexDirection: 'column', justifyContent: 'center',
+        }}>
+          <div style={{
+            background: C.paper,
+            border: `1.5px solid ${C.ink}`,
+            borderRadius: 18,
+            padding: 22,
+            boxShadow: `5px 5px 0 ${C.coral}`,
+          }}>
+            <div style={{
+              fontSize: 11, fontWeight: 800, color: C.coral,
+              letterSpacing: '0.18em', textTransform: 'uppercase',
+            }}>
+              Stop not found
+            </div>
+            <div style={{
+              marginTop: 6, fontSize: 18, fontWeight: 900, color: C.ink,
+              fontFamily: FONT_DISPLAY, lineHeight: 1.15, letterSpacing: '-0.02em',
+            }}>
+              We couldn&apos;t find this stop.
+            </div>
+            <div style={{ marginTop: 6, fontSize: 13, color: C.muted, lineHeight: 1.4 }}>
+              Go back to the route list and try again.
+            </div>
+            <button
+              onClick={() => router.push(`/route/${routeId}`)}
+              style={{
+                marginTop: 14,
+                background: C.ink, color: '#fff',
+                padding: '10px 18px', borderRadius: 999,
+                border: 0, cursor: 'pointer',
+                fontSize: 13, fontWeight: 800, fontFamily: 'inherit',
+                letterSpacing: '0.02em',
+              }}
+            >
+              Back to route
+            </button>
+          </div>
+        </div>
       </div>
     )
   }
 
   const stopIndex = allStops.findIndex((s) => s.stop_id === stopId)
   const nextStop = allStops[stopIndex + 1] ?? null
-  const stopPosition = `Stop ${stop.stop_sequence} of ${allStops.length}`
   const isCompleted = stop.current_status === 'completed'
   const isOtwSent = stop.on_the_way_sent
   const cityLine = [stop.city, [stop.state, stop.postal_code].filter(Boolean).join(' ')].filter(Boolean).join(', ')
-  const fullAddressLines = [stop.address_line_1, stop.address_line_2, cityLine].filter((line) => line && line.trim().length > 0)
+  const fullAddressLines = [stop.address_line_1, stop.address_line_2, cityLine]
+    .filter((line) => line && line.trim().length > 0)
+  const heroAddress = [stop.address_line_1, stop.city, [stop.state, stop.postal_code].filter(Boolean).join(' ')]
+    .filter((p) => p && p.trim().length > 0).join(', ')
+  const payLabel = paymentLabel(stop.payment_state)
+  const otwSentTime = stop.on_the_way_sent_at ? formatSentAt(stop.on_the_way_sent_at) : null
 
   async function handleSendOtw() {
     if (!stop || otwLoading) return
@@ -175,14 +413,6 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     const result = externalAppService.openTapGoodsOrder(stop.order_id)
     logEvent('TAPGOODS_ORDER_OPENED', routeId, stopId, stop.order_id, { url: result.url, success: result.success })
     setTimeout(() => setTapGoodsLoading(false), 600)
-  }
-
-  function handleOpenRfid() {
-    if (!stop) return
-    logEvent('RFID_APP_OPENED_ATTEMPT', routeId, stopId, stop.order_id)
-    const result = externalAppService.launchRfidApp()
-    if (result.success) { logEvent('RFID_APP_OPEN_SUCCESS', routeId, stopId, stop.order_id, { url: result.url }); setRfidMessage(`[DEBUG] Intent dispatched: ${result.url ?? 'unknown'}`) }
-    else { logEvent('RFID_APP_OPEN_FAILED', routeId, stopId, stop.order_id, { attempted: result.attempted, message: result.message }); if (result.message) setRfidMessage(result.message) }
   }
 
   async function runEtaSend(): Promise<{ success: boolean; etaRange?: string; error?: string }> {
@@ -266,205 +496,777 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     } catch (err) { const msg = String(err); setPod({ status: 'failed', error: msg }); logEvent('POD_PHOTO_FAILED', routeId, stopId, stop.order_id, { error: msg }) }
   }
 
+  // ── ETA reply badge — 5 states, restyled editorially ────────────────────────
   function renderEtaReplyBadge() {
     if (etaStatus !== 'sent' || !smsReply) return null
     const { sms_status, customer_ready, customer_instructions, awaiting_instructions } = smsReply
+
     if (customer_ready || sms_status === 'customer_ready') {
       return (
-        <div className="mt-2.5 flex items-start gap-2 px-3 py-2.5 rounded-xl bg-green-50 border border-green-200">
-          <span className="text-base" aria-hidden="true">✅</span>
-          <div>
-            <div className="text-[11px] font-bold text-green-800 uppercase tracking-wide">Customer Ready</div>
-            <div className="text-xs text-green-700 mt-0.5">{smsReply.customer_name ?? stop?.customer_name} confirmed ready for {stop?.stop_type === 'pickup' ? 'pickup' : 'delivery'}.</div>
+        <div style={{
+          marginTop: 12, background: C.ink, color: '#fff',
+          borderRadius: 16, padding: '14px 16px',
+          display: 'flex', alignItems: 'center', gap: 12,
+        }}>
+          <div style={{
+            width: 32, height: 32, borderRadius: '50%',
+            background: 'rgba(255,184,0,0.15)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          }}>
+            <CheckIcon size={16} color={C.gold}/>
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{
+              fontSize: 10.5, fontWeight: 900, letterSpacing: '0.16em',
+              color: C.gold, textTransform: 'uppercase',
+            }}>
+              Customer Ready
+            </div>
+            <div style={{ marginTop: 2, fontSize: 13.5, lineHeight: 1.35, color: '#fff' }}>
+              {smsReply.customer_name ?? stop?.customer_name} confirmed ready for {stop?.stop_type === 'pickup' ? 'pickup' : 'delivery'}.
+            </div>
           </div>
         </div>
       )
     }
     if (customer_instructions || sms_status === 'instructions_received') {
       return (
-        <div className="mt-2.5 px-3 py-2.5 rounded-xl bg-blue-50 border border-blue-200">
-          <div className="flex items-center gap-2 mb-1"><span className="text-base" aria-hidden="true">📩</span><div className="text-[11px] font-bold text-blue-800 uppercase tracking-wide">Delivery Instructions</div></div>
-          <div className="text-sm font-semibold text-blue-900 leading-snug">&ldquo;{customer_instructions}&rdquo;</div>
+        <div style={{
+          marginTop: 12, background: C.paper,
+          border: `1.5px solid ${C.ink}`,
+          borderLeft: `5px solid ${C.gold}`,
+          borderRadius: 16, padding: '12px 14px',
+        }}>
+          <div style={{
+            fontSize: 10.5, fontWeight: 900, letterSpacing: '0.16em',
+            color: C.goldDeep, textTransform: 'uppercase',
+          }}>
+            Delivery Instructions
+          </div>
+          <div style={{
+            marginTop: 6, fontSize: 14.5, fontWeight: 700, color: C.ink,
+            lineHeight: 1.35, fontFamily: FONT_DISPLAY, letterSpacing: '-0.005em',
+          }}>
+            &ldquo;{customer_instructions}&rdquo;
+          </div>
         </div>
       )
     }
     if (awaiting_instructions || sms_status === 'awaiting_instructions') {
       return (
-        <div className="mt-2.5 flex items-start gap-2 px-3 py-2.5 rounded-xl bg-yellow-50 border border-yellow-200">
-          <span className="text-base" aria-hidden="true">⚠️</span>
-          <div><div className="text-[11px] font-bold text-yellow-800 uppercase tracking-wide">Customer Not There</div><div className="text-xs text-yellow-700 mt-0.5">Waiting for delivery instructions…</div></div>
+        <div style={{
+          marginTop: 12, background: C.paper,
+          border: `1.5px solid ${C.ink}`,
+          borderRadius: 16, padding: '12px 14px',
+          boxShadow: `4px 4px 0 ${C.coral}`,
+          display: 'flex', alignItems: 'flex-start', gap: 12,
+        }}>
+          <div style={{
+            width: 32, height: 32, borderRadius: '50%',
+            background: 'rgba(255,90,60,0.12)',
+            border: `1.5px solid ${C.coral}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          }}>
+            <span style={{ color: C.coral, fontWeight: 900, fontSize: 16, lineHeight: 1 }}>!</span>
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{
+              fontSize: 10.5, fontWeight: 900, letterSpacing: '0.16em',
+              color: C.coral, textTransform: 'uppercase',
+            }}>
+              Customer Not There
+            </div>
+            <div style={{ marginTop: 2, fontSize: 13, color: C.ink, lineHeight: 1.4 }}>
+              Waiting for delivery instructions…
+            </div>
+          </div>
         </div>
       )
     }
     if (sms_status === 'opted_out') {
       return (
-        <div className="mt-2.5 flex items-start gap-2 px-3 py-2.5 rounded-xl bg-gray-100 border border-gray-300">
-          <span className="text-base" aria-hidden="true">🚫</span>
-          <div><div className="text-[11px] font-bold text-gray-600 uppercase tracking-wide">Opted Out of SMS</div><div className="text-xs text-gray-500 mt-0.5">Customer has opted out of text messages.</div></div>
+        <div style={{
+          marginTop: 12, background: C.off,
+          borderRadius: 16, padding: '12px 14px',
+          display: 'flex', alignItems: 'center', gap: 12,
+        }}>
+          <div style={{
+            width: 32, height: 32, borderRadius: '50%',
+            background: C.paper,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          }}>
+            <BanIcon size={16} color={C.muted}/>
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{
+              fontSize: 10.5, fontWeight: 900, letterSpacing: '0.16em',
+              color: C.muted, textTransform: 'uppercase',
+            }}>
+              Opted Out of SMS
+            </div>
+            <div style={{ marginTop: 2, fontSize: 13, color: C.muted, lineHeight: 1.4 }}>
+              Customer has opted out of text messages.
+            </div>
+          </div>
         </div>
       )
     }
     return (
-      <div className="mt-2.5 flex items-center gap-2 px-3 py-2 rounded-xl bg-gray-50 border border-gray-200">
-        <span className="text-sm text-gray-400" aria-hidden="true">💬</span>
-        <span className="text-[11px] text-gray-500">Awaiting customer reply…</span>
+      <div style={{
+        marginTop: 12, background: C.paper,
+        border: `1.5px solid ${C.ink}`,
+        borderRadius: 16, padding: '12px 14px',
+        display: 'flex', alignItems: 'center', gap: 12,
+      }}>
+        <div style={{
+          width: 32, height: 32, borderRadius: '50%',
+          background: C.off,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+        }}>
+          <span style={{ display: 'flex', gap: 3 }} aria-hidden="true">
+            <span style={{ width: 5, height: 5, borderRadius: '50%', background: C.muted, animation: 'sd-dot 1.2s ease-in-out infinite' }}/>
+            <span style={{ width: 5, height: 5, borderRadius: '50%', background: C.muted, animation: 'sd-dot 1.2s ease-in-out 0.15s infinite' }}/>
+            <span style={{ width: 5, height: 5, borderRadius: '50%', background: C.muted, animation: 'sd-dot 1.2s ease-in-out 0.3s infinite' }}/>
+          </span>
+        </div>
+        <div style={{ flex: 1, minWidth: 0, fontSize: 13, color: C.muted, lineHeight: 1.4 }}>
+          Awaiting customer reply…
+        </div>
+        <style>{`@keyframes sd-dot { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }`}</style>
       </div>
     )
   }
 
+  // ── Status pill (hero, on the blue) ─────────────────────────────────────────
+  function HeroStatusPill() {
+    if (isCompleted) {
+      const t = stop?.completed_at ? formatTime(stop.completed_at) : null
+      return (
+        <span style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          background: C.ink, color: C.gold,
+          padding: '6px 12px', borderRadius: 999,
+          fontSize: 11, fontWeight: 900, letterSpacing: '0.12em',
+          textTransform: 'uppercase',
+          fontVariantNumeric: 'tabular-nums',
+        }}>
+          <CheckIcon size={12} color={C.gold}/>
+          Delivered{t ? ` · ${t}` : ''}
+        </span>
+      )
+    }
+    if (isOtwSent) {
+      return (
+        <span style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          background: C.gold, color: C.ink,
+          padding: '6px 12px', borderRadius: 999,
+          fontSize: 11, fontWeight: 900, letterSpacing: '0.12em',
+          textTransform: 'uppercase',
+          fontVariantNumeric: 'tabular-nums',
+        }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: C.ink }}/>
+          ETA Sent{otwSentTime ? ` · ${otwSentTime}` : ''}
+        </span>
+      )
+    }
+    return null
+  }
+
+  // ── Section eyebrow (gold-tracked) ──────────────────────────────────────────
+  function SectionEyebrow({ children }: { children: ReactNode }) {
+    return (
+      <div style={{
+        padding: '20px 22px 10px',
+        fontFamily: FONT_DISPLAY,
+        fontSize: 12, fontWeight: 800, letterSpacing: '0.2em',
+        textTransform: 'uppercase', color: C.muted,
+      }}>
+        {children}
+      </div>
+    )
+  }
+
+  // ── Helper text under buttons ──────────────────────────────────────────────
+  function HelperText({ children, tone = 'muted' }: { children: ReactNode; tone?: 'muted' | 'ink' }) {
+    return (
+      <p style={{
+        margin: '6px 0 0', textAlign: 'center',
+        fontSize: 11, color: tone === 'ink' ? C.ink : C.muted, lineHeight: 1.4,
+      }}>
+        {children}
+      </p>
+    )
+  }
+
+  // ── Inline pill messages (error / warning) ─────────────────────────────────
+  function InlinePill({ tone, children }: { tone: 'coral' | 'amber' | 'muted'; children: ReactNode }) {
+    const map = {
+      coral:  { bg: 'rgba(255,90,60,0.10)',   border: 'rgba(255,90,60,0.45)',   color: C.coral },
+      amber:  { bg: 'rgba(255,184,0,0.16)',   border: 'rgba(176,127,0,0.55)',   color: C.goldDeep },
+      muted:  { bg: C.off,                    border: 'rgba(10,11,20,0.10)',    color: C.muted },
+    }
+    const t = map[tone]
+    return (
+      <p style={{
+        margin: '8px 0 0', textAlign: 'center',
+        fontSize: 12, fontWeight: 600, color: t.color,
+        background: t.bg, border: `1px solid ${t.border}`,
+        padding: '8px 12px', borderRadius: 12, lineHeight: 1.4,
+      }}>
+        {children}
+      </p>
+    )
+  }
+
   return (
-    <div className="screen">
-      <AppHeader title={stopPosition} subtitle={route.route_name} onBack={() => router.push(`/route/${routeId}`)} />
-      <div className="flex-1 overflow-y-auto pb-8">
-        {isCompleted && (
-          <div className="mx-4 mt-3 p-3 bg-gray-900 text-white rounded-xl flex items-center gap-2.5">
-            <span className="text-base font-bold" aria-hidden="true">✓</span>
-            <div><div className="text-sm font-bold">Stop Completed</div>{stop.completed_at && <div className="text-xs text-gray-400 mt-0.5">Completed at {formatTime(stop.completed_at)}</div>}</div>
+    <div className="screen" style={{ background: C.cream, fontFamily: FONT_BODY, color: C.ink }}>
+      {/* ── HERO ─────────────────────────────────────────────────────────── */}
+      <div style={{
+        background: C.blue, color: '#fff',
+        padding: '46px 22px 22px',
+        position: 'relative', overflow: 'hidden', flexShrink: 0,
+      }}>
+        <svg
+          aria-hidden="true"
+          width={160} height={160} viewBox="0 0 100 100"
+          style={{
+            position: 'absolute', right: -14, top: -8,
+            opacity: 0.20,
+            transform: 'rotate(25deg)', transformOrigin: 'center',
+            pointerEvents: 'none',
+          }}
+        >
+          <path d="M50 8l8 28 28 8-28 8-8 28-8-28-28-8 28-8z" fill={C.gold}/>
+        </svg>
+
+        {/* Top row: back button + PTR mark */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          position: 'relative',
+        }}>
+          <button
+            onClick={() => router.push(`/route/${routeId}`)}
+            aria-label="Back to route"
+            style={{
+              width: 38, height: 38, borderRadius: 11,
+              background: 'rgba(255,255,255,0.16)',
+              border: 0, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            <BackIcon/>
+          </button>
+          <BrandMark/>
+        </div>
+
+        {/* Eyebrow */}
+        <div style={{
+          marginTop: 18,
+          fontSize: 11, fontWeight: 800, letterSpacing: '0.22em',
+          color: C.gold, textTransform: 'uppercase',
+          fontVariantNumeric: 'tabular-nums',
+          position: 'relative',
+        }}>
+          Stop {stop.stop_sequence} of {allStops.length}
+        </div>
+
+        {/* Headline — customer name */}
+        <div style={{
+          marginTop: 6,
+          fontFamily: FONT_DISPLAY,
+          fontSize: 32, fontWeight: 900,
+          lineHeight: 0.95, letterSpacing: '-0.03em',
+          color: '#fff',
+          position: 'relative',
+          wordBreak: 'break-word',
+        }}>
+          {stop.customer_name}
+        </div>
+
+        {/* Subtitle — company_name */}
+        {stop.company_name && (
+          <div style={{
+            marginTop: 6, fontSize: 14, fontWeight: 600,
+            color: 'rgba(255,255,255,0.85)', lineHeight: 1.3,
+            position: 'relative',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            {stop.company_name}
           </div>
         )}
-        <div className="px-4 pt-4 pb-4 border-b border-gray-100">
-          {stop.company_name && (
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-0.5">
-              {stop.company_name}
-            </div>
-          )}
-          {stop.client_company && (
-            <div className="text-[13px] font-medium text-gray-600 mb-1">
-              {stop.client_company}
-            </div>
-          )}
-          <h2 className="text-[21px] font-extrabold text-gray-900 mb-4 leading-snug">{stop.customer_name}</h2>
-          <DetailRow icon="📍" label="Address">
-            <address className="not-italic text-sm font-medium text-gray-800 leading-snug">
-              {fullAddressLines.map((line, i) => (<span key={i}>{line}{i < fullAddressLines.length - 1 && <br />}</span>))}
-            </address>
-          </DetailRow>
-          {stop.customer_cell && (
-            <DetailRow icon="📱" label="Cell">
-              <a href={`tel:${stop.customer_cell}`} className="text-sm font-medium text-gray-800 underline underline-offset-2">{stop.customer_cell}</a>
-            </DetailRow>
-          )}
-          {stop.customer_phone && stop.customer_phone !== stop.customer_cell && (
-            <DetailRow icon="📞" label={stop.customer_cell ? 'Office' : 'Phone'}>
-              <a href={`tel:${stop.customer_phone}`} className="text-sm font-medium text-gray-800 underline underline-offset-2">{stop.customer_phone}</a>
-            </DetailRow>
-          )}
-          {stop.order_id && (<DetailRow icon="#" label="Order Ref"><span className="text-sm font-medium text-gray-800 font-mono tracking-tight">{stop.order_id}</span></DetailRow>)}
-          {stop.items_text && (<DetailRow icon="📦" label="Items"><div className="text-sm font-medium text-gray-800 leading-snug">{stop.items_text}</div></DetailRow>)}
-          {stop.payment_state === 'cod' && (
-            <DetailRow icon="💵" label="Payment">
-              <div className="inline-block px-2 py-0.5 rounded bg-amber-100 border border-amber-300 text-amber-900 text-[11px] font-bold uppercase tracking-wide">
-                COD — Collect on Delivery
-              </div>
-            </DetailRow>
-          )}
-          {stop.payment_state === 'balance_due' && (
-            <DetailRow icon="💵" label="Payment">
-              <div className="inline-block px-2 py-0.5 rounded bg-red-100 border border-red-300 text-red-900 text-[11px] font-bold uppercase tracking-wide">
-                Balance Due
-              </div>
-            </DetailRow>
-          )}
-          {stop.notes && (<DetailRow icon="📝" label="Notes"><div className="text-sm text-gray-600 italic leading-snug bg-gray-50 border border-dashed border-gray-300 rounded-lg p-2.5">{stop.notes}</div></DetailRow>)}
-        </div>
-        {isOtwSent && stop.on_the_way_sent_at && <OTWSentBanner sentAt={stop.on_the_way_sent_at} phone={stop.customer_cell?.trim() || stop.customer_phone} />}
-        <div className="px-4 pt-4">
-          <div className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">Actions</div>
-          <button onClick={handleSendOtw} disabled={otwLoading || isCompleted} className={`w-full flex items-center justify-center gap-2.5 min-h-[54px] rounded-xl text-[15px] font-bold mb-1 border-2 transition-colors disabled:opacity-50 ${isOtwSent ? 'border-gray-300 bg-gray-100 text-gray-500 active:bg-gray-200' : 'border-gray-800 bg-white text-gray-900 active:bg-gray-50'}`}>
-            <span className="text-lg" aria-hidden="true">💬</span>{otwLoading ? 'Sending…' : isOtwSent ? 'Resend On The Way Text' : 'Send On The Way Text'}
-          </button>
-          <p className="text-[10px] text-gray-400 text-center mb-1">{isOtwSent ? 'Tap to resend if customer needs another notification' : 'Sends SMS to customer now'}</p>
-          {otwError && (<p className="text-[11px] text-red-500 text-center mt-1.5 mb-1 px-3 py-2 bg-red-50 border border-red-200 rounded-lg">{otwError}</p>)}
-          <div className="mb-3.5" />
-          <button onClick={handleSendEta} disabled={etaStatus === 'sending' || isCompleted} className={`w-full flex items-center justify-center gap-2.5 min-h-[54px] rounded-xl text-[15px] font-bold mb-1 border-2 transition-colors disabled:opacity-50 ${etaStatus === 'sent' ? 'border-gray-300 bg-gray-100 text-gray-500 active:bg-gray-200' : 'border-gray-800 bg-white text-gray-900 active:bg-gray-50'}`}>
-            <span className="text-lg" aria-hidden="true">🕐</span>{etaStatus === 'sending' ? 'Sending ETA…' : etaStatus === 'sent' ? 'Resend ETA Text' : 'Send ETA Text'}
-          </button>
-          <p className="text-[10px] text-gray-400 text-center">{etaStatus === 'sent' && etaRange ? `ETA sent: ${etaRange} · tap to resend` : 'Texts customer your ETA with reply options'}</p>
-          {etaStatus === 'error' && etaError && (<p className="text-[11px] text-red-500 text-center mt-1.5 mb-1 px-3 py-2 bg-red-50 border border-red-200 rounded-lg">{etaError}</p>)}
-          {etaCooldownMsg && (<p className="text-[11px] text-amber-700 text-center mt-1.5 mb-1 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg">{etaCooldownMsg}</p>)}
-          {renderEtaReplyBadge()}
-          <div className="mb-3.5" />
-          <button onClick={handleNavigate} disabled={navLoading || isCompleted} className="w-full flex items-center justify-center gap-2.5 min-h-[54px] rounded-xl text-[15px] font-bold mb-1 border-2 border-gray-900 bg-gray-900 text-white active:bg-gray-700 disabled:opacity-50 transition-colors">
-            <span className="text-lg" aria-hidden="true">🧭</span>{navLoading ? 'Opening…' : 'Navigate'}
-          </button>
-          <p className="text-[10px] text-gray-400 text-center mb-1">Opens CoPilot with truck routing</p>
-          {navMessage && (<p className="text-[11px] text-gray-500 text-center mt-1.5 mb-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg italic">{navMessage}</p>)}
-        </div>
-        <div className="px-4 pt-2">
-          <div className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">Tools</div>
-          {stop.order_id && (
-            <>
-              <button onClick={handleOpenTapGoods} disabled={tapGoodsLoading} className="w-full flex items-center justify-center gap-2.5 min-h-[54px] rounded-xl text-[15px] font-bold mb-1 border-2 border-gray-300 bg-white text-gray-700 active:bg-gray-50 disabled:opacity-50 transition-colors">
-                <span className="text-lg" aria-hidden="true">📋</span>{tapGoodsLoading ? 'Opening…' : 'View Order (TapGoods)'}
-              </button>
-              <p className="text-[10px] text-gray-400 text-center mb-3.5">Opens pick list for order {stop.order_id}</p>
-            </>
-          )}
-          <button onClick={handleOpenRfid} className="w-full flex items-center justify-center gap-2.5 min-h-[54px] rounded-xl text-[15px] font-bold mb-1 border-2 border-gray-300 bg-white text-gray-700 active:bg-gray-50 transition-colors">
-            <span className="text-lg" aria-hidden="true">📡</span>Easy RFID Pro App
-          </button>
-          <p className="text-[10px] text-gray-400 text-center mb-1">Launches Easy RFID Pro on Android</p>
-          {rfidMessage && (<p className="text-[11px] text-gray-500 text-center mt-1.5 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg italic">{rfidMessage}</p>)}
-        </div>
-        <div className="px-4 pt-5">
-          <div className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">Proof of Delivery</div>
-          <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoSelected} aria-label="Take proof of delivery photo" />
-          {pod.status === 'uploaded' && pod.url && (
-            <div className="mb-3 rounded-xl overflow-hidden border-2 border-gray-200 shadow-sm">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={pod.url} alt="Proof of delivery" className="w-full object-cover max-h-56" />
-            </div>
-          )}
-          {pod.status === 'uploaded' && (
-            <div className="flex items-center gap-2.5 mb-3 px-3 py-2.5 rounded-xl bg-green-50 border border-green-200">
-              <span className="text-base" aria-hidden="true">✅</span>
-              <div>
-                <div className="text-[11px] font-bold text-green-800 uppercase tracking-wide">Photo Uploaded</div>
-                <div className="text-xs text-green-700 mt-0.5">Proof of delivery saved to server.</div>
-              </div>
-            </div>
-          )}
-          {pod.status === 'failed' && (
-            <div className="flex items-start gap-2.5 mb-3 px-3 py-2.5 rounded-xl bg-red-50 border border-red-200">
-              <span className="text-base mt-0.5" aria-hidden="true">⚠️</span>
-              <div>
-                <div className="text-[11px] font-bold text-red-800 uppercase tracking-wide">Upload Failed</div>
-                {pod.error && <div className="text-xs text-red-600 mt-0.5">{pod.error}</div>}
-              </div>
-            </div>
-          )}
-          <button
-            onClick={handleTakePhotoTap}
-            disabled={pod.status === 'uploading'}
-            className={`w-full flex items-center justify-center gap-2.5 min-h-[54px] rounded-xl text-[15px] font-bold mb-1 border-2 transition-colors disabled:opacity-50 ${
-              pod.status === 'uploaded'
-                ? 'border-gray-300 bg-white text-gray-600 active:bg-gray-50'
-                : 'border-[#0000FF] bg-[#0000FF] text-white active:bg-[#0000CC]'
-            }`}
-          >
-            <span className="text-lg" aria-hidden="true">📷</span>
-            {pod.status === 'uploading' ? 'Uploading…' : pod.status === 'uploaded' ? 'Retake Photo' : pod.status === 'failed' ? 'Retry Photo' : 'Take Photo'}
-          </button>
-          <p className="text-[10px] text-gray-400 text-center">
-            {pod.status === 'uploading' ? 'Saving to server…' : pod.status === 'uploaded' ? 'Tap to replace with a new photo' : 'Opens camera · saved to server'}
-          </p>
-        </div>
-        {!isCompleted && (
-          <div className="px-4 pt-5">
-            <div className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">Complete</div>
-            <button onClick={() => setShowCompleteModal(true)} className="w-full flex items-center justify-center gap-2.5 min-h-[54px] rounded-xl text-[15px] font-bold mb-1 border-2 border-dashed border-gray-400 bg-white text-gray-800 active:bg-gray-50 transition-colors">
-              <span className="text-lg" aria-hidden="true">✓</span>Mark Stop Complete
-            </button>
-            <p className="text-[10px] text-gray-400 text-center">{nextStop ? `Requires confirmation · advances to Stop ${nextStop.stop_sequence}` : 'Requires confirmation · returns to route list (last stop)'}</p>
+
+        {/* Address */}
+        {heroAddress && (
+          <div style={{
+            marginTop: 8, fontSize: 13,
+            color: 'rgba(255,255,255,0.72)', lineHeight: 1.4,
+            position: 'relative',
+          }}>
+            {heroAddress}
+          </div>
+        )}
+
+        {/* Status pill (state-aware) */}
+        {(isCompleted || isOtwSent) && (
+          <div style={{ marginTop: 14, position: 'relative' }}>
+            <HeroStatusPill/>
           </div>
         )}
       </div>
+
+      {/* ── SCROLL BODY ──────────────────────────────────────────────────── */}
+      <div className="flex-1 overflow-y-auto" style={{ paddingBottom: 80 }}>
+        {/* ── Customer / order detail card ───────────────────────────────── */}
+        <div style={{ padding: '16px 18px 4px' }}>
+          <div style={{
+            background: C.paper,
+            border: `1.5px solid ${C.ink}`,
+            borderRadius: 18,
+            padding: '16px 16px 6px',
+          }}>
+            {stop.client_company && (
+              <div style={{
+                fontSize: 12.5, fontWeight: 600, color: C.muted,
+                marginBottom: 12,
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
+                {stop.client_company}
+              </div>
+            )}
+
+            <DetailRow icon={<PinIcon/>} label="Address">
+              <address style={{ fontStyle: 'normal' }}>
+                {fullAddressLines.map((line, i) => (
+                  <span key={i}>
+                    {line}
+                    {i < fullAddressLines.length - 1 && <br/>}
+                  </span>
+                ))}
+              </address>
+            </DetailRow>
+
+            {stop.customer_cell && (
+              <DetailRow icon={<PhoneIcon color={C.gold}/>} label="Cell">
+                <a href={`tel:${stop.customer_cell}`}
+                   style={{ color: C.ink, textDecoration: 'underline', textUnderlineOffset: 2 }}>
+                  {stop.customer_cell}
+                </a>
+              </DetailRow>
+            )}
+            {stop.customer_phone && stop.customer_phone !== stop.customer_cell && (
+              <DetailRow icon={<PhoneIcon/>} label={stop.customer_cell ? 'Office' : 'Phone'}>
+                <a href={`tel:${stop.customer_phone}`}
+                   style={{ color: C.ink, textDecoration: 'underline', textUnderlineOffset: 2 }}>
+                  {stop.customer_phone}
+                </a>
+              </DetailRow>
+            )}
+            {stop.order_id && (
+              <DetailRow icon={<DocIcon/>} label="Order Ref">
+                <span style={{ fontFamily: FONT_MONO, fontSize: 13, fontWeight: 700, letterSpacing: '-0.01em' }}>
+                  {stop.order_id}
+                </span>
+              </DetailRow>
+            )}
+            {stop.items_text && (
+              <DetailRow icon={<BoxIcon/>} label="Items">
+                <div style={{
+                  fontSize: 13.5, fontWeight: 600, color: C.ink, lineHeight: 1.4,
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>
+                  {stop.items_text}
+                </div>
+              </DetailRow>
+            )}
+            {payLabel && (
+              <DetailRow icon={<CashIcon/>} label="Payment">
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                  background: C.gold, color: C.ink,
+                  padding: '4px 10px', borderRadius: 999,
+                  fontSize: 11, fontWeight: 800, letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                  whiteSpace: 'nowrap',
+                }}>
+                  <CashIcon size={12} color={C.ink}/>
+                  {payLabel}
+                </span>
+              </DetailRow>
+            )}
+            {stop.notes && (
+              <DetailRow icon={<NoteIcon/>} label="Notes">
+                <div style={{
+                  fontStyle: 'italic',
+                  color: C.ink,
+                  background: C.off,
+                  border: `1px dashed ${C.muted}`,
+                  borderRadius: 10,
+                  padding: '8px 10px',
+                  fontSize: 13, lineHeight: 1.4,
+                  fontWeight: 500,
+                }}>
+                  {stop.notes}
+                </div>
+              </DetailRow>
+            )}
+          </div>
+        </div>
+
+        {/* ── OTW Sent banner (inline editorial — replaces OTWSentBanner) ── */}
+        {isOtwSent && stop.on_the_way_sent_at && !isCompleted && (
+          <div style={{ padding: '10px 18px 0' }}>
+            <div style={{
+              background: C.ink, color: '#fff',
+              borderRadius: 14, padding: '10px 14px',
+              borderLeft: `5px solid ${C.gold}`,
+              display: 'flex', alignItems: 'center', gap: 12,
+            }}>
+              <div style={{
+                width: 30, height: 30, borderRadius: '50%',
+                background: 'rgba(255,184,0,0.20)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+              }}>
+                <CheckIcon size={14} color={C.gold}/>
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                  fontSize: 10.5, fontWeight: 900, letterSpacing: '0.18em',
+                  color: C.gold, textTransform: 'uppercase',
+                }}>
+                  On The Way Text Sent
+                </div>
+                <div style={{ marginTop: 1, fontSize: 12.5, color: 'rgba(255,255,255,0.85)' }}>
+                  Sent at {formatTime(stop.on_the_way_sent_at)} · {stop.customer_cell?.trim() || stop.customer_phone}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── ACTIONS ────────────────────────────────────────────────────── */}
+        <SectionEyebrow>Actions</SectionEyebrow>
+        <div style={{ padding: '0 18px' }}>
+          {/* Send OTW */}
+          <button
+            onClick={handleSendOtw}
+            disabled={otwLoading || isCompleted}
+            style={{
+              width: '100%', height: 58, borderRadius: 999,
+              background: C.paper,
+              color: isOtwSent ? C.muted : C.ink,
+              border: `1.5px solid ${isOtwSent ? 'rgba(10,11,20,0.18)' : C.ink}`,
+              cursor: (otwLoading || isCompleted) ? 'default' : 'pointer',
+              opacity: (otwLoading || isCompleted) ? 0.55 : 1,
+              fontSize: 15, fontWeight: 800, fontFamily: 'inherit',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+              transition: 'opacity 120ms ease',
+            }}
+          >
+            <ChatIcon size={18} color={isOtwSent ? C.muted : C.ink}/>
+            {otwLoading ? 'Sending…' : isOtwSent ? 'Resend On The Way Text' : 'Send On The Way Text'}
+          </button>
+          <HelperText>
+            {isOtwSent ? 'Tap to resend if customer needs another notification' : 'Sends SMS to customer now'}
+          </HelperText>
+          {otwError && <InlinePill tone="coral">{otwError}</InlinePill>}
+
+          {/* Send ETA */}
+          <div style={{ height: 12 }}/>
+          <button
+            onClick={handleSendEta}
+            disabled={etaStatus === 'sending' || isCompleted}
+            style={{
+              width: '100%', height: 58, borderRadius: 999,
+              background: C.paper,
+              color: etaStatus === 'sent' ? C.muted : C.ink,
+              border: `1.5px solid ${etaStatus === 'sent' ? 'rgba(10,11,20,0.18)' : C.ink}`,
+              cursor: (etaStatus === 'sending' || isCompleted) ? 'default' : 'pointer',
+              opacity: (etaStatus === 'sending' || isCompleted) ? 0.55 : 1,
+              fontSize: 15, fontWeight: 800, fontFamily: 'inherit',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+              transition: 'opacity 120ms ease',
+            }}
+          >
+            <ClockIcon size={18} color={etaStatus === 'sent' ? C.muted : C.ink}/>
+            {etaStatus === 'sending' ? 'Sending ETA…' : etaStatus === 'sent' ? 'Resend ETA Text' : 'Send ETA Text'}
+          </button>
+          <HelperText>
+            {etaStatus === 'sent' && etaRange ? `ETA sent: ${etaRange} · tap to resend` : 'Texts customer your ETA with reply options'}
+          </HelperText>
+          {etaStatus === 'error' && etaError && <InlinePill tone="coral">{etaError}</InlinePill>}
+          {etaCooldownMsg && <InlinePill tone="amber">{etaCooldownMsg}</InlinePill>}
+
+          {/* ETA reply badge — 5 states preserved */}
+          {renderEtaReplyBadge()}
+
+          {/* Navigate — signature D03 CTA shape */}
+          <div style={{ height: 14 }}/>
+          <button
+            onClick={handleNavigate}
+            disabled={navLoading || isCompleted}
+            style={{
+              width: '100%', height: 58, borderRadius: 999,
+              background: C.ink, color: '#fff',
+              border: 0,
+              cursor: (navLoading || isCompleted) ? 'default' : 'pointer',
+              opacity: (navLoading || isCompleted) ? 0.55 : 1,
+              fontSize: 16, fontWeight: 800, fontFamily: 'inherit',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '0 8px 0 24px',
+              boxShadow: '0 14px 30px -10px rgba(10,11,20,0.45)',
+              transition: 'opacity 120ms ease',
+            }}
+          >
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+              <NavigateIcon size={18} color="#fff"/>
+              {navLoading ? 'Opening…' : 'Navigate'}
+            </span>
+            <span style={{
+              width: 42, height: 42, borderRadius: '50%',
+              background: C.gold,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+            }}>
+              <ArrowIcon size={18} color={C.ink}/>
+            </span>
+          </button>
+          <HelperText>Opens CoPilot with truck routing</HelperText>
+          {navMessage && <InlinePill tone="muted">{navMessage}</InlinePill>}
+        </div>
+
+        {/* ── TOOLS (View Order only — Easy RFID Pro removed) ──────────── */}
+        {stop.order_id && (
+          <>
+            <SectionEyebrow>Tools</SectionEyebrow>
+            <div style={{ padding: '0 18px' }}>
+              <button
+                onClick={handleOpenTapGoods}
+                disabled={tapGoodsLoading}
+                style={{
+                  width: '100%',
+                  background: C.paper,
+                  border: `1.5px solid ${C.ink}`,
+                  borderRadius: 16,
+                  padding: '14px 16px',
+                  cursor: tapGoodsLoading ? 'default' : 'pointer',
+                  opacity: tapGoodsLoading ? 0.55 : 1,
+                  fontFamily: 'inherit',
+                  display: 'flex', alignItems: 'center', gap: 12,
+                  textAlign: 'left',
+                  transition: 'opacity 120ms ease',
+                }}
+              >
+                <div style={{
+                  width: 44, height: 44, borderRadius: 12,
+                  background: C.off,
+                  border: `1.5px solid ${C.ink}`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0,
+                }}>
+                  <DocIcon size={20} color={C.ink}/>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    fontSize: 14.5, fontWeight: 800, color: C.ink,
+                    fontFamily: FONT_DISPLAY, letterSpacing: '-0.01em',
+                  }}>
+                    {tapGoodsLoading ? 'Opening…' : 'View Order'}
+                  </div>
+                  <div style={{ marginTop: 2, fontSize: 11.5, color: C.muted }}>
+                    Opens pick list for order {stop.order_id}
+                  </div>
+                </div>
+                <ArrowIcon size={16} color={C.muted}/>
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* ── PROOF OF DELIVERY ─────────────────────────────────────────── */}
+        <SectionEyebrow>Proof of Delivery</SectionEyebrow>
+        <div style={{ padding: '0 18px' }}>
+          <input
+            ref={photoInputRef}
+            type="file"
+            accept="image/*"
+            style={{ display: 'none' }}
+            onChange={handlePhotoSelected}
+            aria-label="Take proof of delivery photo"
+          />
+
+          {pod.status === 'uploaded' && pod.url && (
+            <div style={{
+              marginBottom: 10,
+              border: `1.5px solid ${C.ink}`,
+              borderRadius: 16,
+              overflow: 'hidden',
+              background: C.paper,
+              boxShadow: `4px 4px 0 ${C.ink}`,
+            }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={pod.url}
+                alt="Proof of delivery"
+                style={{ width: '100%', display: 'block', maxHeight: 240, objectFit: 'cover' }}
+              />
+            </div>
+          )}
+
+          {pod.status === 'uploaded' && (
+            <div style={{
+              marginBottom: 10,
+              background: C.gold, color: C.ink,
+              borderRadius: 14, padding: '10px 14px',
+              display: 'flex', alignItems: 'center', gap: 10,
+            }}>
+              <CheckIcon size={16} color={C.ink}/>
+              <div>
+                <div style={{
+                  fontSize: 10.5, fontWeight: 900, letterSpacing: '0.16em',
+                  color: C.goldDeep, textTransform: 'uppercase',
+                }}>
+                  Photo Uploaded
+                </div>
+                <div style={{ marginTop: 1, fontSize: 12.5, fontWeight: 600, color: C.ink }}>
+                  Proof of delivery saved to server.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {pod.status === 'failed' && (
+            <div style={{
+              marginBottom: 10,
+              background: C.paper,
+              border: `1.5px solid ${C.ink}`,
+              borderRadius: 14, padding: '10px 14px',
+              boxShadow: `4px 4px 0 ${C.coral}`,
+              display: 'flex', alignItems: 'flex-start', gap: 10,
+            }}>
+              <span style={{
+                width: 22, height: 22, borderRadius: '50%',
+                background: 'rgba(255,90,60,0.12)',
+                border: `1.5px solid ${C.coral}`,
+                color: C.coral,
+                fontWeight: 900, fontSize: 13,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0,
+              }} aria-hidden="true">!</span>
+              <div>
+                <div style={{
+                  fontSize: 10.5, fontWeight: 900, letterSpacing: '0.16em',
+                  color: C.coral, textTransform: 'uppercase',
+                }}>
+                  Upload Failed
+                </div>
+                {pod.error && (
+                  <div style={{ marginTop: 2, fontSize: 12, color: C.muted }}>
+                    {pod.error}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <button
+            onClick={handleTakePhotoTap}
+            disabled={pod.status === 'uploading'}
+            style={{
+              width: '100%', height: 58, borderRadius: 999,
+              background: pod.status === 'uploaded' ? C.paper : C.gold,
+              color: C.ink,
+              border: pod.status === 'uploaded' ? `1.5px solid rgba(10,11,20,0.18)` : 0,
+              cursor: pod.status === 'uploading' ? 'default' : 'pointer',
+              opacity: pod.status === 'uploading' ? 0.55 : 1,
+              fontSize: 16, fontWeight: 800, fontFamily: 'inherit',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '0 8px 0 24px',
+              boxShadow: pod.status === 'uploaded' ? 'none' : '0 14px 30px -10px rgba(255,184,0,0.55), inset 0 -2px 0 rgba(0,0,0,0.18)',
+              transition: 'opacity 120ms ease',
+            }}
+          >
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+              <CameraIcon size={18} color={C.ink}/>
+              {pod.status === 'uploading'
+                ? 'Uploading…'
+                : pod.status === 'uploaded'
+                  ? 'Retake Photo'
+                  : pod.status === 'failed'
+                    ? 'Retry Photo'
+                    : 'Take Photo'}
+            </span>
+            <span style={{
+              width: 42, height: 42, borderRadius: '50%',
+              background: C.ink,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+            }}>
+              <ArrowIcon size={18} color={C.gold}/>
+            </span>
+          </button>
+          <HelperText>
+            {pod.status === 'uploading'
+              ? 'Saving to server…'
+              : pod.status === 'uploaded'
+                ? 'Tap to replace with a new photo'
+                : 'Opens camera · saved to server'}
+          </HelperText>
+        </div>
+
+        {/* ── COMPLETE (only when not yet completed) ────────────────────── */}
+        {!isCompleted && (
+          <>
+            <SectionEyebrow>Complete</SectionEyebrow>
+            <div style={{ padding: '0 18px' }}>
+              <button
+                onClick={() => setShowCompleteModal(true)}
+                style={{
+                  width: '100%', height: 58, borderRadius: 999,
+                  background: C.ink, color: '#fff',
+                  border: 0, cursor: 'pointer',
+                  fontSize: 16, fontWeight: 800, fontFamily: 'inherit',
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '0 8px 0 24px',
+                  boxShadow: '0 14px 30px -10px rgba(10,11,20,0.45)',
+                }}
+              >
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+                  <CheckIcon size={18} color="#fff"/>
+                  Mark Stop Complete
+                </span>
+                <span style={{
+                  width: 42, height: 42, borderRadius: '50%',
+                  background: C.gold,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0,
+                }}>
+                  <CheckIcon size={18} color={C.ink}/>
+                </span>
+              </button>
+              <HelperText>
+                {nextStop
+                  ? `Requires confirmation · advances to Stop ${nextStop.stop_sequence}`
+                  : 'Requires confirmation · returns to route list (last stop)'}
+              </HelperText>
+            </div>
+          </>
+        )}
+      </div>
+
       {showCompleteModal && (
-        <ConfirmationModal title="Mark Stop Complete?"
-          message={nextStop ? `Confirm delivery completed at ${stop.customer_name}. You'll be taken to Stop ${nextStop.stop_sequence} next.` : `Confirm delivery completed at ${stop.customer_name}. This is the last stop — you'll return to the route list.`}
-          confirmLabel="Mark Complete" cancelLabel="Cancel"
-          onConfirm={handleConfirmComplete} onCancel={() => setShowCompleteModal(false)}
-          isLoading={completeLoading} />
+        <ConfirmationModal
+          title="Mark Stop Complete?"
+          message={nextStop
+            ? `Confirm delivery completed at ${stop.customer_name}. You'll be taken to Stop ${nextStop.stop_sequence} next.`
+            : `Confirm delivery completed at ${stop.customer_name}. This is the last stop — you'll return to the route list.`}
+          confirmLabel="Mark Complete"
+          cancelLabel="Cancel"
+          onConfirm={handleConfirmComplete}
+          onCancel={() => setShowCompleteModal(false)}
+          isLoading={completeLoading}
+        />
       )}
     </div>
   )
