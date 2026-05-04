@@ -10,7 +10,6 @@ import { photoUploadService } from '@/services/PhotoUploadService'
 import { logEvent } from '@/services/EventLogger'
 import { sendEtaSms, getStopSmsStatus, getDriverLocation } from '@/services/EtaSmsService'
 import type { StopSmsStatus } from '@/services/EtaSmsService'
-import type { PaymentState } from '@/types'
 
 interface StopDetailScreenProps { routeId: string; stopId: string }
 type PodStatus = 'idle' | 'uploading' | 'uploaded' | 'failed'
@@ -34,7 +33,6 @@ const C = {
 
 const FONT_DISPLAY = "var(--font-archivo), 'Archivo', 'Inter', system-ui, -apple-system, sans-serif"
 const FONT_BODY    = "var(--font-inter), 'Inter', system-ui, -apple-system, sans-serif"
-const FONT_MONO    = "ui-monospace, SFMono-Regular, Menlo, monospace"
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function formatTime(isoString: string): string {
@@ -56,10 +54,16 @@ function formatSentAt(isoStr: string): string {
   return `${h}:${String(mins).padStart(2, '0')}${ampm}`
 }
 
-function paymentLabel(state: PaymentState | undefined): string | null {
-  if (state === 'cod')         return 'COD'
-  if (state === 'balance_due') return 'BAL DUE'
-  return null
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return '?'
+  if (parts.length === 1) return parts[0][0].toUpperCase()
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+}
+
+function sentenceCase(s: string): string {
+  if (!s) return s
+  return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()
 }
 
 // ─── Inline icons ─────────────────────────────────────────────────────────────
@@ -90,15 +94,6 @@ function CashIcon({ size = 14, color = C.ink }: IconProps) {
     </svg>
   )
 }
-function PinIcon({ size = 14, color = C.muted }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
-         strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M12 22s7-7 7-12a7 7 0 1 0-14 0c0 5 7 12 7 12z"/>
-      <circle cx="12" cy="10" r="2.5"/>
-    </svg>
-  )
-}
 function PhoneIcon({ size = 14, color = C.muted }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
@@ -115,16 +110,6 @@ function DocIcon({ size = 14, color = C.muted }: IconProps) {
       <polyline points="14 2 14 8 20 8"/>
       <line x1="8" y1="13" x2="16" y2="13"/>
       <line x1="8" y1="17" x2="13" y2="17"/>
-    </svg>
-  )
-}
-function BoxIcon({ size = 14, color = C.muted }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
-         strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
-      <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
-      <line x1="12" y1="22.08" x2="12" y2="12"/>
     </svg>
   )
 }
@@ -189,52 +174,6 @@ function BanIcon({ size = 14, color = C.muted }: IconProps) {
   )
 }
 
-// ─── Brand mark — small white rounded square with PTR logo ───────────────────
-function BrandMark() {
-  return (
-    <div style={{
-      width: 32, height: 32, borderRadius: 9,
-      background: C.paper,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      overflow: 'hidden', flexShrink: 0,
-    }}>
-      <img
-        src="/ptr-mark.png"
-        alt="PartyTime Rentals"
-        style={{ width: '74%', height: '74%', objectFit: 'contain' }}
-      />
-    </div>
-  )
-}
-
-// ─── Detail row inside the customer/order card ────────────────────────────────
-function DetailRow({
-  icon, label, children,
-}: { icon: ReactNode; label: string; children: ReactNode }) {
-  return (
-    <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: 14 }}>
-      <div style={{
-        width: 22, height: 22, marginTop: 2, flexShrink: 0,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }} aria-hidden="true">
-        {icon}
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{
-          fontSize: 10, fontWeight: 800, color: C.muted,
-          letterSpacing: '0.16em', textTransform: 'uppercase',
-          marginBottom: 2,
-        }}>
-          {label}
-        </div>
-        <div style={{ fontSize: 14, fontWeight: 600, color: C.ink, lineHeight: 1.35 }}>
-          {children}
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // ─── Screen ───────────────────────────────────────────────────────────────────
 export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenProps) {
   const router = useRouter()
@@ -243,8 +182,6 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   const stop = getStop(stopId)
   const allStops = getStopsForRoute(routeId)
 
-  const [otwLoading, setOtwLoading] = useState(false)
-  const [otwError, setOtwError] = useState<string | null>(null)
   const [navLoading, setNavLoading] = useState(false)
   const [showCompleteModal, setShowCompleteModal] = useState(false)
   const [completeLoading, setCompleteLoading] = useState(false)
@@ -357,35 +294,22 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   const nextStop = allStops[stopIndex + 1] ?? null
   const isCompleted = stop.current_status === 'completed'
   const isOtwSent = stop.on_the_way_sent
-  const cityLine = [stop.city, [stop.state, stop.postal_code].filter(Boolean).join(' ')].filter(Boolean).join(', ')
-  const fullAddressLines = [stop.address_line_1, stop.address_line_2, cityLine]
-    .filter((line) => line && line.trim().length > 0)
-  const heroAddress = [stop.address_line_1, stop.city, [stop.state, stop.postal_code].filter(Boolean).join(' ')]
-    .filter((p) => p && p.trim().length > 0).join(', ')
-  const payLabel = paymentLabel(stop.payment_state)
-  const otwSentTime = stop.on_the_way_sent_at ? formatSentAt(stop.on_the_way_sent_at) : null
 
-  async function handleSendOtw() {
-    if (!stop || otwLoading) return
-    if (Date.now() < etaCooldownRef.current) { setEtaCooldownMsg('ETA text was just sent. Please wait a moment before resending.'); return }
-    etaCooldownRef.current = Infinity
-    setOtwLoading(true)
-    setOtwError(null)
-    const result = await runEtaSend()
-    if (result.success) {
-      const sent_at = new Date().toISOString()
-      etaCooldownRef.current = Date.now() + 30_000
-      markOtw(stop.stop_id, sent_at)
-      setEtaStatus('sent')
-      setEtaRange(result.etaRange ?? null)
-      logEvent('ON_THE_WAY_SENT', routeId, stopId, stop.order_id, { phone: stop.customer_cell?.trim() || stop.customer_phone, sent_at })
-    } else {
-      etaCooldownRef.current = 0
-      logEvent('ON_THE_WAY_FAILED', routeId, stopId, stop.order_id, { error: result.error })
-      setOtwError(result.error ?? 'Failed to send On The Way text. Please try again.')
-    }
-    setOtwLoading(false)
-  }
+  // Headline = venue/business if available, else customer name. Trailing period
+  // applied in JSX so the period color can be toned independently if needed.
+  const headlineName = (stop.company_name?.trim() || stop.customer_name).trim()
+  const contactName  = stop.customer_name
+  const contactPhone = (stop.customer_cell?.trim() || stop.customer_phone || '').trim()
+  const initials     = getInitials(contactName)
+
+  const heroAddress = [
+    stop.address_line_1,
+    [stop.city, stop.state].filter(Boolean).join(' '),
+  ].filter((p) => p && p.trim().length > 0).join(' · ')
+
+  const items = stop.items ?? []
+  const etaSentTime     = stop.on_the_way_sent_at ? formatSentAt(stop.on_the_way_sent_at) : null
+  const etaQuotedSnippet = etaRange ? `We're ${etaRange} out.` : null
 
   async function handleNavigate() {
     if (!stop || navLoading) return
@@ -447,7 +371,12 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     setEtaStatus('sending'); setEtaError(null)
     const result = await runEtaSend()
     if (result.success) {
+      const sent_at = new Date().toISOString()
       etaCooldownRef.current = Date.now() + 30_000
+      // Send-ETA also flips the OTW flag so the green "Mark Arrived" state
+      // takes effect. (Replaces the dedicated Send-OTW button removed in the
+      // editorial redesign.)
+      markOtw(stop.stop_id, sent_at)
       setEtaStatus('sent'); setEtaRange(result.etaRange ?? null)
     } else {
       etaCooldownRef.current = 0
@@ -496,7 +425,7 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     } catch (err) { const msg = String(err); setPod({ status: 'failed', error: msg }); logEvent('POD_PHOTO_FAILED', routeId, stopId, stop.order_id, { error: msg }) }
   }
 
-  // ── ETA reply badge — 5 states, restyled editorially ────────────────────────
+  // ── ETA reply badge — preserved 5-state renderer from prior version ─────────
   function renderEtaReplyBadge() {
     if (etaStatus !== 'sent' || !smsReply) return null
     const { sms_status, customer_ready, customer_instructions, awaiting_instructions } = smsReply
@@ -611,92 +540,7 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
         </div>
       )
     }
-    return (
-      <div style={{
-        marginTop: 12, background: C.paper,
-        border: `1.5px solid ${C.ink}`,
-        borderRadius: 16, padding: '12px 14px',
-        display: 'flex', alignItems: 'center', gap: 12,
-      }}>
-        <div style={{
-          width: 32, height: 32, borderRadius: '50%',
-          background: C.off,
-          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-        }}>
-          <span style={{ display: 'flex', gap: 3 }} aria-hidden="true">
-            <span style={{ width: 5, height: 5, borderRadius: '50%', background: C.muted, animation: 'sd-dot 1.2s ease-in-out infinite' }}/>
-            <span style={{ width: 5, height: 5, borderRadius: '50%', background: C.muted, animation: 'sd-dot 1.2s ease-in-out 0.15s infinite' }}/>
-            <span style={{ width: 5, height: 5, borderRadius: '50%', background: C.muted, animation: 'sd-dot 1.2s ease-in-out 0.3s infinite' }}/>
-          </span>
-        </div>
-        <div style={{ flex: 1, minWidth: 0, fontSize: 13, color: C.muted, lineHeight: 1.4 }}>
-          Awaiting customer reply…
-        </div>
-        <style>{`@keyframes sd-dot { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }`}</style>
-      </div>
-    )
-  }
-
-  // ── Status pill (hero, on the blue) ─────────────────────────────────────────
-  function HeroStatusPill() {
-    if (isCompleted) {
-      const t = stop?.completed_at ? formatTime(stop.completed_at) : null
-      return (
-        <span style={{
-          display: 'inline-flex', alignItems: 'center', gap: 6,
-          background: C.ink, color: C.gold,
-          padding: '6px 12px', borderRadius: 999,
-          fontSize: 11, fontWeight: 900, letterSpacing: '0.12em',
-          textTransform: 'uppercase',
-          fontVariantNumeric: 'tabular-nums',
-        }}>
-          <CheckIcon size={12} color={C.gold}/>
-          Delivered{t ? ` · ${t}` : ''}
-        </span>
-      )
-    }
-    if (isOtwSent) {
-      return (
-        <span style={{
-          display: 'inline-flex', alignItems: 'center', gap: 6,
-          background: C.gold, color: C.ink,
-          padding: '6px 12px', borderRadius: 999,
-          fontSize: 11, fontWeight: 900, letterSpacing: '0.12em',
-          textTransform: 'uppercase',
-          fontVariantNumeric: 'tabular-nums',
-        }}>
-          <span style={{ width: 6, height: 6, borderRadius: '50%', background: C.ink }}/>
-          ETA Sent{otwSentTime ? ` · ${otwSentTime}` : ''}
-        </span>
-      )
-    }
     return null
-  }
-
-  // ── Section eyebrow (gold-tracked) ──────────────────────────────────────────
-  function SectionEyebrow({ children }: { children: ReactNode }) {
-    return (
-      <div style={{
-        padding: '20px 22px 10px',
-        fontFamily: FONT_DISPLAY,
-        fontSize: 12, fontWeight: 800, letterSpacing: '0.2em',
-        textTransform: 'uppercase', color: C.muted,
-      }}>
-        {children}
-      </div>
-    )
-  }
-
-  // ── Helper text under buttons ──────────────────────────────────────────────
-  function HelperText({ children, tone = 'muted' }: { children: ReactNode; tone?: 'muted' | 'ink' }) {
-    return (
-      <p style={{
-        margin: '6px 0 0', textAlign: 'center',
-        fontSize: 11, color: tone === 'ink' ? C.ink : C.muted, lineHeight: 1.4,
-      }}>
-        {children}
-      </p>
-    )
   }
 
   // ── Inline pill messages (error / warning) ─────────────────────────────────
@@ -719,20 +563,69 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     )
   }
 
+  // ── Quick-action tile inside the ActionCard 3-button grid ──────────────────
+  function QuickAction({ icon, label, onClick, loading, disabled }: {
+    icon: ReactNode; label: string; onClick: () => void; loading?: boolean; disabled?: boolean
+  }) {
+    const isDisabled = !!(disabled || loading)
+    return (
+      <button
+        onClick={onClick}
+        disabled={isDisabled}
+        style={{
+          background: C.paper,
+          border: `1.5px solid rgba(10,11,20,0.12)`,
+          borderRadius: 14,
+          padding: '14px 6px 12px',
+          cursor: isDisabled ? 'default' : 'pointer',
+          opacity: isDisabled ? 0.55 : 1,
+          fontFamily: 'inherit',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+          minHeight: 86,
+          transition: 'opacity 120ms ease',
+        }}
+      >
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          width: 28, height: 28,
+        }} aria-hidden="true">
+          {icon}
+        </div>
+        <span style={{
+          fontSize: 11.5, fontWeight: 700, color: C.ink, lineHeight: 1.2,
+          textAlign: 'center', letterSpacing: '-0.005em',
+        }}>
+          {label}
+        </span>
+      </button>
+    )
+  }
+
   return (
     <div className="screen" style={{ background: C.cream, fontFamily: FONT_BODY, color: C.ink }}>
+      {/* hidden file input — opened by the POD Photo quick-action tile */}
+      <input
+        ref={photoInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: 'none' }}
+        onChange={handlePhotoSelected}
+        aria-label="Take proof of delivery photo"
+      />
+
       {/* ── HERO ─────────────────────────────────────────────────────────── */}
       <div style={{
         background: C.blue, color: '#fff',
-        padding: '46px 22px 22px',
+        padding: '28px 22px 22px',
         position: 'relative', overflow: 'hidden', flexShrink: 0,
       }}>
+        {/* asymmetric gold star */}
         <svg
           aria-hidden="true"
-          width={160} height={160} viewBox="0 0 100 100"
+          width={180} height={180} viewBox="0 0 100 100"
           style={{
-            position: 'absolute', right: -14, top: -8,
-            opacity: 0.20,
+            position: 'absolute', right: -24, top: -18,
+            opacity: 0.22,
             transform: 'rotate(25deg)', transformOrigin: 'center',
             pointerEvents: 'none',
           }}
@@ -740,7 +633,7 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
           <path d="M50 8l8 28 28 8-28 8-8 28-8-28-28-8 28-8z" fill={C.gold}/>
         </svg>
 
-        {/* Top row: back button + PTR mark */}
+        {/* Top row: back button + distance pill */}
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           position: 'relative',
@@ -758,498 +651,561 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
           >
             <BackIcon/>
           </button>
-          <BrandMark/>
-        </div>
-
-        {/* Eyebrow */}
-        <div style={{
-          marginTop: 18,
-          fontSize: 11, fontWeight: 800, letterSpacing: '0.22em',
-          color: C.gold, textTransform: 'uppercase',
-          fontVariantNumeric: 'tabular-nums',
-          position: 'relative',
-        }}>
-          Stop {stop.stop_sequence} of {allStops.length}
-        </div>
-
-        {/* Headline — customer name */}
-        <div style={{
-          marginTop: 6,
-          fontFamily: FONT_DISPLAY,
-          fontSize: 32, fontWeight: 900,
-          lineHeight: 0.95, letterSpacing: '-0.03em',
-          color: '#fff',
-          position: 'relative',
-          wordBreak: 'break-word',
-        }}>
-          {stop.customer_name}
-        </div>
-
-        {/* Subtitle — company_name */}
-        {stop.company_name && (
-          <div style={{
-            marginTop: 6, fontSize: 14, fontWeight: 600,
-            color: 'rgba(255,255,255,0.85)', lineHeight: 1.3,
-            position: 'relative',
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          }}>
-            {stop.company_name}
+          {/* Distance pill — Phase-2 stub (no GPS this pass) */}
+          <div
+            aria-label="Distance to stop"
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+              background: C.ink, color: '#fff',
+              padding: '7px 13px', borderRadius: 999,
+              fontSize: 12, fontWeight: 800,
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            <span style={{
+              width: 7, height: 7, borderRadius: '50%', background: C.gold,
+            }}/>
+            — mi
           </div>
-        )}
+        </div>
+
+        {/* Eyebrow + headline + numbered circle */}
+        <div style={{
+          marginTop: 22, position: 'relative',
+          display: 'flex', alignItems: 'flex-start', gap: 16,
+        }}>
+          <div style={{
+            width: 58, height: 58, borderRadius: '50%',
+            background: C.gold,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            flexShrink: 0,
+            fontFamily: FONT_DISPLAY,
+            fontSize: 24, fontWeight: 900, color: C.ink,
+            letterSpacing: '-0.02em',
+          }}>
+            {stop.stop_sequence}
+          </div>
+          <div style={{ flex: 1, minWidth: 0, paddingTop: 2 }}>
+            <div style={{
+              fontSize: 11, fontWeight: 800, letterSpacing: '0.22em',
+              color: C.gold, textTransform: 'uppercase',
+              fontVariantNumeric: 'tabular-nums',
+            }}>
+              Stop {stop.stop_sequence} of {allStops.length}
+            </div>
+            <div style={{
+              marginTop: 4,
+              fontFamily: FONT_DISPLAY,
+              fontSize: 32, fontWeight: 900,
+              lineHeight: 0.96, letterSpacing: '-0.03em',
+              color: '#fff',
+              wordBreak: 'break-word',
+            }}>
+              {headlineName}.
+            </div>
+          </div>
+        </div>
 
         {/* Address */}
         {heroAddress && (
           <div style={{
-            marginTop: 8, fontSize: 13,
-            color: 'rgba(255,255,255,0.72)', lineHeight: 1.4,
+            marginTop: 12, fontSize: 13.5,
+            color: 'rgba(255,255,255,0.78)', lineHeight: 1.4,
             position: 'relative',
           }}>
             {heroAddress}
           </div>
         )}
 
-        {/* Status pill (state-aware) */}
-        {(isCompleted || isOtwSent) && (
-          <div style={{ marginTop: 14, position: 'relative' }}>
-            <HeroStatusPill/>
+        {/* Contact chip */}
+        <div style={{
+          marginTop: 16, position: 'relative',
+          background: 'rgba(255,255,255,0.10)',
+          border: '1px solid rgba(255,255,255,0.16)',
+          borderRadius: 18,
+          padding: 10,
+          display: 'flex', alignItems: 'center', gap: 12,
+        }}>
+          <div style={{
+            width: 40, height: 40, borderRadius: '50%',
+            background: 'rgba(255,255,255,0.85)',
+            color: C.blue,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontFamily: FONT_DISPLAY,
+            fontSize: 14, fontWeight: 900, letterSpacing: '-0.01em',
+            flexShrink: 0,
+          }}>
+            {initials}
           </div>
-        )}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{
+              fontSize: 14, fontWeight: 800, color: '#fff', lineHeight: 1.2,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              {contactName}
+            </div>
+            {contactPhone && (
+              <div style={{
+                marginTop: 2, fontSize: 12.5,
+                color: 'rgba(255,255,255,0.72)',
+                fontVariantNumeric: 'tabular-nums',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
+                {contactPhone}
+              </div>
+            )}
+          </div>
+          {contactPhone && (
+            <a
+              href={`tel:${contactPhone}`}
+              aria-label={`Call ${contactName}`}
+              style={{
+                width: 42, height: 42, borderRadius: '50%',
+                background: C.gold,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0, textDecoration: 'none',
+              }}
+            >
+              <PhoneIcon size={18} color={C.ink}/>
+            </a>
+          )}
+        </div>
       </div>
 
       {/* ── SCROLL BODY ──────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto" style={{ paddingBottom: 80 }}>
-        {/* ── Customer / order detail card ───────────────────────────────── */}
-        <div style={{ padding: '16px 18px 4px' }}>
-          <div style={{
-            background: C.paper,
-            border: `1.5px solid ${C.ink}`,
-            borderRadius: 18,
-            padding: '16px 16px 6px',
-          }}>
-            {stop.client_company && (
-              <div style={{
-                fontSize: 12.5, fontWeight: 600, color: C.muted,
-                marginBottom: 12,
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              }}>
-                {stop.client_company}
-              </div>
-            )}
 
-            <DetailRow icon={<PinIcon/>} label="Address">
-              <address style={{ fontStyle: 'normal' }}>
-                {fullAddressLines.map((line, i) => (
-                  <span key={i}>
-                    {line}
-                    {i < fullAddressLines.length - 1 && <br/>}
-                  </span>
-                ))}
-              </address>
-            </DetailRow>
-
-            {stop.customer_cell && (
-              <DetailRow icon={<PhoneIcon color={C.gold}/>} label="Cell">
-                <a href={`tel:${stop.customer_cell}`}
-                   style={{ color: C.ink, textDecoration: 'underline', textUnderlineOffset: 2 }}>
-                  {stop.customer_cell}
-                </a>
-              </DetailRow>
-            )}
-            {stop.customer_phone && stop.customer_phone !== stop.customer_cell && (
-              <DetailRow icon={<PhoneIcon/>} label={stop.customer_cell ? 'Office' : 'Phone'}>
-                <a href={`tel:${stop.customer_phone}`}
-                   style={{ color: C.ink, textDecoration: 'underline', textUnderlineOffset: 2 }}>
-                  {stop.customer_phone}
-                </a>
-              </DetailRow>
-            )}
-            {stop.order_id && (
-              <DetailRow icon={<DocIcon/>} label="Order Ref">
-                <span style={{ fontFamily: FONT_MONO, fontSize: 13, fontWeight: 700, letterSpacing: '-0.01em' }}>
-                  {stop.order_id}
-                </span>
-              </DetailRow>
-            )}
-            {stop.items_text && (
-              <DetailRow icon={<BoxIcon/>} label="Items">
-                <div style={{
-                  fontSize: 13.5, fontWeight: 600, color: C.ink, lineHeight: 1.4,
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                }}>
-                  {stop.items_text}
-                </div>
-              </DetailRow>
-            )}
-            {payLabel && (
-              <DetailRow icon={<CashIcon/>} label="Payment">
-                <span style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 5,
-                  background: C.gold, color: C.ink,
-                  padding: '4px 10px', borderRadius: 999,
-                  fontSize: 11, fontWeight: 800, letterSpacing: '0.08em',
-                  textTransform: 'uppercase',
-                  whiteSpace: 'nowrap',
-                }}>
-                  <CashIcon size={12} color={C.ink}/>
-                  {payLabel}
-                </span>
-              </DetailRow>
-            )}
-            {stop.notes && (
-              <DetailRow icon={<NoteIcon/>} label="Notes">
-                <div style={{
-                  fontStyle: 'italic',
-                  color: C.ink,
-                  background: C.off,
-                  border: `1px dashed ${C.muted}`,
-                  borderRadius: 10,
-                  padding: '8px 10px',
-                  fontSize: 13, lineHeight: 1.4,
-                  fontWeight: 500,
-                }}>
-                  {stop.notes}
-                </div>
-              </DetailRow>
-            )}
-          </div>
-        </div>
-
-        {/* ── OTW Sent banner (inline editorial — replaces OTWSentBanner) ── */}
-        {isOtwSent && stop.on_the_way_sent_at && !isCompleted && (
-          <div style={{ padding: '10px 18px 0' }}>
+        {/* COD card — only when payment is COD */}
+        {stop.payment_state === 'cod' && (
+          <div style={{ padding: '16px 18px 0' }}>
             <div style={{
-              background: C.ink, color: '#fff',
-              borderRadius: 14, padding: '10px 14px',
-              borderLeft: `5px solid ${C.gold}`,
-              display: 'flex', alignItems: 'center', gap: 12,
+              background: C.ink,
+              borderRadius: 18,
+              padding: 14,
+              display: 'flex', alignItems: 'center', gap: 14,
+              boxShadow: '0 14px 28px -16px rgba(10,11,20,0.55)',
             }}>
               <div style={{
-                width: 30, height: 30, borderRadius: '50%',
-                background: 'rgba(255,184,0,0.20)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                width: 44, height: 44, borderRadius: 11,
+                background: C.gold,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0,
               }}>
-                <CheckIcon size={14} color={C.gold}/>
+                <CashIcon size={20} color={C.ink}/>
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{
                   fontSize: 10.5, fontWeight: 900, letterSpacing: '0.18em',
                   color: C.gold, textTransform: 'uppercase',
                 }}>
-                  On The Way Text Sent
+                  Cash Required
                 </div>
-                <div style={{ marginTop: 1, fontSize: 12.5, color: 'rgba(255,255,255,0.85)' }}>
-                  Sent at {formatTime(stop.on_the_way_sent_at)} · {stop.customer_cell?.trim() || stop.customer_phone}
+                <div style={{
+                  marginTop: 2, fontSize: 15, fontWeight: 800, color: '#fff',
+                  fontFamily: FONT_DISPLAY, letterSpacing: '-0.01em',
+                }}>
+                  Collect on delivery
                 </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* ── ACTIONS ────────────────────────────────────────────────────── */}
-        <SectionEyebrow>Actions</SectionEyebrow>
-        <div style={{ padding: '0 18px' }}>
-          {/* Send OTW */}
-          <button
-            onClick={handleSendOtw}
-            disabled={otwLoading || isCompleted}
-            style={{
-              width: '100%', height: 58, borderRadius: 999,
-              background: C.paper,
-              color: isOtwSent ? C.muted : C.ink,
-              border: `1.5px solid ${isOtwSent ? 'rgba(10,11,20,0.18)' : C.ink}`,
-              cursor: (otwLoading || isCompleted) ? 'default' : 'pointer',
-              opacity: (otwLoading || isCompleted) ? 0.55 : 1,
-              fontSize: 15, fontWeight: 800, fontFamily: 'inherit',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-              transition: 'opacity 120ms ease',
-            }}
-          >
-            <ChatIcon size={18} color={isOtwSent ? C.muted : C.ink}/>
-            {otwLoading ? 'Sending…' : isOtwSent ? 'Resend On The Way Text' : 'Send On The Way Text'}
-          </button>
-          <HelperText>
-            {isOtwSent ? 'Tap to resend if customer needs another notification' : 'Sends SMS to customer now'}
-          </HelperText>
-          {otwError && <InlinePill tone="coral">{otwError}</InlinePill>}
-
-          {/* Send ETA */}
-          <div style={{ height: 12 }}/>
-          <button
-            onClick={handleSendEta}
-            disabled={etaStatus === 'sending' || isCompleted}
-            style={{
-              width: '100%', height: 58, borderRadius: 999,
-              background: C.paper,
-              color: etaStatus === 'sent' ? C.muted : C.ink,
-              border: `1.5px solid ${etaStatus === 'sent' ? 'rgba(10,11,20,0.18)' : C.ink}`,
-              cursor: (etaStatus === 'sending' || isCompleted) ? 'default' : 'pointer',
-              opacity: (etaStatus === 'sending' || isCompleted) ? 0.55 : 1,
-              fontSize: 15, fontWeight: 800, fontFamily: 'inherit',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-              transition: 'opacity 120ms ease',
-            }}
-          >
-            <ClockIcon size={18} color={etaStatus === 'sent' ? C.muted : C.ink}/>
-            {etaStatus === 'sending' ? 'Sending ETA…' : etaStatus === 'sent' ? 'Resend ETA Text' : 'Send ETA Text'}
-          </button>
-          <HelperText>
-            {etaStatus === 'sent' && etaRange ? `ETA sent: ${etaRange} · tap to resend` : 'Texts customer your ETA with reply options'}
-          </HelperText>
-          {etaStatus === 'error' && etaError && <InlinePill tone="coral">{etaError}</InlinePill>}
-          {etaCooldownMsg && <InlinePill tone="amber">{etaCooldownMsg}</InlinePill>}
-
-          {/* ETA reply badge — 5 states preserved */}
-          {renderEtaReplyBadge()}
-
-          {/* Navigate — signature D03 CTA shape */}
-          <div style={{ height: 14 }}/>
-          <button
-            onClick={handleNavigate}
-            disabled={navLoading || isCompleted}
-            style={{
-              width: '100%', height: 58, borderRadius: 999,
-              background: C.ink, color: '#fff',
-              border: 0,
-              cursor: (navLoading || isCompleted) ? 'default' : 'pointer',
-              opacity: (navLoading || isCompleted) ? 0.55 : 1,
-              fontSize: 16, fontWeight: 800, fontFamily: 'inherit',
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '0 8px 0 24px',
-              boxShadow: '0 14px 30px -10px rgba(10,11,20,0.45)',
-              transition: 'opacity 120ms ease',
-            }}
-          >
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
-              <NavigateIcon size={18} color="#fff"/>
-              {navLoading ? 'Opening…' : 'Navigate'}
-            </span>
-            <span style={{
-              width: 42, height: 42, borderRadius: '50%',
-              background: C.gold,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              flexShrink: 0,
+        {/* Completed state — Delivered card replaces ETA + ActionCard */}
+        {isCompleted ? (
+          <div style={{ padding: '16px 18px 0' }}>
+            <div style={{
+              background: C.ink,
+              borderRadius: 18,
+              padding: 16,
+              display: 'flex', alignItems: 'center', gap: 14,
+              borderLeft: `5px solid ${C.green}`,
             }}>
-              <ArrowIcon size={18} color={C.ink}/>
-            </span>
-          </button>
-          <HelperText>Opens CoPilot with truck routing</HelperText>
-          {navMessage && <InlinePill tone="muted">{navMessage}</InlinePill>}
-        </div>
-
-        {/* ── TOOLS (View Order only — Easy RFID Pro removed) ──────────── */}
-        {stop.order_id && (
+              <div style={{
+                width: 38, height: 38, borderRadius: '50%',
+                background: 'rgba(31,191,107,0.20)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0,
+              }}>
+                <CheckIcon size={18} color={C.green}/>
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                  fontSize: 10.5, fontWeight: 900, letterSpacing: '0.18em',
+                  color: C.green, textTransform: 'uppercase',
+                }}>
+                  Delivered
+                </div>
+                <div style={{
+                  marginTop: 2, fontSize: 14.5, fontWeight: 700, color: '#fff',
+                  fontVariantNumeric: 'tabular-nums',
+                }}>
+                  {stop.completed_at ? formatTime(stop.completed_at) : 'Marked complete'}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
           <>
-            <SectionEyebrow>Tools</SectionEyebrow>
-            <div style={{ padding: '0 18px' }}>
-              <button
-                onClick={handleOpenTapGoods}
-                disabled={tapGoodsLoading}
-                style={{
-                  width: '100%',
+            {/* ETA / SMS block */}
+            <div style={{ padding: '16px 18px 0' }}>
+              {etaStatus === 'sent' ? (
+                <>
+                  {/* Gold status pill */}
+                  <div style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 8,
+                    background: C.gold, color: C.ink,
+                    padding: '7px 13px', borderRadius: 999,
+                    fontSize: 11, fontWeight: 900, letterSpacing: '0.16em',
+                    textTransform: 'uppercase',
+                    fontVariantNumeric: 'tabular-nums',
+                  }}>
+                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: C.ink }}/>
+                    ETA Sent · Awaiting Reply
+                  </div>
+
+                  {/* Awaiting confirmation card */}
+                  <div style={{
+                    marginTop: 10,
+                    background: C.paper,
+                    border: `1.5px solid ${C.ink}`,
+                    borderRadius: 18,
+                    padding: '14px 16px',
+                    display: 'flex', alignItems: 'flex-start', gap: 12,
+                  }}>
+                    <div style={{
+                      width: 36, height: 36, borderRadius: '50%',
+                      background: C.off,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      flexShrink: 0,
+                    }} aria-hidden="true">
+                      <ChatIcon size={18} color={C.muted}/>
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{
+                        fontSize: 14, fontWeight: 800, color: C.ink, lineHeight: 1.3,
+                        fontFamily: FONT_DISPLAY, letterSpacing: '-0.005em',
+                      }}>
+                        Awaiting customer confirmation…
+                      </div>
+                      {(etaSentTime || etaQuotedSnippet) && (
+                        <div style={{
+                          marginTop: 4, fontSize: 12.5, color: C.muted, lineHeight: 1.4,
+                        }}>
+                          {etaSentTime && <>Sent {etaSentTime}</>}
+                          {etaSentTime && etaQuotedSnippet && <> — </>}
+                          {etaQuotedSnippet && (
+                            <span style={{ color: C.ink, fontWeight: 600 }}>
+                              &ldquo;{etaQuotedSnippet}&rdquo;
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 5-state reply badge — preserved */}
+                  {renderEtaReplyBadge()}
+
+                  {etaCooldownMsg && <InlinePill tone="amber">{etaCooldownMsg}</InlinePill>}
+                </>
+              ) : (
+                <>
+                  {/* Send ETA Text — small gold pill button when idle/sending/error */}
+                  <button
+                    onClick={handleSendEta}
+                    disabled={etaStatus === 'sending'}
+                    style={{
+                      width: '100%', height: 50, borderRadius: 999,
+                      background: C.gold, color: C.ink,
+                      border: 0,
+                      cursor: etaStatus === 'sending' ? 'default' : 'pointer',
+                      opacity: etaStatus === 'sending' ? 0.65 : 1,
+                      fontSize: 14, fontWeight: 800, fontFamily: 'inherit',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                      letterSpacing: '0.02em',
+                      boxShadow: '0 10px 22px -10px rgba(255,184,0,0.55)',
+                      transition: 'opacity 120ms ease',
+                    }}
+                  >
+                    <ClockIcon size={16} color={C.ink}/>
+                    {etaStatus === 'sending' ? 'Sending ETA…' : 'Send ETA Text'}
+                  </button>
+                  {etaStatus === 'error' && etaError && <InlinePill tone="coral">{etaError}</InlinePill>}
+                  {etaCooldownMsg && <InlinePill tone="amber">{etaCooldownMsg}</InlinePill>}
+                </>
+              )}
+            </div>
+
+            {/* Notes — dashed-border card, only when notes exist */}
+            {stop.notes && stop.notes.trim().length > 0 && (
+              <div style={{ padding: '14px 18px 0' }}>
+                <div style={{
+                  background: C.paper,
+                  border: `1.5px dashed ${C.muted}`,
+                  borderRadius: 14,
+                  padding: '12px 14px',
+                  display: 'flex', gap: 10, alignItems: 'flex-start',
+                }}>
+                  <div style={{
+                    width: 24, height: 24, flexShrink: 0,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }} aria-hidden="true">
+                    <NoteIcon size={18} color={C.goldDeep}/>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontSize: 10.5, fontWeight: 900, letterSpacing: '0.18em',
+                      color: C.goldDeep, textTransform: 'uppercase',
+                    }}>
+                      Notes
+                    </div>
+                    <div style={{
+                      marginTop: 4, fontSize: 13.5, color: C.ink, lineHeight: 1.45,
+                      fontStyle: 'italic',
+                    }}>
+                      {stop.notes}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* POD preview — appears above ActionCard when uploaded */}
+            {pod.status === 'uploaded' && pod.url && (
+              <div style={{ padding: '14px 18px 0' }}>
+                <div style={{
                   background: C.paper,
                   border: `1.5px solid ${C.ink}`,
-                  borderRadius: 16,
-                  padding: '14px 16px',
-                  cursor: tapGoodsLoading ? 'default' : 'pointer',
-                  opacity: tapGoodsLoading ? 0.55 : 1,
-                  fontFamily: 'inherit',
-                  display: 'flex', alignItems: 'center', gap: 12,
-                  textAlign: 'left',
-                  transition: 'opacity 120ms ease',
-                }}
-              >
-                <div style={{
-                  width: 44, height: 44, borderRadius: 12,
-                  background: C.off,
-                  border: `1.5px solid ${C.ink}`,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  flexShrink: 0,
+                  borderRadius: 18,
+                  overflow: 'hidden',
                 }}>
-                  <DocIcon size={20} color={C.ink}/>
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={pod.url}
+                    alt="Proof of delivery"
+                    style={{ width: '100%', display: 'block', maxHeight: 240, objectFit: 'cover' }}
+                  />
                   <div style={{
-                    fontSize: 14.5, fontWeight: 800, color: C.ink,
-                    fontFamily: FONT_DISPLAY, letterSpacing: '-0.01em',
+                    background: C.gold,
+                    padding: '10px 14px',
+                    display: 'flex', alignItems: 'center', gap: 10,
                   }}>
-                    {tapGoodsLoading ? 'Opening…' : 'View Order'}
-                  </div>
-                  <div style={{ marginTop: 2, fontSize: 11.5, color: C.muted }}>
-                    Opens pick list for order {stop.order_id}
+                    <CheckIcon size={16} color={C.ink}/>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{
+                        fontSize: 10.5, fontWeight: 900, letterSpacing: '0.16em',
+                        color: C.goldDeep, textTransform: 'uppercase',
+                      }}>
+                        Photo Uploaded
+                      </div>
+                      <div style={{ marginTop: 1, fontSize: 12.5, fontWeight: 600, color: C.ink }}>
+                        Proof of delivery saved.
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <ArrowIcon size={16} color={C.muted}/>
-              </button>
+              </div>
+            )}
+            {pod.status === 'uploading' && (
+              <div style={{ padding: '14px 18px 0' }}>
+                <div style={{
+                  background: C.paper,
+                  border: `1.5px solid rgba(10,11,20,0.12)`,
+                  borderRadius: 14,
+                  padding: '12px 14px',
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  fontSize: 13, color: C.muted,
+                }}>
+                  <div style={{
+                    width: 18, height: 18,
+                    border: '2px solid rgba(10,11,20,0.15)',
+                    borderTopColor: C.ink,
+                    borderRadius: '50%',
+                    animation: 'sd-spin 0.9s linear infinite',
+                  }}/>
+                  Uploading photo…
+                  <style>{`@keyframes sd-spin { to { transform: rotate(360deg); } }`}</style>
+                </div>
+              </div>
+            )}
+            {pod.status === 'failed' && (
+              <div style={{ padding: '14px 18px 0' }}>
+                <div style={{
+                  background: C.paper,
+                  border: `1.5px solid ${C.coral}`,
+                  borderRadius: 14,
+                  padding: '12px 14px',
+                  display: 'flex', alignItems: 'flex-start', gap: 10,
+                  boxShadow: `4px 4px 0 ${C.coral}`,
+                }}>
+                  <span style={{
+                    width: 22, height: 22, borderRadius: '50%',
+                    background: 'rgba(255,90,60,0.12)',
+                    border: `1.5px solid ${C.coral}`,
+                    color: C.coral,
+                    fontWeight: 900, fontSize: 13,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    flexShrink: 0,
+                  }} aria-hidden="true">!</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontSize: 10.5, fontWeight: 900, letterSpacing: '0.16em',
+                      color: C.coral, textTransform: 'uppercase',
+                    }}>
+                      Upload Failed
+                    </div>
+                    {pod.error && (
+                      <div style={{ marginTop: 2, fontSize: 12, color: C.muted }}>
+                        {pod.error}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ACTION CARD — Mark Arrived + 3 quick actions */}
+            <div style={{ padding: '16px 18px 0' }}>
+              <div style={{
+                background: C.paper,
+                border: `1.5px solid ${C.ink}`,
+                borderRadius: 22,
+                padding: 14,
+                boxShadow: `5px 5px 0 ${C.ink}`,
+              }}>
+                {/* Mark Arrived — gold (pending) or green (otw_sent) */}
+                <button
+                  onClick={() => setShowCompleteModal(true)}
+                  style={{
+                    width: '100%', height: 60, borderRadius: 999,
+                    background: isOtwSent ? C.green : C.gold,
+                    color: C.ink,
+                    border: 0, cursor: 'pointer',
+                    fontSize: 16, fontWeight: 900, fontFamily: FONT_DISPLAY,
+                    letterSpacing: '-0.01em',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '0 8px 0 22px',
+                    boxShadow: isOtwSent
+                      ? '0 14px 30px -10px rgba(31,191,107,0.55)'
+                      : '0 14px 30px -10px rgba(255,184,0,0.55)',
+                    transition: 'background 160ms ease',
+                  }}
+                >
+                  <span>Mark Arrived</span>
+                  <span style={{
+                    width: 44, height: 44, borderRadius: '50%',
+                    background: C.ink,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    flexShrink: 0,
+                  }}>
+                    <ArrowIcon size={18} color={isOtwSent ? C.green : C.gold}/>
+                  </span>
+                </button>
+
+                {/* 3-button grid */}
+                <div style={{
+                  marginTop: 12,
+                  display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10,
+                }}>
+                  <QuickAction
+                    icon={<NavigateIcon size={22} color={C.ink}/>}
+                    label={navLoading ? 'Opening…' : 'Open in Maps'}
+                    onClick={handleNavigate}
+                    loading={navLoading}
+                  />
+                  <QuickAction
+                    icon={<DocIcon size={22} color={C.ink}/>}
+                    label={tapGoodsLoading ? 'Opening…' : 'View Order'}
+                    onClick={handleOpenTapGoods}
+                    loading={tapGoodsLoading}
+                    disabled={!stop.order_id}
+                  />
+                  <QuickAction
+                    icon={<CameraIcon size={22} color={C.ink}/>}
+                    label={
+                      pod.status === 'uploading'
+                        ? 'Uploading…'
+                        : pod.status === 'uploaded'
+                          ? 'Retake Photo'
+                          : pod.status === 'failed'
+                            ? 'Retry Photo'
+                            : 'POD Photo'
+                    }
+                    onClick={handleTakePhotoTap}
+                    loading={pod.status === 'uploading'}
+                  />
+                </div>
+              </div>
+
+              {navMessage && <InlinePill tone="muted">{navMessage}</InlinePill>}
             </div>
           </>
         )}
 
-        {/* ── PROOF OF DELIVERY ─────────────────────────────────────────── */}
-        <SectionEyebrow>Proof of Delivery</SectionEyebrow>
-        <div style={{ padding: '0 18px' }}>
-          <input
-            ref={photoInputRef}
-            type="file"
-            accept="image/*"
-            style={{ display: 'none' }}
-            onChange={handlePhotoSelected}
-            aria-label="Take proof of delivery photo"
-          />
-
-          {pod.status === 'uploaded' && pod.url && (
-            <div style={{
-              marginBottom: 10,
-              border: `1.5px solid ${C.ink}`,
-              borderRadius: 16,
-              overflow: 'hidden',
-              background: C.paper,
-              boxShadow: `4px 4px 0 ${C.ink}`,
-            }}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={pod.url}
-                alt="Proof of delivery"
-                style={{ width: '100%', display: 'block', maxHeight: 240, objectFit: 'cover' }}
-              />
-            </div>
-          )}
-
-          {pod.status === 'uploaded' && (
-            <div style={{
-              marginBottom: 10,
-              background: C.gold, color: C.ink,
-              borderRadius: 14, padding: '10px 14px',
-              display: 'flex', alignItems: 'center', gap: 10,
-            }}>
-              <CheckIcon size={16} color={C.ink}/>
-              <div>
-                <div style={{
-                  fontSize: 10.5, fontWeight: 900, letterSpacing: '0.16em',
-                  color: C.goldDeep, textTransform: 'uppercase',
-                }}>
-                  Photo Uploaded
-                </div>
-                <div style={{ marginTop: 1, fontSize: 12.5, fontWeight: 600, color: C.ink }}>
-                  Proof of delivery saved to server.
-                </div>
-              </div>
-            </div>
-          )}
-
-          {pod.status === 'failed' && (
-            <div style={{
-              marginBottom: 10,
-              background: C.paper,
-              border: `1.5px solid ${C.ink}`,
-              borderRadius: 14, padding: '10px 14px',
-              boxShadow: `4px 4px 0 ${C.coral}`,
-              display: 'flex', alignItems: 'flex-start', gap: 10,
-            }}>
-              <span style={{
-                width: 22, height: 22, borderRadius: '50%',
-                background: 'rgba(255,90,60,0.12)',
-                border: `1.5px solid ${C.coral}`,
-                color: C.coral,
-                fontWeight: 900, fontSize: 13,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                flexShrink: 0,
-              }} aria-hidden="true">!</span>
-              <div>
-                <div style={{
-                  fontSize: 10.5, fontWeight: 900, letterSpacing: '0.16em',
-                  color: C.coral, textTransform: 'uppercase',
-                }}>
-                  Upload Failed
-                </div>
-                {pod.error && (
-                  <div style={{ marginTop: 2, fontSize: 12, color: C.muted }}>
-                    {pod.error}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          <button
-            onClick={handleTakePhotoTap}
-            disabled={pod.status === 'uploading'}
-            style={{
-              width: '100%', height: 58, borderRadius: 999,
-              background: pod.status === 'uploaded' ? C.paper : C.gold,
-              color: C.ink,
-              border: pod.status === 'uploaded' ? `1.5px solid rgba(10,11,20,0.18)` : 0,
-              cursor: pod.status === 'uploading' ? 'default' : 'pointer',
-              opacity: pod.status === 'uploading' ? 0.55 : 1,
-              fontSize: 16, fontWeight: 800, fontFamily: 'inherit',
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '0 8px 0 24px',
-              boxShadow: pod.status === 'uploaded' ? 'none' : '0 14px 30px -10px rgba(255,184,0,0.55), inset 0 -2px 0 rgba(0,0,0,0.18)',
-              transition: 'opacity 120ms ease',
-            }}
-          >
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
-              <CameraIcon size={18} color={C.ink}/>
-              {pod.status === 'uploading'
-                ? 'Uploading…'
-                : pod.status === 'uploaded'
-                  ? 'Retake Photo'
-                  : pod.status === 'failed'
-                    ? 'Retry Photo'
-                    : 'Take Photo'}
-            </span>
-            <span style={{
-              width: 42, height: 42, borderRadius: '50%',
-              background: C.ink,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              flexShrink: 0,
-            }}>
-              <ArrowIcon size={18} color={C.gold}/>
-            </span>
-          </button>
-          <HelperText>
-            {pod.status === 'uploading'
-              ? 'Saving to server…'
-              : pod.status === 'uploaded'
-                ? 'Tap to replace with a new photo'
-                : 'Opens camera · saved to server'}
-          </HelperText>
-        </div>
-
-        {/* ── COMPLETE (only when not yet completed) ────────────────────── */}
-        {!isCompleted && (
+        {/* MANIFEST */}
+        {items.length > 0 && (
           <>
-            <SectionEyebrow>Complete</SectionEyebrow>
+            <div style={{
+              padding: '24px 22px 10px',
+              fontFamily: FONT_DISPLAY,
+              fontSize: 12, fontWeight: 800, letterSpacing: '0.2em',
+              textTransform: 'uppercase', color: C.muted,
+            }}>
+              Manifest · {items.length} item{items.length === 1 ? '' : 's'}
+            </div>
             <div style={{ padding: '0 18px' }}>
-              <button
-                onClick={() => setShowCompleteModal(true)}
-                style={{
-                  width: '100%', height: 58, borderRadius: 999,
-                  background: C.ink, color: '#fff',
-                  border: 0, cursor: 'pointer',
-                  fontSize: 16, fontWeight: 800, fontFamily: 'inherit',
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '0 8px 0 24px',
-                  boxShadow: '0 14px 30px -10px rgba(10,11,20,0.45)',
-                }}
-              >
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
-                  <CheckIcon size={18} color="#fff"/>
-                  Mark Stop Complete
-                </span>
-                <span style={{
-                  width: 42, height: 42, borderRadius: '50%',
-                  background: C.gold,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  flexShrink: 0,
-                }}>
-                  <CheckIcon size={18} color={C.ink}/>
-                </span>
-              </button>
-              <HelperText>
-                {nextStop
-                  ? `Requires confirmation · advances to Stop ${nextStop.stop_sequence}`
-                  : 'Requires confirmation · returns to route list (last stop)'}
-              </HelperText>
+              <div style={{
+                background: C.paper,
+                border: `1.5px solid ${C.ink}`,
+                borderRadius: 18,
+                overflow: 'hidden',
+              }}>
+                {items.map((item, i) => {
+                  const name = (item.name ?? '').trim() || '—'
+                  const sub  = item.category ? sentenceCase(item.category) : null
+                  const qty  = item.qty ?? 1
+                  return (
+                    <div
+                      key={i}
+                      style={{
+                        display: 'flex', alignItems: 'flex-start', gap: 12,
+                        padding: '14px 16px',
+                        borderTop: i > 0 ? '1px solid rgba(10,11,20,0.10)' : 0,
+                      }}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{
+                          fontSize: 14, fontWeight: 800, color: C.ink, lineHeight: 1.3,
+                          letterSpacing: '-0.005em',
+                          overflow: 'hidden', textOverflow: 'ellipsis',
+                        }}>
+                          {name}
+                        </div>
+                        {sub && (
+                          <div style={{
+                            marginTop: 2, fontSize: 12.5, color: C.muted, lineHeight: 1.35,
+                            overflow: 'hidden', textOverflow: 'ellipsis',
+                          }}>
+                            {sub}
+                          </div>
+                        )}
+                      </div>
+                      <div style={{
+                        background: C.ink, color: '#fff',
+                        padding: '5px 11px', borderRadius: 999,
+                        fontSize: 12, fontWeight: 800,
+                        fontVariantNumeric: 'tabular-nums',
+                        letterSpacing: '-0.005em',
+                        flexShrink: 0,
+                        marginTop: 1,
+                      }}>
+                        ×{qty}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           </>
         )}
