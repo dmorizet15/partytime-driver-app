@@ -169,6 +169,7 @@ export function transformSupabase({ routes: routeRows, assignments, stops: stopR
       customer_cell:  s.customer_cell  ?? undefined,
       notes:          s.notes ?? undefined,
       items_text:     formatItemsText(s.items),
+      items:          Array.isArray(s.items) ? (s.items as RawItem[]) : undefined,
       payment_state:  mapPaymentState(s.payment_state),
       current_status: 'pending' as StopStatus,
       on_the_way_sent:    false,

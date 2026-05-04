@@ -38,6 +38,7 @@ export interface Stop {
   customer_cell?: string     // explicit Mobile-typed phone — preferred for SMS
   notes?: string
   items_text?: string
+  items?: Array<{ category?: string | null; name?: string | null; qty?: number | null }>
   payment_state?: PaymentState
   current_status: StopStatus
   on_the_way_sent: boolean
