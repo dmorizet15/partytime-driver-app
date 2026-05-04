@@ -4,8 +4,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useRouter }                    from 'next/navigation'
 import { useAppState }                  from '@/context/AppStateContext'
 import { useAuth }                      from '@/hooks/useAuth'
-import { signOut }                      from '@/lib/auth'
-import { Route }                        from '@/types'
+import type { Stop }                    from '@/types'
 
 // ─── Direction 03 (Editorial) tokens ──────────────────────────────────────────
 const C = {
@@ -14,19 +13,26 @@ const C = {
   cream:    '#FFF9EE',
   gold:     '#FFB800',
   goldDeep: '#B07F00',
+  goldSoft: '#FFEFC2',
   muted:    '#6B7488',
   paper:    '#FFFFFF',
+  off:      '#F4F6FA',
   coral:    '#FF5A3C',
+  green:    '#1FBF6B',
 } as const
 
 const FONT_DISPLAY = "var(--font-archivo), 'Archivo', 'Inter', system-ui, -apple-system, sans-serif"
 const FONT_BODY    = "var(--font-inter), 'Inter', system-ui, -apple-system, sans-serif"
 
 // ─── Phase-2 reservation flags ────────────────────────────────────────────────
-// Slots are kept in JSX so flipping these to `true` is a one-line change once
-// the backend is ready. Default hidden — no fake UI shipped today.
-const HAS_INSPECTION_REQUIRED = false
-const HAS_AVA                 = false
+// Slots stay in JSX so flipping these to `true` is a one-line change once the
+// backend is ready. While `false`, each slot renders a designed stub whose tap
+// fires a "Coming soon" toast — no fake data shipped.
+const HAS_TRUCK      = false
+const HAS_INSPECTION = false
+const HAS_AVA        = false
+// HAS_WEATHER reserved for the wind/weather pill on stop cards. Render gated
+// inline at the pill site rather than as a top-level flag here.
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 function parseLocal(dateStr: string): Date {
@@ -59,11 +65,11 @@ function formatNavDate(dateStr: string): string {
   })
 }
 
-function formatEyebrowDate(dateStr: string): string {
-  const d  = parseLocal(dateStr)
+function formatLiveEyebrow(d: Date): string {
   const wd = d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()
-  const mo = d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase()
-  return `${wd} · ${mo} ${d.getDate()}`
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  return `${wd} · ${hh}:${mm}`
 }
 
 function timeGreeting(): string {
@@ -80,13 +86,89 @@ function firstNameOf(displayName: string | null | undefined): string | null {
   return t.split(/\s+/)[0]
 }
 
+function daySubcopy(count: number): { opener: string; count: string; suffix: string } {
+  if (count === 1) return { opener: 'Easy day.',   count: '1 stop',         suffix: ' scheduled.' }
+  if (count <= 3)  return { opener: 'Steady day.', count: `${count} stops`, suffix: ' scheduled.' }
+  return             { opener: 'Big day.',         count: `${count} stops`, suffix: ' scheduled.' }
+}
+
+// ─── Inline icons ─────────────────────────────────────────────────────────────
+type IconProps = { size?: number; color?: string }
+
+function TruckIcon({ size = 16, color = C.ink }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+         strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 7h11v9H3z"/>
+      <path d="M14 10h4l3 3v3h-7z"/>
+      <circle cx="7.5" cy="17.5" r="1.8"/>
+      <circle cx="17" cy="17.5" r="1.8"/>
+    </svg>
+  )
+}
+
+function DocIcon({ size = 16, color = C.ink }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+         strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <polyline points="14 2 14 8 20 8"/>
+      <line x1="8"  y1="13" x2="16" y2="13"/>
+      <line x1="8"  y1="17" x2="13" y2="17"/>
+    </svg>
+  )
+}
+
+function CashIcon({ size = 14, color = C.ink }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+         strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="2" y="6" width="20" height="12" rx="2"/>
+      <circle cx="12" cy="12" r="3"/>
+    </svg>
+  )
+}
+
+function ArrowIcon({ size = 18, color = '#fff' }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+         strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M5 12h14M13 5l7 7-7 7"/>
+    </svg>
+  )
+}
+
+function ChevronRightIcon({ size = 16, color = C.muted }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+         strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polyline points="9 6 15 12 9 18"/>
+    </svg>
+  )
+}
+
 // ─── Screen ───────────────────────────────────────────────────────────────────
 export default function DayRouteSelectorScreen() {
   const router = useRouter()
   const { profile } = useAuth()
-  const { getRoutesForDate, isLoading, error, loadDay } = useAppState()
+  const { getRoutesForDate, getStopsForRoute, isLoading, error, loadDay } = useAppState()
 
   const [selectedDate, setSelectedDate] = useState<string>(todayStr())
+  const [now, setNow]                   = useState<Date>(() => new Date())
+  const [toast, setToast]               = useState<string | null>(null)
+
+  // Live eyebrow tick — refresh every 60s so the displayed time stays accurate
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60_000)
+    return () => clearInterval(id)
+  }, [])
+
+  // Toast auto-dismiss after 3s
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(null), 3000)
+    return () => clearTimeout(t)
+  }, [toast])
 
   // Load routes whenever the selected date changes
   useEffect(() => {
@@ -96,30 +178,38 @@ export default function DayRouteSelectorScreen() {
   const isToday = selectedDate === todayStr()
   const routes  = getRoutesForDate(selectedDate)
 
-  const totalStopCount = useMemo(
-    () => routes.reduce((a, r) => a + r.stop_count, 0),
-    [routes]
+  // Aggregate stops across today's routes — the day list renders stops, not
+  // routes. Composes existing context methods only; no hook/context edits.
+  const dayStops = useMemo(
+    () => routes.flatMap((r) => getStopsForRoute(r.route_id)),
+    [routes, getStopsForRoute]
+  )
+
+  const totalStopCount = dayStops.length
+  const codStops = useMemo(
+    () => dayStops.filter((s) => s.payment_state === 'cod'),
+    [dayStops]
   )
 
   const firstName   = firstNameOf(profile?.display_name)
   const hasGreeting = !!firstName
+  const isEmpty     = !isLoading && !error && totalStopCount === 0
+  const sub         = daySubcopy(totalStopCount)
 
-  const heroSubhead = (() => {
-    if (isLoading)            return 'Loading today…'
-    if (error)                return 'Could not load routes.'
-    if (routes.length === 0)  return 'No routes scheduled.'
-    const r = routes.length === 1 ? '1 route' : `${routes.length} routes`
-    const s = totalStopCount === 1 ? '1 stop'  : `${totalStopCount} stops`
-    return `${r} · ${s} scheduled.`
-  })()
+  function showToast(msg: string) { setToast(msg) }
 
-  function handleRouteSelect(route: Route) {
-    router.push(`/route/${route.route_id}`)
+  function handleStopTap(stop: Stop) {
+    router.push(`/route/${stop.route_id}/stop/${stop.stop_id}`)
   }
 
-  async function handleSignOut() {
-    await signOut()
-    router.replace('/login')
+  function handleStartRoute() {
+    if (routes.length === 0) return
+    if (HAS_INSPECTION) {
+      // TODO Phase 2: navigate to pre-trip inspection screen first
+      showToast('Coming soon — this feature is in development.')
+      return
+    }
+    router.push(`/route/${routes[0].route_id}`)
   }
 
   return (
@@ -127,16 +217,16 @@ export default function DayRouteSelectorScreen() {
       {/* ── HERO ─────────────────────────────────────────────────────────── */}
       <div style={{
         background: C.blue, color: '#fff',
-        padding: '36px 22px 26px',
+        padding: '32px 22px 24px',
         position: 'relative', overflow: 'hidden', flexShrink: 0,
       }}>
         {/* asymmetric gold star */}
         <svg
           aria-hidden="true"
-          width={180} height={180} viewBox="0 0 100 100"
+          width={200} height={200} viewBox="0 0 100 100"
           style={{
-            position: 'absolute', right: -20, top: -10,
-            opacity: 0.25,
+            position: 'absolute', right: -28, top: -16,
+            opacity: 0.22,
             transform: 'rotate(25deg)', transformOrigin: 'center',
             pointerEvents: 'none',
           }}
@@ -144,7 +234,7 @@ export default function DayRouteSelectorScreen() {
           <path d="M50 8l8 28 28 8-28 8-8 28-8-28-28-8 28-8z" fill={C.gold}/>
         </svg>
 
-        {/* Eyebrow row: date · sign out */}
+        {/* Eyebrow row: live date/time + PTR mark */}
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           position: 'relative',
@@ -154,38 +244,20 @@ export default function DayRouteSelectorScreen() {
             color: C.gold, textTransform: 'uppercase',
             fontVariantNumeric: 'tabular-nums',
           }}>
-            {formatEyebrowDate(selectedDate)}
+            {formatLiveEyebrow(now)}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <button
-              onClick={handleSignOut}
-              aria-label="Sign out"
-              style={{
-                background: 'rgba(255,255,255,0.10)',
-                color: '#fff',
-                border: '1px solid rgba(255,255,255,0.18)',
-                padding: '6px 12px',
-                borderRadius: 999,
-                fontSize: 10.5, fontWeight: 800, letterSpacing: '0.12em',
-                textTransform: 'uppercase', cursor: 'pointer',
-                fontFamily: 'inherit',
-              }}
-            >
-              Sign out
-            </button>
-            <div style={{
-              width: 32, height: 32, borderRadius: 9,
-              background: C.paper,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              overflow: 'hidden',
-              flexShrink: 0,
-            }}>
-              <img
-                src="/ptr-mark.png"
-                alt="PartyTime Rentals"
-                style={{ width: '74%', height: '74%', objectFit: 'contain' }}
-              />
-            </div>
+          <div style={{
+            width: 32, height: 32, borderRadius: 9,
+            background: C.paper,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            overflow: 'hidden', flexShrink: 0,
+          }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/ptr-mark.png"
+              alt="PartyTime Rentals"
+              style={{ width: '74%', height: '74%', objectFit: 'contain' }}
+            />
           </div>
         </div>
 
@@ -206,102 +278,66 @@ export default function DayRouteSelectorScreen() {
           )}
         </div>
 
-        {/* Subhead */}
+        {/* Sub-copy */}
         <div style={{
           marginTop: 14, position: 'relative',
           fontSize: 15, color: 'rgba(255,255,255,0.85)',
           lineHeight: 1.4,
         }}>
-          {heroSubhead}
-        </div>
-      </div>
-
-      {/* ── DATE NAV ─────────────────────────────────────────────────────── */}
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '12px 18px',
-        background: C.cream,
-        borderBottom: '1px solid rgba(10,11,20,0.08)',
-        flexShrink: 0,
-      }}>
-        <button
-          onClick={() => setSelectedDate((d) => shiftDate(d, -1))}
-          disabled={isLoading}
-          aria-label="Previous day"
-          style={{
-            width: 40, height: 40, borderRadius: 12,
-            border: `1.5px solid ${C.ink}`, background: '#fff',
-            color: C.ink, fontSize: 20, fontWeight: 800,
-            cursor: isLoading ? 'default' : 'pointer',
-            opacity: isLoading ? 0.4 : 1,
-            fontFamily: 'inherit',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          ‹
-        </button>
-
-        <div style={{ textAlign: 'center' }}>
-          {isToday && (
-            <span style={{
-              display: 'inline-block',
-              background: C.ink, color: '#fff',
-              fontSize: 9, fontWeight: 800, letterSpacing: '0.2em',
-              textTransform: 'uppercase',
-              padding: '2px 8px', borderRadius: 4,
-              marginBottom: 4,
-            }}>
-              Today
-            </span>
+          {isLoading ? (
+            'Loading today…'
+          ) : error ? (
+            'Could not load routes.'
+          ) : totalStopCount === 0 ? (
+            'No stops scheduled today.'
+          ) : (
+            <>
+              {sub.opener}{' '}
+              <strong style={{ color: '#fff', fontWeight: 800 }}>{sub.count}</strong>
+              {sub.suffix}
+            </>
           )}
-          <div style={{
-            fontSize: 14, fontWeight: 700, color: C.ink,
-            fontFamily: FONT_DISPLAY, letterSpacing: '-0.01em',
-          }}>
-            {formatNavDate(selectedDate)}
-          </div>
         </div>
 
-        <button
-          onClick={() => setSelectedDate((d) => shiftDate(d, 1))}
-          disabled={isLoading}
-          aria-label="Next day"
-          style={{
-            width: 40, height: 40, borderRadius: 12,
-            border: `1.5px solid ${C.ink}`, background: '#fff',
-            color: C.ink, fontSize: 20, fontWeight: 800,
-            cursor: isLoading ? 'default' : 'pointer',
-            opacity: isLoading ? 0.4 : 1,
-            fontFamily: 'inherit',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          ›
-        </button>
+        {/* Truck pill — designed stub (HAS_TRUCK=false). Hidden on empty state. */}
+        {!isEmpty && (
+          <button
+            onClick={() => showToast('Coming soon — this feature is in development.')}
+            style={{
+              marginTop: 18, position: 'relative',
+              display: 'inline-flex', alignItems: 'center', gap: 10,
+              background: 'rgba(255,255,255,0.10)',
+              border: '1px solid rgba(255,255,255,0.16)',
+              padding: '6px 14px 6px 6px',
+              borderRadius: 999,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              color: '#fff',
+            }}
+          >
+            <span style={{
+              width: 28, height: 28, borderRadius: '50%',
+              background: C.gold,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+            }}>
+              <TruckIcon size={14} color={C.ink}/>
+            </span>
+            <span style={{
+              fontSize: 12.5, fontWeight: 700, letterSpacing: '-0.005em',
+              fontVariantNumeric: 'tabular-nums',
+            }}>
+              Your truck: — · —
+            </span>
+          </button>
+        )}
       </div>
 
       {/* ── SCROLL BODY ──────────────────────────────────────────────────── */}
-      {/* paddingBottom reserves ~80px for the future bottom nav (Phase 2) */}
       <div className="flex-1 overflow-y-auto" style={{ paddingBottom: 80 }}>
-        {/* Phase-2 slot: Pre-trip inspection — hidden until backend ships */}
-        {HAS_INSPECTION_REQUIRED && (
-          <div style={{ padding: '14px 18px 0' }}>
-            {/* PreTripCard goes here */}
-          </div>
-        )}
 
-        {/* Section eyebrow */}
-        <div style={{
-          padding: '24px 22px 8px',
-          fontFamily: FONT_DISPLAY,
-          fontSize: 13, fontWeight: 800, letterSpacing: '0.2em',
-          textTransform: 'uppercase', color: C.muted,
-        }}>
-          Routes for this day
-        </div>
-
-        {/* Body content: loading · error · empty · list */}
-        {isLoading ? (
+        {/* Loading state */}
+        {isLoading && (
           <div style={{
             padding: '40px 24px',
             display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
@@ -316,10 +352,13 @@ export default function DayRouteSelectorScreen() {
             <span style={{ fontSize: 13, color: C.muted }}>Loading routes…</span>
             <style>{`@keyframes ptw-spin { to { transform: rotate(360deg); } }`}</style>
           </div>
-        ) : error ? (
-          <div style={{ padding: '6px 22px 0' }}>
+        )}
+
+        {/* Error state */}
+        {!isLoading && error && (
+          <div style={{ padding: '14px 18px 0' }}>
             <div style={{
-              background: '#fff',
+              background: C.paper,
               border: `1.5px solid ${C.ink}`,
               borderRadius: 18,
               padding: 18,
@@ -359,104 +398,429 @@ export default function DayRouteSelectorScreen() {
               </button>
             </div>
           </div>
-        ) : routes.length === 0 ? (
-          <div style={{
-            padding: '32px 28px',
-            textAlign: 'center', color: C.muted, fontSize: 14, lineHeight: 1.5,
-          }}>
-            No routes scheduled for this day.
+        )}
+
+        {/* Empty state — single quiet card. Hides truck pill, pre-trip, list, CTA. */}
+        {isEmpty && (
+          <div style={{ padding: '32px 22px 0' }}>
+            <div style={{
+              background: C.paper,
+              border: `1.5px solid rgba(10,11,20,0.10)`,
+              borderRadius: 18,
+              padding: '26px 22px',
+              textAlign: 'center',
+            }}>
+              <div style={{
+                fontSize: 11, fontWeight: 800, color: C.muted,
+                letterSpacing: '0.22em', textTransform: 'uppercase',
+              }}>
+                {isToday ? 'Today' : 'No work'}
+              </div>
+              <div style={{
+                marginTop: 8, fontSize: 22, fontWeight: 900, color: C.ink,
+                fontFamily: FONT_DISPLAY, lineHeight: 1.1, letterSpacing: '-0.02em',
+              }}>
+                You&apos;re clear today.
+              </div>
+              <div style={{
+                marginTop: 6, fontSize: 14, color: C.muted, lineHeight: 1.4,
+              }}>
+                Enjoy the day off.
+              </div>
+            </div>
           </div>
-        ) : (
-          // Editorial route list — vertical line + numbered circles
-          <div style={{ padding: '0 18px', position: 'relative' }}>
-            <div
-              aria-hidden="true"
-              style={{
-                position: 'absolute',
-                left: 32, top: 14, bottom: 24,
-                width: 2,
-                background: 'rgba(10,11,20,0.10)',
-              }}
-            />
-            {routes.map((route, i) => {
-              const meta: string[] = []
-              if (route.truck_name)     meta.push(route.truck_name)
-              if (route.truck_2_name)   meta.push(route.truck_2_name)
-              if (route.assigned_driver) meta.push(route.assigned_driver)
+        )}
 
+        {/* Populated body — pre-trip + COD cards + day list + Ava + CTA */}
+        {!isLoading && !error && totalStopCount > 0 && (
+          <>
+            {/* Pre-trip inspection card — designed stub */}
+            <div style={{ padding: '14px 18px 0' }}>
+              <button
+                onClick={() => showToast('Coming soon — this feature is in development.')}
+                style={{
+                  width: '100%',
+                  background: C.ink,
+                  border: 0, cursor: 'pointer',
+                  borderRadius: 18,
+                  padding: '14px 16px',
+                  display: 'flex', alignItems: 'center', gap: 14,
+                  fontFamily: 'inherit',
+                  textAlign: 'left',
+                }}
+              >
+                <div style={{
+                  width: 44, height: 44, borderRadius: 11,
+                  background: C.gold,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0,
+                }}>
+                  <DocIcon size={20} color={C.ink}/>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    fontSize: 10.5, fontWeight: 900, letterSpacing: '0.18em',
+                    color: C.gold, textTransform: 'uppercase',
+                  }}>
+                    Required First
+                  </div>
+                  <div style={{
+                    marginTop: 2, fontSize: 15, fontWeight: 800, color: '#fff',
+                    fontFamily: FONT_DISPLAY, letterSpacing: '-0.01em',
+                  }}>
+                    Pre-trip inspection
+                  </div>
+                </div>
+                <ChevronRightIcon size={18} color="rgba(255,255,255,0.55)"/>
+              </button>
+            </div>
+
+            {/* COD cards — one per COD stop, stacked */}
+            {codStops.map((stop) => {
+              const headline    = (stop.company_name?.trim() || stop.customer_name).trim()
+              const contactName = stop.customer_name
+              const showSubName = !!contactName && contactName !== headline
               return (
-                <button
-                  key={route.route_id}
-                  onClick={() => handleRouteSelect(route)}
-                  style={{
-                    width: '100%', textAlign: 'left',
-                    background: 'transparent', border: 0, cursor: 'pointer',
-                    padding: '12px 0', display: 'flex', gap: 16,
-                    alignItems: 'flex-start', fontFamily: 'inherit',
-                    minHeight: 64,
-                  }}
-                >
-                  {/* Numbered circle */}
-                  <div style={{
-                    width: 28, height: 28, borderRadius: '50%',
-                    flexShrink: 0,
-                    background: '#fff',
-                    border: `2px solid ${C.ink}`, color: C.ink,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 12, fontWeight: 900,
-                    fontFamily: FONT_DISPLAY,
-                    position: 'relative', zIndex: 1,
-                  }}>
-                    {i + 1}
-                  </div>
-
-                  {/* Right side */}
-                  <div style={{
-                    flex: 1, minWidth: 0,
-                    padding: '0 0 6px',
-                    position: 'relative', zIndex: 0,
-                  }}>
+                <div key={`cod-${stop.stop_id}`} style={{ padding: '12px 18px 0' }}>
+                  <button
+                    onClick={() => handleStopTap(stop)}
+                    style={{
+                      width: '100%',
+                      background: C.goldSoft,
+                      border: `1.5px solid ${C.gold}`,
+                      borderRadius: 18,
+                      padding: '14px 16px',
+                      display: 'flex', alignItems: 'center', gap: 14,
+                      cursor: 'pointer',
+                      fontFamily: 'inherit',
+                      textAlign: 'left',
+                      boxShadow: '0 14px 28px -16px rgba(176,127,0,0.45)',
+                    }}
+                  >
                     <div style={{
-                      display: 'flex', justifyContent: 'space-between',
-                      alignItems: 'baseline', gap: 8,
+                      width: 44, height: 44, borderRadius: '50%',
+                      background: C.gold,
+                      border: `2px solid ${C.ink}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      flexShrink: 0,
                     }}>
-                      <div style={{
-                        fontSize: 16, fontWeight: 800, color: C.ink,
-                        fontFamily: FONT_DISPLAY, lineHeight: 1.2,
-                        letterSpacing: '-0.01em',
-                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                      }}>
-                        {route.route_name}
-                      </div>
-                      <div style={{
-                        fontSize: 13, fontWeight: 800, color: C.muted,
-                        fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
-                      }}>
-                        {route.stop_count} stop{route.stop_count !== 1 ? 's' : ''}
-                      </div>
+                      <CashIcon size={18} color={C.ink}/>
                     </div>
-                    {meta.length > 0 && (
+                    <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{
-                        marginTop: 2, fontSize: 12.5, color: C.muted,
+                        fontSize: 10.5, fontWeight: 900, letterSpacing: '0.18em',
+                        color: C.goldDeep, textTransform: 'uppercase',
+                      }}>
+                        Cash Required
+                      </div>
+                      <div style={{
+                        marginTop: 2, fontSize: 15, fontWeight: 800, color: C.ink,
+                        fontFamily: FONT_DISPLAY, letterSpacing: '-0.01em',
                         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                       }}>
-                        {meta.join(' · ')}
+                        {headline}
                       </div>
-                    )}
-                  </div>
-                </button>
+                      {showSubName ? (
+                        <div style={{
+                          marginTop: 2, fontSize: 12.5, color: C.goldDeep, lineHeight: 1.3,
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}>
+                          Collect on arrival from {contactName}
+                        </div>
+                      ) : (
+                        <div style={{
+                          marginTop: 2, fontSize: 12.5, color: C.goldDeep, lineHeight: 1.3,
+                        }}>
+                          Collect on arrival
+                        </div>
+                      )}
+                    </div>
+                  </button>
+                </div>
               )
             })}
-          </div>
-        )}
 
-        {/* Phase-2 slot: Ava chip — hidden until backend ships */}
-        {HAS_AVA && (
-          <div style={{ padding: '18px 18px 0', display: 'flex', justifyContent: 'flex-end' }}>
-            {/* AvaChip goes here */}
-          </div>
+            {/* Date nav strip — small ghost buttons + center label */}
+            <div style={{
+              padding: '20px 22px 0',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              gap: 10,
+            }}>
+              <button
+                onClick={() => setSelectedDate((d) => shiftDate(d, -1))}
+                aria-label="Previous day"
+                disabled={isLoading}
+                style={{
+                  width: 32, height: 32, borderRadius: 8,
+                  background: 'transparent',
+                  border: '1px solid rgba(10,11,20,0.14)',
+                  color: C.muted,
+                  fontSize: 16, fontWeight: 800,
+                  cursor: isLoading ? 'default' : 'pointer',
+                  opacity: isLoading ? 0.4 : 1,
+                  fontFamily: 'inherit',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
+              >
+                ‹
+              </button>
+              <div style={{
+                fontSize: 12, fontWeight: 700, color: C.muted,
+                letterSpacing: '0.02em',
+                fontVariantNumeric: 'tabular-nums',
+                display: 'flex', alignItems: 'center', gap: 8,
+              }}>
+                {isToday && (
+                  <span style={{
+                    padding: '2px 6px', borderRadius: 4,
+                    background: C.ink, color: '#fff',
+                    fontSize: 9, fontWeight: 800, letterSpacing: '0.2em',
+                    textTransform: 'uppercase',
+                  }}>
+                    Today
+                  </span>
+                )}
+                <span>{formatNavDate(selectedDate)}</span>
+              </div>
+              <button
+                onClick={() => setSelectedDate((d) => shiftDate(d, 1))}
+                aria-label="Next day"
+                disabled={isLoading}
+                style={{
+                  width: 32, height: 32, borderRadius: 8,
+                  background: 'transparent',
+                  border: '1px solid rgba(10,11,20,0.14)',
+                  color: C.muted,
+                  fontSize: 16, fontWeight: 800,
+                  cursor: isLoading ? 'default' : 'pointer',
+                  opacity: isLoading ? 0.4 : 1,
+                  fontFamily: 'inherit',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
+              >
+                ›
+              </button>
+            </div>
+
+            {/* Day list eyebrow */}
+            <div style={{
+              padding: '20px 22px 8px',
+              fontFamily: FONT_DISPLAY,
+              fontSize: 13, fontWeight: 800, letterSpacing: '0.2em',
+              textTransform: 'uppercase', color: C.muted,
+            }}>
+              The day, in {totalStopCount}
+            </div>
+
+            {/* Day stop list — vertical line + numbered circles */}
+            <div style={{ padding: '0 18px', position: 'relative' }}>
+              {/* connector line — sits behind circles (z-index 0). Center
+                  alignment: container padding-left=18, circle width=32 → center
+                  at parent-x = 18 + 16 = 34. */}
+              <div
+                aria-hidden="true"
+                style={{
+                  position: 'absolute',
+                  left: 33, top: 16, bottom: 16,
+                  width: 2,
+                  background: 'rgba(10,11,20,0.10)',
+                  zIndex: 0,
+                }}
+              />
+              {dayStops.map((stop, i) => {
+                const num         = i + 1
+                const isCod       = stop.payment_state === 'cod'
+                const headline    = (stop.company_name?.trim() || stop.customer_name).trim()
+                const addressLine = stop.address_line_1
+                  ? `${stop.address_line_1} · — mi`
+                  : '— mi'
+
+                return (
+                  <button
+                    key={stop.stop_id}
+                    onClick={() => handleStopTap(stop)}
+                    style={{
+                      width: '100%', textAlign: 'left',
+                      background: 'transparent', border: 0, cursor: 'pointer',
+                      padding: '8px 0', display: 'flex', gap: 16,
+                      alignItems: 'flex-start', fontFamily: 'inherit',
+                      position: 'relative', zIndex: 1,
+                    }}
+                  >
+                    {/* Numbered circle (32px) — gold for COD, white-ink for standard */}
+                    <div style={{
+                      width: 32, height: 32, borderRadius: '50%',
+                      flexShrink: 0,
+                      background: isCod ? C.gold : C.paper,
+                      border: `2px solid ${C.ink}`, color: C.ink,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 13, fontWeight: 900,
+                      fontFamily: FONT_DISPLAY,
+                      letterSpacing: '-0.02em',
+                    }}>
+                      {num}
+                    </div>
+
+                    {isCod ? (
+                      // Elevated card for COD stops
+                      <div style={{
+                        flex: 1, minWidth: 0,
+                        background: C.paper,
+                        border: `1.5px solid ${C.ink}`,
+                        borderRadius: 16,
+                        padding: '12px 14px',
+                        boxShadow: `4px 4px 0 ${C.ink}`,
+                      }}>
+                        <div style={{
+                          fontSize: 16, fontWeight: 800, color: C.ink,
+                          fontFamily: FONT_DISPLAY, lineHeight: 1.2,
+                          letterSpacing: '-0.01em',
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}>
+                          {headline}
+                        </div>
+                        <div style={{
+                          marginTop: 4, fontSize: 12.5, color: C.muted,
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}>
+                          {addressLine}
+                        </div>
+                        <div style={{
+                          marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap',
+                        }}>
+                          <span style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 6,
+                            background: C.green, color: '#fff',
+                            padding: '4px 10px', borderRadius: 999,
+                            fontSize: 11.5, fontWeight: 800, letterSpacing: '-0.005em',
+                          }}>
+                            <CashIcon size={12} color={'#fff'}/>
+                            COD
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      // Inline row for standard stops
+                      <div style={{
+                        flex: 1, minWidth: 0,
+                        padding: '4px 0 6px',
+                      }}>
+                        <div style={{
+                          fontSize: 16, fontWeight: 800, color: C.ink,
+                          fontFamily: FONT_DISPLAY, lineHeight: 1.2,
+                          letterSpacing: '-0.01em',
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}>
+                          {headline}
+                        </div>
+                        <div style={{
+                          marginTop: 2, fontSize: 12.5, color: C.muted,
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}>
+                          {addressLine}
+                        </div>
+                      </div>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Ask Ava chip — designed stub, right-aligned */}
+            <div style={{
+              padding: '18px 18px 0',
+              display: 'flex', justifyContent: 'flex-end',
+            }}>
+              <button
+                onClick={() => showToast('Coming soon — this feature is in development.')}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 10,
+                  background: C.paper,
+                  border: `1.5px solid rgba(10,11,20,0.10)`,
+                  padding: '6px 14px 6px 6px',
+                  borderRadius: 999,
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  color: C.ink,
+                  boxShadow: '0 6px 16px -8px rgba(10,11,20,0.18)',
+                }}
+              >
+                <span style={{
+                  width: 28, height: 28, borderRadius: '50%',
+                  background: C.coral,
+                  color: '#fff',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0,
+                  fontSize: 14, fontWeight: 900,
+                  fontFamily: FONT_DISPLAY,
+                  lineHeight: 1,
+                }}>
+                  +
+                </span>
+                <span style={{
+                  fontSize: 13, fontWeight: 700, color: C.ink, letterSpacing: '-0.005em',
+                }}>
+                  Ask Ava about today
+                </span>
+              </button>
+            </div>
+
+            {/* Inspect & Start Route gold CTA */}
+            <div style={{ padding: '18px 18px 0' }}>
+              <button
+                onClick={handleStartRoute}
+                disabled={routes.length === 0}
+                style={{
+                  width: '100%', height: 60, borderRadius: 999,
+                  background: C.gold, color: C.ink,
+                  border: 0,
+                  cursor: routes.length === 0 ? 'default' : 'pointer',
+                  opacity: routes.length === 0 ? 0.5 : 1,
+                  fontSize: 16, fontWeight: 900, fontFamily: FONT_DISPLAY,
+                  letterSpacing: '-0.01em',
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '0 8px 0 22px',
+                  boxShadow: '0 14px 30px -10px rgba(255,184,0,0.55)',
+                }}
+              >
+                <span>Inspect &amp; Start Route</span>
+                <span style={{
+                  width: 44, height: 44, borderRadius: '50%',
+                  background: C.ink,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0,
+                }}>
+                  <ArrowIcon size={18} color="#fff"/>
+                </span>
+              </button>
+            </div>
+          </>
         )}
       </div>
+
+      {/* Toast — fixed bottom, ephemeral. Single state slot, auto-dismiss 3s. */}
+      {toast && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: 'fixed',
+            left: '50%', bottom: 28,
+            transform: 'translateX(-50%)',
+            background: C.ink, color: '#fff',
+            padding: '12px 18px', borderRadius: 999,
+            fontSize: 13, fontWeight: 700,
+            borderLeft: `4px solid ${C.gold}`,
+            boxShadow: '0 12px 30px -10px rgba(0,0,0,0.45)',
+            zIndex: 100,
+            maxWidth: '80vw',
+            fontFamily: 'inherit',
+            textAlign: 'center',
+          }}
+        >
+          {toast}
+        </div>
+      )}
     </div>
   )
 }
