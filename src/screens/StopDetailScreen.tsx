@@ -10,6 +10,7 @@ import { photoUploadService } from '@/services/PhotoUploadService'
 import { logEvent } from '@/services/EventLogger'
 import { sendEtaSms, getStopSmsStatus, getDriverLocation } from '@/services/EtaSmsService'
 import type { StopSmsStatus } from '@/services/EtaSmsService'
+import BottomNav from '@/components/BottomNav'
 
 interface StopDetailScreenProps { routeId: string; stopId: string }
 type PodStatus = 'idle' | 'uploading' | 'uploaded' | 'failed'
@@ -286,6 +287,8 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
             </button>
           </div>
         </div>
+
+        <BottomNav/>
       </div>
     )
   }
@@ -773,7 +776,7 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
       </div>
 
       {/* ── SCROLL BODY ──────────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto" style={{ paddingBottom: 80 }}>
+      <div className="flex-1 overflow-y-auto">
 
         {/* COD card — only when payment is COD */}
         {stop.payment_state === 'cod' && (
@@ -1210,6 +1213,8 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
           </>
         )}
       </div>
+
+      <BottomNav/>
 
       {showCompleteModal && (
         <ConfirmationModal
