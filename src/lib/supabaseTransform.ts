@@ -82,8 +82,11 @@ function firstRel(rel: SupabaseTruckRow | SupabaseTruckRow[] | null): SupabaseTr
   return Array.isArray(rel) ? (rel[0] ?? null) : rel
 }
 
-function mapStopType(raw: string): 'delivery' | 'pickup' {
-  return raw?.toLowerCase() === 'pickup' ? 'pickup' : 'delivery'
+function mapStopType(raw: string): 'delivery' | 'pickup' | 'service' {
+  const v = raw?.toLowerCase()
+  if (v === 'pickup')  return 'pickup'
+  if (v === 'service') return 'service'
+  return 'delivery'
 }
 
 function mapPaymentState(raw: string | null): PaymentState | undefined {
