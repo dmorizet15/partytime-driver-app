@@ -74,7 +74,7 @@ export async function GET(req: NextRequest) {
         customer_name, customer_phone, customer_cell,
         company_name, client_company,
         address, address_lat, address_lng,
-        items, notes, stop_type, payment_state,
+        items, notes, stop_type, payment_state, balance_due_amount,
         tapgoods_order_token
       `)
       .in('route_id', routeIds)
