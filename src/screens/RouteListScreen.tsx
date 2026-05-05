@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { useAppState } from '@/context/AppStateContext'
 import { Stop, PaymentState } from '@/types'
+import BottomNav from '@/components/BottomNav'
 
 interface RouteListScreenProps {
   routeId: string
@@ -154,6 +155,8 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
             </button>
           </div>
         </div>
+
+        <BottomNav/>
       </div>
     )
   }
@@ -290,7 +293,7 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
       </div>
 
       {/* ── SCROLL BODY ──────────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto" style={{ paddingBottom: 80 }}>
+      <div className="flex-1 overflow-y-auto">
         {stops.length === 0 ? (
           <div style={{
             padding: '32px 28px',
@@ -475,6 +478,8 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
           </div>
         )}
       </div>
+
+      <BottomNav/>
     </div>
   )
 }
