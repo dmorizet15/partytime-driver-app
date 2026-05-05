@@ -5,6 +5,7 @@ import { useRouter }                    from 'next/navigation'
 import { useAppState }                  from '@/context/AppStateContext'
 import { useAuth }                      from '@/hooks/useAuth'
 import type { Stop }                    from '@/types'
+import BottomNav                        from '@/components/BottomNav'
 
 // ─── Direction 03 (Editorial) tokens ──────────────────────────────────────────
 const C = {
@@ -334,7 +335,7 @@ export default function DayRouteSelectorScreen() {
       </div>
 
       {/* ── SCROLL BODY ──────────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto" style={{ paddingBottom: 80 }}>
+      <div className="flex-1 overflow-y-auto">
 
         {/* Loading state */}
         {isLoading && (
@@ -798,14 +799,18 @@ export default function DayRouteSelectorScreen() {
         )}
       </div>
 
-      {/* Toast — fixed bottom, ephemeral. Single state slot, auto-dismiss 3s. */}
+      <BottomNav/>
+
+      {/* Toast — fixed bottom, ephemeral. Single state slot, auto-dismiss 3s.
+          Bottom offset clears the 80px BottomNav + iOS safe-area inset. */}
       {toast && (
         <div
           role="status"
           aria-live="polite"
           style={{
             position: 'fixed',
-            left: '50%', bottom: 28,
+            left: '50%',
+            bottom: 'calc(108px + env(safe-area-inset-bottom))',
             transform: 'translateX(-50%)',
             background: C.ink, color: '#fff',
             padding: '12px 18px', borderRadius: 999,
