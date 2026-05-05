@@ -58,6 +58,10 @@ html {
   display: flex;
   flex-direction: column;
   height: 100svh; /* small viewport height — locks to min visible area so iOS Safari's collapsible toolbar doesn't leave a gap below BottomNav */
+  /* Belt-and-suspenders alongside BottomNav's own env() padding — ensures the
+     screen container always respects the iOS home indicator inset even if a
+     descendant element overrides the nav's padding. */
+  padding-bottom: env(safe-area-inset-bottom);
   background: #ffffff;
   overflow: hidden;
 }
