@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { signOut } from '@/lib/auth'
 import type { Role } from '@/types/auth'
+import Image from 'next/image'
 import BottomNav from '@/components/BottomNav'
 
 // ─── Direction 03 (Editorial) tokens ──────────────────────────────────────────
@@ -81,9 +82,11 @@ function BrandMark() {
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       overflow: 'hidden', flexShrink: 0,
     }}>
-      <img
+      <Image
         src="/ptr-mark.png"
         alt="PartyTime Rentals"
+        width={64}
+        height={64}
         style={{ width: '74%', height: '74%', objectFit: 'contain' }}
       />
     </div>
