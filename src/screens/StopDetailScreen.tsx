@@ -41,6 +41,13 @@ const FONT_BODY    = "var(--font-inter), 'Inter', system-ui, -apple-system, sans
 // is preserved as a fallback for any data that uses that exact value.
 const COD_PAYMENT_STATES = new Set<string>(['cod', 'balance_due'])
 
+// ─── Stop type pill colors ────────────────────────────────────────────────────
+const TYPE_PILL: Record<'delivery' | 'pickup' | 'service', { bg: string; color: string }> = {
+  delivery: { bg: C.blue, color: '#fff' },
+  pickup:   { bg: C.gold, color: C.ink },
+  service:  { bg: C.ink,  color: '#fff' },
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function formatTime(isoString: string): string {
   try {
@@ -387,7 +394,11 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     // legacy customer_phone field (which may be a landline) only if no cell
     // is on file — preserves behavior on stops not yet re-synced.
     const smsTarget = stop.customer_cell?.trim() || stop.customer_phone
-    const result = await sendEtaSms({ stopId: stop.stop_id, routeId, stopType: stop.stop_type, customerPhone: smsTarget, customerName: stop.customer_name, orderId: stop.order_id, driverLat: loc.lat, driverLng: loc.lng, destination })
+    // EtaSmsService's stopType arg is typed 'delivery' | 'pickup'. Coerce
+    // 'service' → 'delivery' for the SMS (preserves prior behavior — service
+    // stops historically went out as deliveries when the mapper squashed them).
+    const smsStopType: 'delivery' | 'pickup' = stop.stop_type === 'service' ? 'delivery' : stop.stop_type
+    const result = await sendEtaSms({ stopId: stop.stop_id, routeId, stopType: smsStopType, customerPhone: smsTarget, customerName: stop.customer_name, orderId: stop.order_id, driverLat: loc.lat, driverLng: loc.lng, destination })
     if (result.success) {
       logEvent('ETA_SMS_SENT', routeId, stopId, stop.order_id, { etaRange: result.etaRange })
       return { success: true, etaRange: result.etaRange }
@@ -484,7 +495,7 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
               Customer Ready
             </div>
             <div style={{ marginTop: 2, fontSize: 13.5, lineHeight: 1.35, color: '#fff' }}>
-              {smsReply.customer_name ?? stop?.customer_name} confirmed ready for {stop?.stop_type === 'pickup' ? 'pickup' : 'delivery'}.
+              {smsReply.customer_name ?? stop?.customer_name} confirmed ready for {stop?.stop_type === 'pickup' ? 'pickup' : stop?.stop_type === 'service' ? 'service' : 'delivery'}.
             </div>
           </div>
         </div>
@@ -719,11 +730,26 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
           </div>
           <div style={{ flex: 1, minWidth: 0, paddingTop: 2 }}>
             <div style={{
-              fontSize: 11, fontWeight: 800, letterSpacing: '0.22em',
-              color: C.gold, textTransform: 'uppercase',
-              fontVariantNumeric: 'tabular-nums',
+              display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
             }}>
-              Stop {stop.stop_sequence} of {allStops.length}
+              <div style={{
+                fontSize: 11, fontWeight: 800, letterSpacing: '0.22em',
+                color: C.gold, textTransform: 'uppercase',
+                fontVariantNumeric: 'tabular-nums',
+              }}>
+                Stop {stop.stop_sequence} of {allStops.length}
+              </div>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center',
+                background: TYPE_PILL[stop.stop_type].bg,
+                color:      TYPE_PILL[stop.stop_type].color,
+                fontSize: 9.5, fontWeight: 900, letterSpacing: '0.18em',
+                textTransform: 'uppercase',
+                padding: '3px 8px', borderRadius: 999,
+                flexShrink: 0,
+              }}>
+                {stop.stop_type}
+              </span>
             </div>
             <div style={{
               marginTop: 4,
