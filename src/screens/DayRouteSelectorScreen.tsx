@@ -100,6 +100,14 @@ function firstNameOf(displayName: string | null | undefined): string | null {
   return t.split(/\s+/)[0]
 }
 
+const USD_FORMATTER = new Intl.NumberFormat('en-US', {
+  style: 'currency', currency: 'USD',
+  minimumFractionDigits: 2, maximumFractionDigits: 2,
+})
+function formatUSD(amount: number): string {
+  return USD_FORMATTER.format(amount)
+}
+
 function daySubcopy(count: number): { opener: string; count: string; suffix: string } {
   if (count === 1) return { opener: 'Easy day.',   count: '1 stop',         suffix: ' scheduled.' }
   if (count <= 3)  return { opener: 'Steady day.', count: `${count} stops`, suffix: ' scheduled.' }
@@ -217,8 +225,13 @@ export default function DayRouteSelectorScreen() {
   )
 
   const totalStopCount = dayStops.length
+  // COD cards are scoped to delivery stops — pickup stops with a balance_due
+  // payment state aren't a "collect cash on arrival" scenario from the driver's
+  // POV (the customer pays at the lot when picking up, not in the field).
   const codStops = useMemo(
-    () => dayStops.filter((s) => COD_PAYMENT_STATES.has(s.payment_state ?? '')),
+    () => dayStops.filter((s) =>
+      s.stop_type === 'delivery' && COD_PAYMENT_STATES.has(s.payment_state ?? '')
+    ),
     [dayStops]
   )
 
@@ -508,11 +521,17 @@ export default function DayRouteSelectorScreen() {
               </button>
             </div>
 
-            {/* COD cards — one per COD stop, stacked */}
-            {codStops.map((stop) => {
+            {/* COD card — single stop: tappable card linking to that stop.
+                Multi-stop: consolidated rollup with count + names list (no nav
+                target since there are multiple — driver taps individual stops
+                in the day list below). */}
+            {codStops.length === 1 && (() => {
+              const stop = codStops[0]
               const headline    = (stop.company_name?.trim() || stop.customer_name).trim()
               const contactName = stop.customer_name
               const showSubName = !!contactName && contactName !== headline
+              const amt = stop.balance_due_amount
+              const amountText  = (typeof amt === 'number' && amt > 0) ? `${formatUSD(amt)} ` : ''
               return (
                 <div key={`cod-${stop.stop_id}`} style={{ padding: '12px 18px 0' }}>
                   <button
@@ -558,20 +577,80 @@ export default function DayRouteSelectorScreen() {
                           marginTop: 2, fontSize: 12.5, color: C.goldDeep, lineHeight: 1.3,
                           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                         }}>
-                          Collect on arrival from {contactName}
+                          Collect {amountText}on arrival from {contactName}
                         </div>
                       ) : (
                         <div style={{
                           marginTop: 2, fontSize: 12.5, color: C.goldDeep, lineHeight: 1.3,
                         }}>
-                          Collect on arrival
+                          Collect {amountText}on arrival
                         </div>
                       )}
                     </div>
                   </button>
                 </div>
               )
-            })}
+            })()}
+
+            {codStops.length > 1 && (() => {
+              // Total only shown when EVERY COD stop has a numeric, positive
+              // amount. If any are null/zero, fall back to the count-only
+              // headline — never show a misleading partial total.
+              const allHaveAmounts = codStops.every(
+                (s) => typeof s.balance_due_amount === 'number' && s.balance_due_amount > 0
+              )
+              const totalAmount = allHaveAmounts
+                ? codStops.reduce((sum, s) => sum + (s.balance_due_amount ?? 0), 0)
+                : null
+              return (
+                <div key="cod-rollup" style={{ padding: '12px 18px 0' }}>
+                  <div style={{
+                    width: '100%',
+                    background: C.goldSoft,
+                    border: `1.5px solid ${C.gold}`,
+                    borderRadius: 18,
+                    padding: '14px 16px',
+                    display: 'flex', alignItems: 'flex-start', gap: 14,
+                    boxShadow: '0 14px 28px -16px rgba(176,127,0,0.45)',
+                  }}>
+                    <div style={{
+                      width: 44, height: 44, borderRadius: '50%',
+                      background: C.gold,
+                      border: `2px solid ${C.ink}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      flexShrink: 0,
+                      marginTop: 2,
+                    }}>
+                      <CashIcon size={18} color={C.ink}/>
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{
+                        fontSize: 10.5, fontWeight: 900, letterSpacing: '0.18em',
+                        color: C.goldDeep, textTransform: 'uppercase',
+                      }}>
+                        {totalAmount !== null
+                          ? `Cash Required · ${codStops.length} Stops`
+                          : 'Cash Required'}
+                      </div>
+                      <div style={{
+                        marginTop: 2, fontSize: 15, fontWeight: 800, color: C.ink,
+                        fontFamily: FONT_DISPLAY, letterSpacing: '-0.01em',
+                        lineHeight: 1.25,
+                      }}>
+                        {totalAmount !== null
+                          ? `Collect ${formatUSD(totalAmount)} total`
+                          : `${codStops.length} delivery stops require cash collection`}
+                      </div>
+                      <div style={{
+                        marginTop: 4, fontSize: 12.5, color: C.goldDeep, lineHeight: 1.4,
+                      }}>
+                        {codStops.map((s) => (s.company_name?.trim() || s.customer_name).trim()).join(', ')}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )
+            })()}
 
             {/* Date nav strip — small ghost buttons + center label */}
             <div style={{

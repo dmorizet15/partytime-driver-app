@@ -75,6 +75,14 @@ function getInitials(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
 }
 
+const USD_FORMATTER = new Intl.NumberFormat('en-US', {
+  style: 'currency', currency: 'USD',
+  minimumFractionDigits: 2, maximumFractionDigits: 2,
+})
+function formatUSD(amount: number): string {
+  return USD_FORMATTER.format(amount)
+}
+
 function sentenceCase(s: string): string {
   if (!s) return s
   return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()
@@ -869,7 +877,9 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
                   marginTop: 2, fontSize: 15, fontWeight: 800, color: '#fff',
                   fontFamily: FONT_DISPLAY, letterSpacing: '-0.01em',
                 }}>
-                  Collect on delivery
+                  {typeof stop.balance_due_amount === 'number' && stop.balance_due_amount > 0
+                    ? `Collect ${formatUSD(stop.balance_due_amount)} on delivery`
+                    : 'Collect on delivery'}
                 </div>
               </div>
             </div>

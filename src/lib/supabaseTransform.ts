@@ -37,6 +37,7 @@ export interface SupabaseStopRow {
   notes:                 string | null
   stop_type:             string
   payment_state:         string | null
+  balance_due_amount:    number | null
   tapgoods_order_token:  string | null
 }
 
@@ -174,6 +175,7 @@ export function transformSupabase({ routes: routeRows, assignments, stops: stopR
       items_text:     formatItemsText(s.items),
       items:          Array.isArray(s.items) ? (s.items as RawItem[]) : undefined,
       payment_state:  mapPaymentState(s.payment_state),
+      balance_due_amount: s.balance_due_amount,
       current_status: 'pending' as StopStatus,
       on_the_way_sent:    false,
       on_the_way_sent_at: undefined,

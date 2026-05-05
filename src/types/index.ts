@@ -40,6 +40,7 @@ export interface Stop {
   items_text?: string
   items?: Array<{ category?: string | null; name?: string | null; qty?: number | null }>
   payment_state?: PaymentState
+  balance_due_amount?: number | null  // dollars owed at delivery; null when nothing to collect
   current_status: StopStatus
   on_the_way_sent: boolean
   on_the_way_sent_at?: string
