@@ -37,6 +37,7 @@ export interface SupabaseStopRow {
   notes:                 string | null
   stop_type:             string
   payment_state:         string | null
+  balance_due_amount:    number | null
   tapgoods_order_token:  string | null
 }
 
