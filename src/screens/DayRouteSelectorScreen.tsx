@@ -36,10 +36,20 @@ const HAS_AVA        = false
 // inline at the pill site rather than as a top-level flag here.
 
 // ─── COD detection ────────────────────────────────────────────────────────────
-// TapGoods uses 'balance_due' for stops where the customer owes the rental
-// balance on delivery — functionally COD from the driver's POV. Literal 'cod'
-// is preserved as a fallback for any data that uses that exact value.
-const COD_PAYMENT_STATES = new Set<string>(['cod', 'balance_due'])
+// Only literal 'cod' triggers cash-collection UI. AR customers (state
+// 'balance_due') are billed by the org separately — driver collects nothing
+// at the door. 'balance_due' is deliberately excluded from this set; if it
+// becomes a COD-collection trigger again, surface BAL DUE pills + amount via
+// the same PAYMENT_PILL config rather than reusing the COD treatment.
+const COD_PAYMENT_STATES = new Set<string>(['cod'])
+
+// Payment pill colors keyed by payment_state. Drives a single small pill on
+// each stop card. `null` = no pill (e.g. ar_customer or unset state).
+const PAYMENT_PILL: Record<'cod' | 'balance_due' | 'paid_in_full', { bg: string; color: string; label: string }> = {
+  cod:          { bg: C.gold,  color: C.ink,   label: 'COD' },
+  balance_due:  { bg: C.off,   color: C.muted, label: 'BAL DUE' },
+  paid_in_full: { bg: C.green, color: '#fff',  label: 'PAID' },
+}
 
 // ─── Stop type pill colors ────────────────────────────────────────────────────
 const TYPE_PILL: Record<'delivery' | 'pickup' | 'service', { bg: string; color: string }> = {
@@ -740,12 +750,18 @@ export default function DayRouteSelectorScreen() {
                 }}
               />
               {dayStops.map((stop, i) => {
-                const num         = i + 1
-                const isCod       = COD_PAYMENT_STATES.has(stop.payment_state ?? '')
-                const headline    = (stop.company_name?.trim() || stop.customer_name).trim()
-                const addressOnly = stop.address_line_1?.trim() ?? ''
-                const distanceTxt = '— mi'
-                const typePill    = TYPE_PILL[stop.stop_type]
+                const num          = i + 1
+                const isCod        = COD_PAYMENT_STATES.has(stop.payment_state ?? '')
+                const isBalanceDue = stop.payment_state === 'balance_due'
+                const isPaidInFull = stop.payment_state === 'paid_in_full'
+                const paymentPill  = isCod        ? PAYMENT_PILL.cod
+                                   : isBalanceDue ? PAYMENT_PILL.balance_due
+                                   : isPaidInFull ? PAYMENT_PILL.paid_in_full
+                                   : null
+                const headline     = (stop.company_name?.trim() || stop.customer_name).trim()
+                const addressOnly  = stop.address_line_1?.trim() ?? ''
+                const distanceTxt  = '— mi'
+                const typePill     = TYPE_PILL[stop.stop_type]
 
                 return (
                   <button
@@ -805,6 +821,17 @@ export default function DayRouteSelectorScreen() {
                           <span style={{
                             display: 'inline-flex', alignItems: 'center', gap: 8, flexShrink: 0,
                           }}>
+                            {paymentPill && (
+                              <span style={{
+                                display: 'inline-flex', alignItems: 'center',
+                                background: paymentPill.bg, color: paymentPill.color,
+                                fontSize: 9, fontWeight: 900, letterSpacing: '0.16em',
+                                textTransform: 'uppercase',
+                                padding: '2px 7px', borderRadius: 999,
+                              }}>
+                                {paymentPill.label}
+                              </span>
+                            )}
                             <span style={{
                               display: 'inline-flex', alignItems: 'center',
                               background: typePill.bg, color: typePill.color,
@@ -820,19 +847,6 @@ export default function DayRouteSelectorScreen() {
                             }}>
                               {distanceTxt}
                             </span>
-                          </span>
-                        </div>
-                        <div style={{
-                          marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap',
-                        }}>
-                          <span style={{
-                            display: 'inline-flex', alignItems: 'center', gap: 6,
-                            background: C.green, color: '#fff',
-                            padding: '4px 10px', borderRadius: 999,
-                            fontSize: 11.5, fontWeight: 800, letterSpacing: '-0.005em',
-                          }}>
-                            <CashIcon size={12} color={'#fff'}/>
-                            COD
                           </span>
                         </div>
                       </div>
@@ -864,6 +878,17 @@ export default function DayRouteSelectorScreen() {
                           <span style={{
                             display: 'inline-flex', alignItems: 'center', gap: 8, flexShrink: 0,
                           }}>
+                            {paymentPill && (
+                              <span style={{
+                                display: 'inline-flex', alignItems: 'center',
+                                background: paymentPill.bg, color: paymentPill.color,
+                                fontSize: 9, fontWeight: 900, letterSpacing: '0.16em',
+                                textTransform: 'uppercase',
+                                padding: '2px 7px', borderRadius: 999,
+                              }}>
+                                {paymentPill.label}
+                              </span>
+                            )}
                             <span style={{
                               display: 'inline-flex', alignItems: 'center',
                               background: typePill.bg, color: typePill.color,
