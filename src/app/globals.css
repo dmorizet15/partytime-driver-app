@@ -57,7 +57,7 @@ html {
 .screen {
   display: flex;
   flex-direction: column;
-  height: 100dvh; /* dynamic viewport height — handles mobile browser chrome */
+  height: 100svh; /* small viewport height — locks to min visible area so iOS Safari's collapsible toolbar doesn't leave a gap below BottomNav */
   background: #ffffff;
   overflow: hidden;
 }
