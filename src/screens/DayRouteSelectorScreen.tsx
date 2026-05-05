@@ -35,6 +35,12 @@ const HAS_AVA        = false
 // HAS_WEATHER reserved for the wind/weather pill on stop cards. Render gated
 // inline at the pill site rather than as a top-level flag here.
 
+// ─── COD detection ────────────────────────────────────────────────────────────
+// TapGoods uses 'balance_due' for stops where the customer owes the rental
+// balance on delivery — functionally COD from the driver's POV. Literal 'cod'
+// is preserved as a fallback for any data that uses that exact value.
+const COD_PAYMENT_STATES = new Set<string>(['cod', 'balance_due'])
+
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 function parseLocal(dateStr: string): Date {
   const [y, m, d] = dateStr.split('-').map(Number)
@@ -188,7 +194,7 @@ export default function DayRouteSelectorScreen() {
 
   const totalStopCount = dayStops.length
   const codStops = useMemo(
-    () => dayStops.filter((s) => s.payment_state === 'cod'),
+    () => dayStops.filter((s) => COD_PAYMENT_STATES.has(s.payment_state ?? '')),
     [dayStops]
   )
 
@@ -630,7 +636,7 @@ export default function DayRouteSelectorScreen() {
               />
               {dayStops.map((stop, i) => {
                 const num         = i + 1
-                const isCod       = stop.payment_state === 'cod'
+                const isCod       = COD_PAYMENT_STATES.has(stop.payment_state ?? '')
                 const headline    = (stop.company_name?.trim() || stop.customer_name).trim()
                 const addressLine = stop.address_line_1
                   ? `${stop.address_line_1} · — mi`
