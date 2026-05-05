@@ -847,7 +847,9 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
               balance_due  → muted gray card, AR billing, no collection
               paid_in_full → green card, no collection
               other states (ar_customer, undefined) → no card */}
-        {stop.payment_state === 'cod' && (
+        {/* COD card gated on stop_type — the Supabase sync writes 'cod' to
+            both legs of the order, but the pickup leg involves no cash. */}
+        {stop.payment_state === 'cod' && stop.stop_type === 'delivery' && (
           <div style={{ padding: '16px 18px 0' }}>
             <div style={{
               background: C.ink,
