@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Image from 'next/image'
 import { signIn } from '../lib/auth'
 
 // ─── Direction 03 (Editorial) tokens ──────────────────────────────────────────
@@ -58,9 +59,11 @@ function BrandMark() {
       overflow: 'hidden',
       flexShrink: 0,
     }}>
-      <img
+      <Image
         src="/ptr-mark.png"
         alt="PartyTime Rentals"
+        width={64}
+        height={64}
         style={{ width: '74%', height: '74%', objectFit: 'contain' }}
       />
     </div>
