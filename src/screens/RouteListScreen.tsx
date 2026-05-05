@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { useAppState } from '@/context/AppStateContext'
 import { Stop, PaymentState } from '@/types'
+import Image from 'next/image'
 import BottomNav from '@/components/BottomNav'
 
 interface RouteListScreenProps {
@@ -92,9 +93,11 @@ function BrandMark() {
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       overflow: 'hidden', flexShrink: 0,
     }}>
-      <img
+      <Image
         src="/ptr-mark.png"
         alt="PartyTime Rentals"
+        width={64}
+        height={64}
         style={{ width: '74%', height: '74%', objectFit: 'contain' }}
       />
     </div>
