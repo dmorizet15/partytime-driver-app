@@ -728,8 +728,8 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
             <div style={{
               marginTop: 4,
               fontFamily: FONT_DISPLAY,
-              fontSize: 32, fontWeight: 900,
-              lineHeight: 0.96, letterSpacing: '-0.03em',
+              fontSize: 24, fontWeight: 900,
+              lineHeight: 1.0, letterSpacing: '-0.02em',
               color: '#fff',
               wordBreak: 'break-word',
             }}>
@@ -749,63 +749,70 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
           </div>
         )}
 
-        {/* Contact chip */}
-        <div style={{
-          marginTop: 16, position: 'relative',
-          background: 'rgba(255,255,255,0.10)',
-          border: '1px solid rgba(255,255,255,0.16)',
-          borderRadius: 18,
-          padding: 10,
-          display: 'flex', alignItems: 'center', gap: 12,
-        }}>
-          <div style={{
-            width: 40, height: 40, borderRadius: '50%',
-            background: 'rgba(255,255,255,0.85)',
-            color: C.blue,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontFamily: FONT_DISPLAY,
-            fontSize: 14, fontWeight: 900, letterSpacing: '-0.01em',
-            flexShrink: 0,
-          }}>
-            {initials}
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{
-              fontSize: 14, fontWeight: 800, color: '#fff', lineHeight: 1.2,
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            }}>
-              {contactName}
-            </div>
-            {contactPhone && (
-              <div style={{
-                marginTop: 2, fontSize: 12.5,
-                color: 'rgba(255,255,255,0.72)',
-                fontVariantNumeric: 'tabular-nums',
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              }}>
-                {contactPhone}
-              </div>
-            )}
-          </div>
-          {contactPhone && (
-            <a
-              href={`tel:${contactPhone}`}
-              aria-label={`Call ${contactName}`}
-              style={{
-                width: 42, height: 42, borderRadius: '50%',
-                background: C.gold,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                flexShrink: 0, textDecoration: 'none',
-              }}
-            >
-              <PhoneIcon size={18} color={C.ink}/>
-            </a>
-          )}
-        </div>
       </div>
 
       {/* ── SCROLL BODY ──────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto">
+
+        {/* Customer card — moved out of the blue hero in the v2 compression
+            pass. First card in the cream body so the contact + call CTA stay
+            within thumb's reach above the fold. */}
+        {contactName && (
+          <div style={{ padding: '14px 18px 0' }}>
+            <div style={{
+              background: C.paper,
+              border: `1.5px solid ${C.ink}`,
+              borderRadius: 16,
+              padding: '14px 18px',
+              display: 'flex', alignItems: 'center', gap: 12,
+            }}>
+              <div style={{
+                width: 40, height: 40, borderRadius: '50%',
+                background: C.off,
+                color: C.ink,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontFamily: FONT_DISPLAY,
+                fontSize: 14, fontWeight: 900, letterSpacing: '-0.01em',
+                flexShrink: 0,
+              }}>
+                {initials}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                  fontSize: 16, fontWeight: 800, color: C.ink, lineHeight: 1.2,
+                  fontFamily: FONT_DISPLAY, letterSpacing: '-0.01em',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>
+                  {contactName}
+                </div>
+                {contactPhone && (
+                  <div style={{
+                    marginTop: 2, fontSize: 12.5,
+                    color: C.muted,
+                    fontVariantNumeric: 'tabular-nums',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                    {contactPhone}
+                  </div>
+                )}
+              </div>
+              {contactPhone && (
+                <a
+                  href={`tel:${contactPhone}`}
+                  aria-label={`Call ${contactName}`}
+                  style={{
+                    width: 40, height: 40, borderRadius: '50%',
+                    background: C.gold,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    flexShrink: 0, textDecoration: 'none',
+                  }}
+                >
+                  <PhoneIcon size={18} color={C.ink}/>
+                </a>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* COD card — only when payment is COD */}
         {COD_PAYMENT_STATES.has(stop.payment_state ?? '') && (
