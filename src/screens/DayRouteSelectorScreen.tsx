@@ -41,6 +41,13 @@ const HAS_AVA        = false
 // is preserved as a fallback for any data that uses that exact value.
 const COD_PAYMENT_STATES = new Set<string>(['cod', 'balance_due'])
 
+// ─── Stop type pill colors ────────────────────────────────────────────────────
+const TYPE_PILL: Record<'delivery' | 'pickup' | 'service', { bg: string; color: string }> = {
+  delivery: { bg: C.blue, color: '#fff' },
+  pickup:   { bg: C.gold, color: C.ink },
+  service:  { bg: C.ink,  color: '#fff' },
+}
+
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 function parseLocal(dateStr: string): Date {
   const [y, m, d] = dateStr.split('-').map(Number)
@@ -97,6 +104,23 @@ function daySubcopy(count: number): { opener: string; count: string; suffix: str
   if (count === 1) return { opener: 'Easy day.',   count: '1 stop',         suffix: ' scheduled.' }
   if (count <= 3)  return { opener: 'Steady day.', count: `${count} stops`, suffix: ' scheduled.' }
   return             { opener: 'Big day.',         count: `${count} stops`, suffix: ' scheduled.' }
+}
+
+// Returns a "3 deliveries · 1 pickup" style breakdown when the day mixes
+// stop types. Returns null when all stops share a single type — keeps the
+// sub-copy short for homogeneous days.
+type StopTypeKey = 'delivery' | 'pickup' | 'service'
+function typeBreakdown(stops: Array<{ stop_type: StopTypeKey }>): string | null {
+  const counts: Record<StopTypeKey, number> = { delivery: 0, pickup: 0, service: 0 }
+  for (const s of stops) counts[s.stop_type]++
+  const present = (Object.entries(counts) as Array<[StopTypeKey, number]>).filter(([, n]) => n > 0)
+  if (present.length <= 1) return null
+  const labels: Record<StopTypeKey, [string, string]> = {
+    delivery: ['delivery', 'deliveries'],
+    pickup:   ['pickup',   'pickups'],
+    service:  ['service',  'services'],
+  }
+  return present.map(([type, n]) => `${n} ${labels[type][n === 1 ? 0 : 1]}`).join(' · ')
 }
 
 // ─── Inline icons ─────────────────────────────────────────────────────────────
@@ -202,6 +226,7 @@ export default function DayRouteSelectorScreen() {
   const hasGreeting = !!firstName
   const isEmpty     = !isLoading && !error && totalStopCount === 0
   const sub         = daySubcopy(totalStopCount)
+  const breakdown   = useMemo(() => typeBreakdown(dayStops), [dayStops])
 
   function showToast(msg: string) { setToast(msg) }
 
@@ -302,6 +327,7 @@ export default function DayRouteSelectorScreen() {
               {sub.opener}{' '}
               <strong style={{ color: '#fff', fontWeight: 800 }}>{sub.count}</strong>
               {sub.suffix}
+              {breakdown && <> {breakdown}.</>}
             </>
           )}
         </div>
@@ -638,9 +664,9 @@ export default function DayRouteSelectorScreen() {
                 const num         = i + 1
                 const isCod       = COD_PAYMENT_STATES.has(stop.payment_state ?? '')
                 const headline    = (stop.company_name?.trim() || stop.customer_name).trim()
-                const addressLine = stop.address_line_1
-                  ? `${stop.address_line_1} · — mi`
-                  : '— mi'
+                const addressOnly = stop.address_line_1?.trim() ?? ''
+                const distanceTxt = '— mi'
+                const typePill    = TYPE_PILL[stop.stop_type]
 
                 return (
                   <button
@@ -687,10 +713,35 @@ export default function DayRouteSelectorScreen() {
                           {headline}
                         </div>
                         <div style={{
-                          marginTop: 4, fontSize: 12.5, color: C.muted,
-                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          marginTop: 4,
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
                         }}>
-                          {addressLine}
+                          <span style={{
+                            flex: 1, minWidth: 0,
+                            fontSize: 12.5, color: C.muted,
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          }}>
+                            {addressOnly}
+                          </span>
+                          <span style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 8, flexShrink: 0,
+                          }}>
+                            <span style={{
+                              display: 'inline-flex', alignItems: 'center',
+                              background: typePill.bg, color: typePill.color,
+                              fontSize: 9, fontWeight: 900, letterSpacing: '0.16em',
+                              textTransform: 'uppercase',
+                              padding: '2px 7px', borderRadius: 999,
+                            }}>
+                              {stop.stop_type}
+                            </span>
+                            <span style={{
+                              fontSize: 12.5, color: C.muted,
+                              fontVariantNumeric: 'tabular-nums',
+                            }}>
+                              {distanceTxt}
+                            </span>
+                          </span>
                         </div>
                         <div style={{
                           marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap',
@@ -721,10 +772,35 @@ export default function DayRouteSelectorScreen() {
                           {headline}
                         </div>
                         <div style={{
-                          marginTop: 2, fontSize: 12.5, color: C.muted,
-                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          marginTop: 2,
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
                         }}>
-                          {addressLine}
+                          <span style={{
+                            flex: 1, minWidth: 0,
+                            fontSize: 12.5, color: C.muted,
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          }}>
+                            {addressOnly}
+                          </span>
+                          <span style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 8, flexShrink: 0,
+                          }}>
+                            <span style={{
+                              display: 'inline-flex', alignItems: 'center',
+                              background: typePill.bg, color: typePill.color,
+                              fontSize: 9, fontWeight: 900, letterSpacing: '0.16em',
+                              textTransform: 'uppercase',
+                              padding: '2px 7px', borderRadius: 999,
+                            }}>
+                              {stop.stop_type}
+                            </span>
+                            <span style={{
+                              fontSize: 12.5, color: C.muted,
+                              fontVariantNumeric: 'tabular-nums',
+                            }}>
+                              {distanceTxt}
+                            </span>
+                          </span>
                         </div>
                       </div>
                     )}
