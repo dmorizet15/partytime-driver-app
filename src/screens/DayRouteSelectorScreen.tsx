@@ -751,7 +751,12 @@ export default function DayRouteSelectorScreen() {
               />
               {dayStops.map((stop, i) => {
                 const num          = i + 1
-                const isCod        = COD_PAYMENT_STATES.has(stop.payment_state ?? '')
+                // The Supabase sync writes payment_state to BOTH legs of a COD
+                // order — delivery and pickup. From the driver's POV only the
+                // delivery leg involves cash collection; the pickup is just
+                // equipment retrieval. Gate `isCod` on stop_type to avoid
+                // showing COD treatment on the pickup row.
+                const isCod        = stop.stop_type === 'delivery' && COD_PAYMENT_STATES.has(stop.payment_state ?? '')
                 const isBalanceDue = stop.payment_state === 'balance_due'
                 const isPaidInFull = stop.payment_state === 'paid_in_full'
                 const paymentPill  = isCod        ? PAYMENT_PILL.cod
