@@ -35,12 +35,6 @@ const C = {
 const FONT_DISPLAY = "var(--font-archivo), 'Archivo', 'Inter', system-ui, -apple-system, sans-serif"
 const FONT_BODY    = "var(--font-inter), 'Inter', system-ui, -apple-system, sans-serif"
 
-// ─── COD detection ────────────────────────────────────────────────────────────
-// TapGoods uses 'balance_due' for stops where the customer owes the rental
-// balance on delivery — functionally COD from the driver's POV. Literal 'cod'
-// is preserved as a fallback for any data that uses that exact value.
-const COD_PAYMENT_STATES = new Set<string>(['cod', 'balance_due'])
-
 // ─── Stop type pill colors ────────────────────────────────────────────────────
 const TYPE_PILL: Record<'delivery' | 'pickup' | 'service', { bg: string; color: string }> = {
   delivery: { bg: C.blue, color: '#fff' },
@@ -848,8 +842,12 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
           </div>
         )}
 
-        {/* COD card — only when payment is COD */}
-        {COD_PAYMENT_STATES.has(stop.payment_state ?? '') && (
+        {/* Payment state cards — three exclusive states.
+              cod          → black card, gold tile, "Collect $X on delivery"
+              balance_due  → muted gray card, AR billing, no collection
+              paid_in_full → green card, no collection
+              other states (ar_customer, undefined) → no card */}
+        {stop.payment_state === 'cod' && (
           <div style={{ padding: '16px 18px 0' }}>
             <div style={{
               background: C.ink,
@@ -880,6 +878,76 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
                   {typeof stop.balance_due_amount === 'number' && stop.balance_due_amount > 0
                     ? `Collect ${formatUSD(stop.balance_due_amount)} on delivery`
                     : 'Collect on delivery'}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {stop.payment_state === 'balance_due' && (
+          <div style={{ padding: '16px 18px 0' }}>
+            <div style={{
+              background: C.off,
+              border: `1px solid rgba(10,11,20,0.10)`,
+              borderRadius: 18,
+              padding: 14,
+              display: 'flex', alignItems: 'center', gap: 14,
+            }}>
+              <div style={{
+                width: 44, height: 44, borderRadius: 11,
+                background: C.paper,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0,
+              }}>
+                <DocIcon size={20} color={C.muted}/>
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                  fontSize: 10.5, fontWeight: 900, letterSpacing: '0.18em',
+                  color: C.muted, textTransform: 'uppercase',
+                }}>
+                  Balance Due
+                </div>
+                <div style={{
+                  marginTop: 2, fontSize: 15, fontWeight: 800, color: C.ink,
+                  fontFamily: FONT_DISPLAY, letterSpacing: '-0.01em',
+                }}>
+                  Billed to customer account
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {stop.payment_state === 'paid_in_full' && (
+          <div style={{ padding: '16px 18px 0' }}>
+            <div style={{
+              background: C.green,
+              borderRadius: 18,
+              padding: 14,
+              display: 'flex', alignItems: 'center', gap: 14,
+              boxShadow: '0 14px 28px -16px rgba(31,191,107,0.45)',
+            }}>
+              <div style={{
+                width: 44, height: 44, borderRadius: 11,
+                background: C.paper,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0,
+              }}>
+                <CheckIcon size={20} color={C.green}/>
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                  fontSize: 10.5, fontWeight: 900, letterSpacing: '0.18em',
+                  color: '#fff', textTransform: 'uppercase',
+                }}>
+                  Paid in Full
+                </div>
+                <div style={{
+                  marginTop: 2, fontSize: 15, fontWeight: 800, color: '#fff',
+                  fontFamily: FONT_DISPLAY, letterSpacing: '-0.01em',
+                }}>
+                  No collection needed
                 </div>
               </div>
             </div>
