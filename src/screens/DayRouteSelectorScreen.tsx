@@ -530,6 +530,8 @@ export default function DayRouteSelectorScreen() {
               const headline    = (stop.company_name?.trim() || stop.customer_name).trim()
               const contactName = stop.customer_name
               const showSubName = !!contactName && contactName !== headline
+              const amt = stop.balance_due_amount
+              const amountText  = (typeof amt === 'number' && amt > 0) ? `${formatUSD(amt)} ` : ''
               return (
                 <div key={`cod-${stop.stop_id}`} style={{ padding: '12px 18px 0' }}>
                   <button
@@ -575,13 +577,13 @@ export default function DayRouteSelectorScreen() {
                           marginTop: 2, fontSize: 12.5, color: C.goldDeep, lineHeight: 1.3,
                           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                         }}>
-                          Collect on arrival from {contactName}
+                          Collect {amountText}on arrival from {contactName}
                         </div>
                       ) : (
                         <div style={{
                           marginTop: 2, fontSize: 12.5, color: C.goldDeep, lineHeight: 1.3,
                         }}>
-                          Collect on arrival
+                          Collect {amountText}on arrival
                         </div>
                       )}
                     </div>
