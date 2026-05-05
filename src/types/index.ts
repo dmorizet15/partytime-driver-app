@@ -22,7 +22,7 @@ export interface Stop {
   route_id: string
   stop_sequence: number
   order_id: string
-  stop_type: 'delivery' | 'pickup'
+  stop_type: 'delivery' | 'pickup' | 'service'
   customer_name: string
   company_name?: string      // TapGoods rental.name (the order/rental identifier)
   client_company?: string    // primary contact's client.companies[0].name (the org)
@@ -38,6 +38,7 @@ export interface Stop {
   customer_cell?: string     // explicit Mobile-typed phone — preferred for SMS
   notes?: string
   items_text?: string
+  items?: Array<{ category?: string | null; name?: string | null; qty?: number | null }>
   payment_state?: PaymentState
   current_status: StopStatus
   on_the_way_sent: boolean

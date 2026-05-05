@@ -19,8 +19,11 @@ function getMobilePhone(customers?: TapGoodsCustomer[]): string {
   return entry?.cell ?? ''
 }
 function isoToDateStr(iso: string): string { return iso.slice(0, 10) }
-function mapStopType(stopType: string): 'delivery' | 'pickup' {
-  return stopType?.toLowerCase().includes('pickup') ? 'pickup' : 'delivery'
+function mapStopType(stopType: string): 'delivery' | 'pickup' | 'service' {
+  const v = stopType?.toLowerCase() ?? ''
+  if (v.includes('pickup'))  return 'pickup'
+  if (v.includes('service')) return 'service'
+  return 'delivery'
 }
 
 export interface TransformResult { routes: Route[]; stops: Stop[] }

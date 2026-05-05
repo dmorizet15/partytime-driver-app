@@ -82,8 +82,11 @@ function firstRel(rel: SupabaseTruckRow | SupabaseTruckRow[] | null): SupabaseTr
   return Array.isArray(rel) ? (rel[0] ?? null) : rel
 }
 
-function mapStopType(raw: string): 'delivery' | 'pickup' {
-  return raw?.toLowerCase() === 'pickup' ? 'pickup' : 'delivery'
+function mapStopType(raw: string): 'delivery' | 'pickup' | 'service' {
+  const v = raw?.toLowerCase()
+  if (v === 'pickup')  return 'pickup'
+  if (v === 'service') return 'service'
+  return 'delivery'
 }
 
 function mapPaymentState(raw: string | null): PaymentState | undefined {
@@ -169,6 +172,7 @@ export function transformSupabase({ routes: routeRows, assignments, stops: stopR
       customer_cell:  s.customer_cell  ?? undefined,
       notes:          s.notes ?? undefined,
       items_text:     formatItemsText(s.items),
+      items:          Array.isArray(s.items) ? (s.items as RawItem[]) : undefined,
       payment_state:  mapPaymentState(s.payment_state),
       current_status: 'pending' as StopStatus,
       on_the_way_sent:    false,
