@@ -217,8 +217,13 @@ export default function DayRouteSelectorScreen() {
   )
 
   const totalStopCount = dayStops.length
+  // COD cards are scoped to delivery stops — pickup stops with a balance_due
+  // payment state aren't a "collect cash on arrival" scenario from the driver's
+  // POV (the customer pays at the lot when picking up, not in the field).
   const codStops = useMemo(
-    () => dayStops.filter((s) => COD_PAYMENT_STATES.has(s.payment_state ?? '')),
+    () => dayStops.filter((s) =>
+      s.stop_type === 'delivery' && COD_PAYMENT_STATES.has(s.payment_state ?? '')
+    ),
     [dayStops]
   )
 
@@ -508,8 +513,12 @@ export default function DayRouteSelectorScreen() {
               </button>
             </div>
 
-            {/* COD cards — one per COD stop, stacked */}
-            {codStops.map((stop) => {
+            {/* COD card — single stop: tappable card linking to that stop.
+                Multi-stop: consolidated rollup with count + names list (no nav
+                target since there are multiple — driver taps individual stops
+                in the day list below). */}
+            {codStops.length === 1 && (() => {
+              const stop = codStops[0]
               const headline    = (stop.company_name?.trim() || stop.customer_name).trim()
               const contactName = stop.customer_name
               const showSubName = !!contactName && contactName !== headline
@@ -571,7 +580,52 @@ export default function DayRouteSelectorScreen() {
                   </button>
                 </div>
               )
-            })}
+            })()}
+
+            {codStops.length > 1 && (
+              <div key="cod-rollup" style={{ padding: '12px 18px 0' }}>
+                <div style={{
+                  width: '100%',
+                  background: C.goldSoft,
+                  border: `1.5px solid ${C.gold}`,
+                  borderRadius: 18,
+                  padding: '14px 16px',
+                  display: 'flex', alignItems: 'flex-start', gap: 14,
+                  boxShadow: '0 14px 28px -16px rgba(176,127,0,0.45)',
+                }}>
+                  <div style={{
+                    width: 44, height: 44, borderRadius: '50%',
+                    background: C.gold,
+                    border: `2px solid ${C.ink}`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    flexShrink: 0,
+                    marginTop: 2,
+                  }}>
+                    <CashIcon size={18} color={C.ink}/>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontSize: 10.5, fontWeight: 900, letterSpacing: '0.18em',
+                      color: C.goldDeep, textTransform: 'uppercase',
+                    }}>
+                      Cash Required
+                    </div>
+                    <div style={{
+                      marginTop: 2, fontSize: 15, fontWeight: 800, color: C.ink,
+                      fontFamily: FONT_DISPLAY, letterSpacing: '-0.01em',
+                      lineHeight: 1.25,
+                    }}>
+                      {codStops.length} delivery stops require cash collection
+                    </div>
+                    <div style={{
+                      marginTop: 4, fontSize: 12.5, color: C.goldDeep, lineHeight: 1.4,
+                    }}>
+                      {codStops.map((s) => (s.company_name?.trim() || s.customer_name).trim()).join(', ')}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Date nav strip — small ghost buttons + center label */}
             <div style={{
