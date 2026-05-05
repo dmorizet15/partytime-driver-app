@@ -326,7 +326,30 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     logEvent('NAVIGATION_STARTED', routeId, stopId, stop.order_id, { address: `${stop.address_line_1}, ${stop.city}`, coordinates: stop.latitude != null ? { lat: stop.latitude, lng: stop.longitude } : null })
     try {
       const result = await navigationService.navigateTo(stop)
-      if (!result.success) { logEvent('NAVIGATION_FAILED', routeId, stopId, stop.order_id, { attempted: result.attempted, message: result.message }); if (result.message) setNavMessage(result.message) }
+      if (result.success) return
+      logEvent('NAVIGATION_FAILED', routeId, stopId, stop.order_id, { attempted: result.attempted, message: result.message })
+
+      // iOS fallback — silent (no toast). CoPilot may not be installed;
+      // Apple Maps is always available. Try the maps:// scheme first; if the
+      // page is still visible 1.5s later, the scheme didn't background us —
+      // fall through to the maps.apple.com universal link.
+      const isIOS = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent)
+      if (isIOS) {
+        const addr = encodeURIComponent(
+          [stop.address_line_1, stop.city, stop.state, stop.postal_code]
+            .filter(Boolean).join(', ')
+        )
+        window.location.href = `maps://?daddr=${addr}`
+        setTimeout(() => {
+          if (document.visibilityState === 'visible') {
+            window.location.href = `https://maps.apple.com/?daddr=${addr}`
+          }
+        }, 1500)
+        return
+      }
+
+      // Non-iOS: keep the existing inline-message behavior.
+      if (result.message) setNavMessage(result.message)
     } finally { setNavLoading(false) }
   }
 
