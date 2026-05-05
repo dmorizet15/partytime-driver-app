@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { signOut } from '@/lib/auth'
 import type { Role } from '@/types/auth'
+import BottomNav from '@/components/BottomNav'
 
 // ─── Direction 03 (Editorial) tokens ──────────────────────────────────────────
 const C = {
@@ -326,7 +327,7 @@ export default function ProfileScreen() {
       </div>
 
       {/* ── BODY ─────────────────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto" style={{ paddingBottom: 80 }}>
+      <div className="flex-1 overflow-y-auto">
         {/* Compliance documents */}
         <SectionEyebrow>Compliance Documents</SectionEyebrow>
         <div style={{ padding: '0 18px' }}>
@@ -371,6 +372,8 @@ export default function ProfileScreen() {
           </button>
         </div>
       </div>
+
+      <BottomNav/>
     </div>
   )
 }
