@@ -35,6 +35,12 @@ const C = {
 const FONT_DISPLAY = "var(--font-archivo), 'Archivo', 'Inter', system-ui, -apple-system, sans-serif"
 const FONT_BODY    = "var(--font-inter), 'Inter', system-ui, -apple-system, sans-serif"
 
+// ─── COD detection ────────────────────────────────────────────────────────────
+// TapGoods uses 'balance_due' for stops where the customer owes the rental
+// balance on delivery — functionally COD from the driver's POV. Literal 'cod'
+// is preserved as a fallback for any data that uses that exact value.
+const COD_PAYMENT_STATES = new Set<string>(['cod', 'balance_due'])
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function formatTime(isoString: string): string {
   try {
@@ -779,7 +785,7 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
       <div className="flex-1 overflow-y-auto">
 
         {/* COD card — only when payment is COD */}
-        {stop.payment_state === 'cod' && (
+        {COD_PAYMENT_STATES.has(stop.payment_state ?? '') && (
           <div style={{ padding: '16px 18px 0' }}>
             <div style={{
               background: C.ink,
