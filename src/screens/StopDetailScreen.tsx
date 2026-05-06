@@ -422,7 +422,6 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
       }
       setCashConfirmed(true)
       setShowCashModal(false)
-      logEvent('CASH_COLLECTED', routeId, stopId, stop.order_id, { amount_collected: amount })
     } catch (err) {
       setCashError(err instanceof Error ? err.message : 'Network error')
     } finally {
