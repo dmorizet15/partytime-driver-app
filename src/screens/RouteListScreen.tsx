@@ -5,6 +5,7 @@ import { useAppState } from '@/context/AppStateContext'
 import { Stop, PaymentState } from '@/types'
 import Image from 'next/image'
 import BottomNav from '@/components/BottomNav'
+import { formatEta } from '@/lib/formatEta'
 
 interface RouteListScreenProps {
   routeId: string
@@ -374,7 +375,9 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
                   <div style={{
                     flex: 1, minWidth: 0,
                     padding: '0 0 6px',
+                    display: 'flex', gap: 10, alignItems: 'flex-start',
                   }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
                     {stop.company_name && (
                       <div style={{
                         fontSize: 10.5, fontWeight: 800,
@@ -474,6 +477,17 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
                         )}
                       </div>
                     )}
+                  </div>
+                  <div style={{
+                    flexShrink: 0,
+                    fontSize: 13, fontWeight: 800,
+                    color: isCompleted ? C.muted : C.ink,
+                    fontFamily: FONT_DISPLAY,
+                    fontVariantNumeric: 'tabular-nums',
+                    paddingTop: 2,
+                  }}>
+                    {formatEta(stop.calculated_eta)}
+                  </div>
                   </div>
                 </button>
               )

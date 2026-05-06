@@ -41,6 +41,7 @@ export interface Stop {
   items?: Array<{ category?: string | null; name?: string | null; qty?: number | null }>
   payment_state?: PaymentState
   balance_due_amount?: number | null  // dollars owed at delivery; null when nothing to collect
+  calculated_eta?: string | null      // dispatcher cascade ETA written by dashboard; ISO timestamptz
   current_status: StopStatus
   on_the_way_sent: boolean
   on_the_way_sent_at?: string

@@ -11,6 +11,7 @@ import { logEvent } from '@/services/EventLogger'
 import { sendEtaSms, getStopSmsStatus, getDriverLocation } from '@/services/EtaSmsService'
 import type { StopSmsStatus } from '@/services/EtaSmsService'
 import BottomNav from '@/components/BottomNav'
+import { formatEta } from '@/lib/formatEta'
 
 interface StopDetailScreenProps { routeId: string; stopId: string }
 type PodStatus = 'idle' | 'uploading' | 'uploaded' | 'failed'
@@ -741,6 +742,13 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
               }}>
                 Stop {stop.stop_sequence} of {allStops.length}
               </div>
+              <span style={{
+                fontSize: 11, fontWeight: 800, letterSpacing: '0.22em',
+                color: C.gold, textTransform: 'uppercase',
+                fontVariantNumeric: 'tabular-nums',
+              }}>
+                · {formatEta(stop.calculated_eta)}
+              </span>
               <span style={{
                 display: 'inline-flex', alignItems: 'center',
                 background: TYPE_PILL[stop.stop_type].bg,
