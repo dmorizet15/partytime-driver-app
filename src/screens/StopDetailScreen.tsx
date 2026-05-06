@@ -214,6 +214,13 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   const etaCooldownRef = useRef<number>(0)
   const [etaCooldownMsg, setEtaCooldownMsg] = useState<string | null>(null)
 
+  // Cash collection acknowledgment state — hydrated on mount via GET /api/cash-collections.
+  // null = loading (avoids button flash); false = not yet confirmed; true = confirmed.
+  const [cashConfirmed,   setCashConfirmed]   = useState<boolean | null>(null)
+  const [showCashModal,   setShowCashModal]   = useState(false)
+  const [cashSubmitting,  setCashSubmitting]  = useState(false)
+  const [cashError,       setCashError]       = useState<string | null>(null)
+
   useEffect(() => {
     if (stop) logEvent('STOP_VIEWED', routeId, stopId, stop.order_id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -243,6 +250,26 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     }
     rehydrate()
   }, [stopId])
+
+  // Hydrate cash-collection state for COD delivery stops only.
+  useEffect(() => {
+    if (!stop || stop.payment_state !== 'cod' || stop.stop_type !== 'delivery') {
+      setCashConfirmed(false)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const r = await fetch(`/api/cash-collections?stop_id=${encodeURIComponent(stop.stop_id)}`)
+        const j = await r.json()
+        if (!cancelled) setCashConfirmed(!!j.exists)
+      } catch {
+        if (!cancelled) setCashConfirmed(false)
+      }
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stopId, stop?.payment_state, stop?.stop_type])
 
   useEffect(() => {
     if (etaStatus !== 'sent') {
@@ -371,6 +398,36 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     logEvent('STOP_COMPLETED', routeId, stopId, stop.order_id, { completed_at: completedAt })
     setShowCompleteModal(false); setCompleteLoading(false)
     if (nextStop) { router.replace(`/route/${routeId}/stop/${nextStop.stop_id}`) } else { router.replace(`/route/${routeId}`) }
+  }
+
+  async function handleConfirmCashCollection() {
+    if (!stop) return
+    setCashSubmitting(true)
+    setCashError(null)
+    try {
+      // Auto-fill collected amount from balance_due_amount when known; null when not on file.
+      // (Driver cannot edit the amount in this MVP — flagged for future iteration.)
+      const amount = typeof stop.balance_due_amount === 'number' && stop.balance_due_amount > 0
+        ? stop.balance_due_amount
+        : null
+      const r = await fetch('/api/cash-collections', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ stop_id: stop.stop_id, amount_collected: amount }),
+      })
+      const j = await r.json().catch(() => null)
+      if (!r.ok || !j?.success) {
+        setCashError(j?.error ?? 'Failed to confirm — try again')
+        return
+      }
+      setCashConfirmed(true)
+      setShowCashModal(false)
+      logEvent('CASH_COLLECTED', routeId, stopId, stop.order_id, { amount_collected: amount })
+    } catch (err) {
+      setCashError(err instanceof Error ? err.message : 'Network error')
+    } finally {
+      setCashSubmitting(false)
+    }
   }
 
   async function handleOpenTapGoods() {
@@ -891,6 +948,40 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
                 </div>
               </div>
             </div>
+
+            {/* Cash collection acknowledgment — gold = action needed, green = confirmed */}
+            {cashConfirmed === true ? (
+              <button
+                disabled
+                style={{
+                  marginTop: 12, width: '100%',
+                  background: C.green, color: '#fff',
+                  fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 15,
+                  padding: '14px 16px',
+                  border: 'none', borderRadius: 14,
+                  cursor: 'default',
+                  letterSpacing: '-0.01em',
+                }}
+              >
+                Cash Collected ✓
+              </button>
+            ) : cashConfirmed === false ? (
+              <button
+                onClick={() => setShowCashModal(true)}
+                style={{
+                  marginTop: 12, width: '100%',
+                  background: C.gold, color: C.ink,
+                  fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 15,
+                  padding: '14px 16px',
+                  border: 'none', borderRadius: 14,
+                  cursor: 'pointer',
+                  letterSpacing: '-0.01em',
+                  boxShadow: '0 14px 28px -16px rgba(255,184,0,0.55)',
+                }}
+              >
+                Confirm Cash Collected →
+              </button>
+            ) : null /* hydrating — render nothing to avoid State A flash */}
           </div>
         )}
 
@@ -1378,6 +1469,93 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
           onCancel={() => setShowCompleteModal(false)}
           isLoading={completeLoading}
         />
+      )}
+
+      {showCashModal && stop && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, zIndex: 50,
+            background: 'rgba(10,11,20,0.80)',
+            display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+            padding: 16,
+          }}
+          onClick={() => !cashSubmitting && setShowCashModal(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="cash-modal-title"
+        >
+          <div
+            style={{
+              width: '100%', maxWidth: 384,
+              background: '#fff', borderRadius: 16, padding: 24,
+              boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2
+              id="cash-modal-title"
+              style={{
+                fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 20,
+                color: C.ink, margin: 0, marginBottom: 8,
+                letterSpacing: '-0.01em',
+              }}
+            >
+              Confirm Cash Collection
+            </h2>
+            <p
+              style={{
+                fontFamily: FONT_BODY, fontSize: 14, color: C.muted,
+                lineHeight: 1.5, margin: 0, marginBottom: 20,
+              }}
+            >
+              {typeof stop.balance_due_amount === 'number' && stop.balance_due_amount > 0
+                ? `You are confirming collection of ${formatUSD(stop.balance_due_amount)} from ${stop.customer_name}.`
+                : `You are confirming cash collection for ${stop.customer_name}. No amount on file.`}
+            </p>
+
+            {cashError && (
+              <div
+                style={{
+                  marginBottom: 16, padding: '10px 12px',
+                  background: '#FEECEA', color: C.coral, borderRadius: 10,
+                  fontSize: 13, fontFamily: FONT_BODY,
+                }}
+              >
+                {cashError}
+              </div>
+            )}
+
+            <button
+              onClick={handleConfirmCashCollection}
+              disabled={cashSubmitting}
+              style={{
+                width: '100%', padding: '14px 16px',
+                background: C.gold, border: 'none', borderRadius: 14,
+                fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 15,
+                color: C.ink,
+                cursor: cashSubmitting ? 'default' : 'pointer',
+                opacity: cashSubmitting ? 0.7 : 1,
+                letterSpacing: '-0.01em',
+              }}
+            >
+              {cashSubmitting ? 'Confirming…' : 'Confirm Collection'}
+            </button>
+            <button
+              onClick={() => setShowCashModal(false)}
+              disabled={cashSubmitting}
+              style={{
+                marginTop: 10, width: '100%', padding: '12px 16px',
+                background: 'transparent', border: 'none',
+                fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14,
+                color: C.muted,
+                cursor: cashSubmitting ? 'default' : 'pointer',
+                opacity: cashSubmitting ? 0.5 : 1,
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       )}
     </div>
   )
