@@ -107,6 +107,18 @@ See `~/Projects/partytime-dashboard` and Notion for the dashboard build plan.
 
 ---
 
+## Pre-Push Verification (mandatory)
+
+`npx next lint` is **not sufficient**. ESLint does not run TypeScript's type checker — it can pass on code that fails `next build`. Vercel's build pipeline runs the full type check after compile, so a green lint locally and a red Vercel deployment is a real failure mode.
+
+**Before every push to `main`:**
+1. `npx next build` — must succeed end-to-end (compile + type check + page generation)
+2. Only then `git push`
+
+**Incident — May 6, 2026:** Cash-collection feature (commit `449693e`) passed `npx next lint` with zero errors but failed Vercel's `next build` on a `WorkflowEventType` mismatch (`'CASH_COLLECTED'` not in the union). Fix-forward in `4dda705`. Lesson: lint is a subset of build; never substitute one for the other.
+
+---
+
 ## Notion — Read These Pages at Session Start
 1. PartyTime Driver App — Master Project Hub
 2. v1.1 Build Plan — Revised (April 26, 2026)
