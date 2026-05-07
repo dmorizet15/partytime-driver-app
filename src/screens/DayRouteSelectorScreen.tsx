@@ -261,11 +261,22 @@ export default function DayRouteSelectorScreen() {
   const isToday = selectedDate === todayStr()
   const routes  = getRoutesForDate(selectedDate)
 
+  // Suppress every body branch + downstream stop counts while the assignment
+  // check is in flight, while we're navigating away, or when there's no
+  // assignment for today. Only 'error' (silent fallthrough on auth/network
+  // failure) renders the manual selection populated with today's data.
+  // Hoisted above dayStops so the same gate also drives totalStopCount and
+  // the hero subcopy — otherwise clearCache invalidates loadedDate, loadDay
+  // re-fetches, and the hero flashes a "X stops scheduled" line.
+  const showBody = assignmentState !== 'checking'
+                && assignmentState !== 'navigating'
+                && assignmentState !== 'no-assignment'
+
   // Aggregate stops across today's routes — the day list renders stops, not
   // routes. Composes existing context methods only; no hook/context edits.
   const dayStops = useMemo(
-    () => routes.flatMap((r) => getStopsForRoute(r.route_id)),
-    [routes, getStopsForRoute]
+    () => showBody ? routes.flatMap((r) => getStopsForRoute(r.route_id)) : [],
+    [routes, getStopsForRoute, showBody]
   )
 
   const totalStopCount = dayStops.length
@@ -282,14 +293,6 @@ export default function DayRouteSelectorScreen() {
   const firstName   = firstNameOf(profile?.display_name)
   const hasGreeting = !!firstName
   const isEmpty     = !isLoading && !error && totalStopCount === 0
-  // While the assignment check is in flight (or while we're navigating away),
-  // suppress every existing body branch so the manual UI doesn't flash. When
-  // the check resolves to 'no-assignment' the banner stands alone — no
-  // loading/error/empty/populated branches render below it. Only 'error'
-  // (silent fallthrough on auth/network failure) keeps the manual selection.
-  const showBody    = assignmentState !== 'checking'
-                   && assignmentState !== 'navigating'
-                   && assignmentState !== 'no-assignment'
   const sub         = daySubcopy(totalStopCount)
   const breakdown   = useMemo(() => typeBreakdown(dayStops), [dayStops])
 
