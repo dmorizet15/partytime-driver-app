@@ -36,6 +36,8 @@ Follow the Darren AI Protocol in Notion before doing anything.
 | GitHub | Authenticated as `dmorizet15` |
 | RingCentral | FROM: +18457653412 — SMS/ETA workflow |
 | Google Maps | Distance Matrix + Maps JS API enabled |
+| Tomorrow.io | Free tier (500 calls/day) — env var `TOMORROW_IO_API_KEY`, **server-side only**, set in Vercel env |
+| NWS Alerts | No API key — `User-Agent: PartyTimeDriverApp (admin@partytimerentals.com)` is **mandatory** on every request |
 
 ---
 
@@ -49,7 +51,7 @@ Follow the Darren AI Protocol in Notion before doing anything.
 
 ---
 
-## Current Build State (as of April 27, 2026)
+## Current Build State (as of May 6, 2026)
 
 ### v1.1 COMPLETE ✅ — April 27, 2026
 All phases shipped to production.
@@ -76,9 +78,32 @@ All phases shipped to production.
 - ETA/SMS Phase 1 live in production (April 21, 2026)
 - TapGoods Phase 1 integration live in production (April 20, 2026)
 
-### NEXT — Dashboard Build
-Driver app v1.1 is complete. Next session begins the partytime-dashboard feature build.
-See `~/Projects/partytime-dashboard` and Notion for the dashboard build plan.
+### v2 Phase 2A COMPLETE ✅ — May 6, 2026 (commit `de35201`)
+Standalone Tools weather screen shipped to production.
+
+- Route: `/tools/weather` — accessed from the Tools Hub tile (no longer toasts)
+- Two-vendor weather facade in `src/lib/weather/`:
+  - Tomorrow.io — wind, rain, snow, temp, humidity (`adapters/tomorrowIoAdapter.ts`)
+  - NWS Alerts API — lightning via active Severe Thunderstorm + Tornado Warnings (`adapters/nwsAlertsAdapter.ts`)
+  - Single `WeatherService` facade hides which vendor backs which condition; parallel fetch via `Promise.allSettled`; degrades to last-known cached snapshot on adapter failure with `stale: true` flag
+- 15-minute in-memory cache keyed by 4-decimal coordinates (`cache.ts`) — survives within a server instance, resets on cold start (intentional for v1)
+- Server-side `/api/weather?lat=&lng=` endpoint — `TOMORROW_IO_API_KEY` never reaches the client
+- LOCKED thresholds in `lib/weather/thresholds.ts` — sourced verbatim from the Notion Weather Intelligence spec. **Do not modify without updating Notion first.** Status colors (`STATUS_COLORS`) are also locked.
+- Wind card surfaces a phase-aware action message tied to threshold state ("Clear to set up" / "Proceed with caution — monitor wind closely" / "Hold — do not begin setup until winds drop" / "Do not set up — contact dispatch")
+- Snow card always renders the orange client-discussion callout when any snow is forecast in the rental window (per spec — does not collapse)
+- Lightning STOP state visually overrides everything else when active
+- Tomorrow.io rate-limit warning logs to console at 80% of daily budget
+- Designed stubs (feature flags in `thresholds.ts`):
+  - `HAS_TENT_SIZE_DATA = false` — flip when TapGoods tent size flows to stop record (unlocks rain threshold differentiation by tent size)
+  - `HAS_ANCHORING_GUIDANCE = false` — flip when Phase 2C content layer ships
+  - `HAS_STOP_LEVEL_BADGES = false` — flip when Phase 2B ships
+- Out of v2A scope: stop-level badges (2B), anchoring guidance (2C), historical lookups, custom location search, tent-size threshold differentiation
+
+**Phase 2A blocker for Phase 2B:** most `stops.address_lat` / `address_lng` columns in `partytime-east` are NULL. The Tools weather screen renders ungeocoded stops as disabled options ("(no coords)"). Phase 2B stop-level badges cannot ship until the dashboard pipeline geocodes addresses on stop create/import (Google Maps Geocoding API is already enabled per Infrastructure table).
+
+### NEXT — Two parallel tracks
+- **Dashboard:** feature build per `~/Projects/partytime-dashboard` and Notion plan
+- **Driver app Phase 2B:** stop-level weather badges with hybrid adaptive pattern — blocked on stop geocoding (see Phase 2A note above)
 
 ---
 
