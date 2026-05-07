@@ -437,26 +437,6 @@ export default function DayRouteSelectorScreen() {
       {/* ── SCROLL BODY ──────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto">
 
-        {/* Assigned-route check spinner — suppresses the body until the
-            on-mount /api/assigned-route check resolves, so the manual UI
-            doesn't flash before a silent navigation happens. */}
-        {!showBody && (
-          <div style={{
-            padding: '40px 24px',
-            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
-          }}>
-            <div style={{
-              width: 28, height: 28,
-              border: '2px solid rgba(10,11,20,0.15)',
-              borderTopColor: C.ink,
-              borderRadius: '50%',
-              animation: 'ptw-spin 0.9s linear infinite',
-            }}/>
-            <span style={{ fontSize: 13, color: C.muted }}>Checking your route…</span>
-            <style>{`@keyframes ptw-spin { to { transform: rotate(360deg); } }`}</style>
-          </div>
-        )}
-
         {/* No-assignment informational banner — only when the API returned
             assigned: false and the driver is viewing today's date. Muted
             text on cream, no gold/alarm treatment. */}
