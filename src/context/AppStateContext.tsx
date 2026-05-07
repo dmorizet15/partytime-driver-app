@@ -118,7 +118,7 @@ interface AppStateContextValue {
   getStopsForRoute: (routeId: string) => Stop[]
   getStop:          (stopId: string)  => Stop | undefined
   getRoute:         (routeId: string) => Route | undefined
-  loadDay:      (date: string) => Promise<void>
+  loadDay:      (date: string, force?: boolean) => Promise<void>
   markOtw:      (stopId: string, sentAt: string)      => void
   markComplete: (stopId: string, completedAt: string) => void
   clearCache:   () => void
@@ -133,8 +133,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const { user } = useAuthContext()
 
   // ── Async loader ───────────────────────────────────────────────────────────
-  const loadDay = useCallback(async (date: string) => {
-    if (state.loadedDate === date && !state.error) return
+  const loadDay = useCallback(async (date: string, force = false) => {
+    if (!force && state.loadedDate === date && !state.error) return
 
     dispatch({ type: 'LOAD_START' })
 
