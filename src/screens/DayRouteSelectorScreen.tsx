@@ -206,6 +206,11 @@ export default function DayRouteSelectorScreen() {
   const [now, setNow]                   = useState<Date>(() => new Date())
   const [toast, setToast]               = useState<string | null>(null)
 
+  // Driver auto-load: check on mount whether dispatch has assigned this driver
+  // a route for today. Result drives the body skeleton + banner below.
+  type AssignmentState = 'checking' | 'navigating' | 'no-assignment' | 'error'
+  const [assignmentState, setAssignmentState] = useState<AssignmentState>('checking')
+
   // Live eyebrow tick — refresh every 60s so the displayed time stays accurate
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 60_000)
@@ -218,6 +223,32 @@ export default function DayRouteSelectorScreen() {
     const t = setTimeout(() => setToast(null), 3000)
     return () => clearTimeout(t)
   }, [toast])
+
+  // Auto-load assigned route — runs once on mount. If dispatch has assigned
+  // this driver a route for today, navigate directly (router.replace so the
+  // back button doesn't return to the selector). On 'no-assignment' or any
+  // failure, fall through to manual selection silently.
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const r = await fetch('/api/assigned-route')
+        const j = await r.json().catch(() => null)
+        if (cancelled) return
+        if (j?.assigned && typeof j.route_id === 'string') {
+          setAssignmentState('navigating')
+          router.replace(`/route/${j.route_id}`)
+          return
+        }
+        setAssignmentState('no-assignment')
+      } catch (err) {
+        console.error('[DayRouteSelector] assigned-route check failed:', err)
+        if (!cancelled) setAssignmentState('error')
+      }
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Load routes whenever the selected date changes
   useEffect(() => {
@@ -248,6 +279,9 @@ export default function DayRouteSelectorScreen() {
   const firstName   = firstNameOf(profile?.display_name)
   const hasGreeting = !!firstName
   const isEmpty     = !isLoading && !error && totalStopCount === 0
+  // While the assignment check is in flight (or while we're navigating away),
+  // suppress every existing body branch so the manual UI doesn't flash.
+  const showBody    = assignmentState !== 'checking' && assignmentState !== 'navigating'
   const sub         = daySubcopy(totalStopCount)
   const breakdown   = useMemo(() => typeBreakdown(dayStops), [dayStops])
 
@@ -392,8 +426,41 @@ export default function DayRouteSelectorScreen() {
       {/* ── SCROLL BODY ──────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto">
 
+        {/* Assigned-route check spinner — suppresses the body until the
+            on-mount /api/assigned-route check resolves, so the manual UI
+            doesn't flash before a silent navigation happens. */}
+        {!showBody && (
+          <div style={{
+            padding: '40px 24px',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
+          }}>
+            <div style={{
+              width: 28, height: 28,
+              border: '2px solid rgba(10,11,20,0.15)',
+              borderTopColor: C.ink,
+              borderRadius: '50%',
+              animation: 'ptw-spin 0.9s linear infinite',
+            }}/>
+            <span style={{ fontSize: 13, color: C.muted }}>Checking your route…</span>
+            <style>{`@keyframes ptw-spin { to { transform: rotate(360deg); } }`}</style>
+          </div>
+        )}
+
+        {/* No-assignment informational banner — only when the API returned
+            assigned: false and the driver is viewing today's date. Muted
+            text on cream, no gold/alarm treatment. */}
+        {assignmentState === 'no-assignment' && isToday && (
+          <div style={{ padding: '14px 22px 0' }}>
+            <div style={{
+              fontSize: 13, color: C.muted, lineHeight: 1.4, fontFamily: FONT_BODY,
+            }}>
+              No route assigned for today. Contact dispatch.
+            </div>
+          </div>
+        )}
+
         {/* Loading state */}
-        {isLoading && (
+        {showBody && isLoading && (
           <div style={{
             padding: '40px 24px',
             display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
@@ -411,7 +478,7 @@ export default function DayRouteSelectorScreen() {
         )}
 
         {/* Error state */}
-        {!isLoading && error && (
+        {showBody && !isLoading && error && (
           <div style={{ padding: '14px 18px 0' }}>
             <div style={{
               background: C.paper,
@@ -457,7 +524,7 @@ export default function DayRouteSelectorScreen() {
         )}
 
         {/* Empty state — single quiet card. Hides truck pill, pre-trip, list, CTA. */}
-        {isEmpty && (
+        {showBody && isEmpty && (
           <div style={{ padding: '32px 22px 0' }}>
             <div style={{
               background: C.paper,
@@ -488,7 +555,7 @@ export default function DayRouteSelectorScreen() {
         )}
 
         {/* Populated body — pre-trip + COD cards + day list + Ava + CTA */}
-        {!isLoading && !error && totalStopCount > 0 && (
+        {showBody && !isLoading && !error && totalStopCount > 0 && (
           <>
             {/* Pre-trip inspection card — designed stub */}
             <div style={{ padding: '14px 18px 0' }}>
