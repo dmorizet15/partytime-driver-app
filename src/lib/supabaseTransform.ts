@@ -10,11 +10,14 @@ export interface SupabaseTruckRow {
 // Stored as JSONB in routes.break_blocks. Warehouse blocks surface in the driver
 // list as synthetic depot-return stops; pure 'break' blocks are ignored — they
 // aren't destinations, just time padding for the dispatcher's ETA cascade.
+// `calculated_eta` is written back into the JSONB by the dashboard cascade
+// (writeWarehouseETAs); we read it here to populate the warehouse stop's ETA.
 export interface BreakBlock {
   id:               string
   type?:            'break' | 'warehouse'
   afterStopIndex:   number
   duration_minutes: number
+  calculated_eta?:  string | null
 }
 
 export interface SupabaseRouteRow {
@@ -163,7 +166,7 @@ function buildWarehouseStop(block: BreakBlock, routeId: string, seq: number): St
     // (src/types/index.ts). Until that lands, double-cast through unknown
     // so this file builds standalone.
     stop_type:      'warehouse' as unknown as Stop['stop_type'],
-    customer_name:  'Return to Depot',
+    customer_name:  'Return to Warehouse',
     company_name:   undefined,
     client_company: undefined,
     address_line_1: DEPOT_ADDRESS_LINE_1,
@@ -180,7 +183,10 @@ function buildWarehouseStop(block: BreakBlock, routeId: string, seq: number): St
     items:          undefined,
     payment_state:  undefined,
     balance_due_amount: null,
-    calculated_eta: null,
+    // Cascade-computed arrival ETA written by the dashboard into break_blocks
+    // JSONB (writeWarehouseETAs). Null when the dispatcher hasn't set a
+    // route_start_time yet — driver app shows dashes, which is correct.
+    calculated_eta: block.calculated_eta ?? null,
     current_status: 'pending' as StopStatus,
     on_the_way_sent:    false,
     on_the_way_sent_at: undefined,
