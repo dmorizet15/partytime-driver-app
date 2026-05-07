@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import BottomNav from '@/components/BottomNav'
 
 // ─── Direction 03 (Editorial) tokens ──────────────────────────────────────────
@@ -119,6 +120,7 @@ type ToolTile = {
   name:  string
   sub:   string
   Icon:  (props: IconProps) => JSX.Element
+  href?: string  // when set, the tile navigates instead of firing the "coming soon" toast
 }
 
 const TOOLS: ToolTile[] = [
@@ -129,11 +131,12 @@ const TOOLS: ToolTile[] = [
   { id: 'power',       name: 'Power',            sub: 'Generator & power requirements', Icon: BoltIcon },
   { id: 'propane',     name: 'Propane',          sub: 'Heater usage calculator',      Icon: FlameIcon },
   { id: 'guides',      name: 'Equipment Guides', sub: 'Specs, setup, troubleshooting', Icon: DocIcon },
-  { id: 'weather',     name: 'Weather & Wind',   sub: 'Live forecast by job site',    Icon: CloudIcon },
+  { id: 'weather',     name: 'Weather & Wind',   sub: 'Live forecast by job site',    Icon: CloudIcon, href: '/tools/weather' },
 ]
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 export default function ToolsScreen() {
+  const router = useRouter()
   const [toast, setToast] = useState<string | null>(null)
 
   // Toast auto-dismiss after 3s
@@ -229,8 +232,10 @@ export default function ToolsScreen() {
             return (
               <button
                 key={tool.id}
-                onClick={() => showToast('Coming soon — this feature is in development.')}
-                aria-label={`${tool.name} — coming soon`}
+                onClick={() => tool.href
+                  ? router.push(tool.href)
+                  : showToast('Coming soon — this feature is in development.')}
+                aria-label={tool.href ? tool.name : `${tool.name} — coming soon`}
                 style={{
                   background: C.ink,
                   border: 0, cursor: 'pointer',
