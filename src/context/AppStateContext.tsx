@@ -35,6 +35,7 @@ type Action =
   | { type: 'LOAD_ERROR';   payload: { error: string } }
   | { type: 'MARK_OTW';     payload: { stop_id: string; sent_at: string } }
   | { type: 'MARK_COMPLETE'; payload: { stop_id: string; completed_at: string } }
+  | { type: 'CLEAR_CACHE' }
 
 // ─── Reducer ──────────────────────────────────────────────────────────────────
 function appReducer(state: AppState, action: Action): AppState {
@@ -90,6 +91,17 @@ function appReducer(state: AppState, action: Action): AppState {
         ),
       }
 
+    case 'CLEAR_CACHE':
+      // Reset cached route/stop data without disturbing any in-flight load.
+      // Used by the home screen when the assigned-route check resolves to
+      // 'no-assignment' so a previous session's data can't bleed through.
+      return {
+        ...state,
+        routes:     [],
+        stops:      [],
+        loadedDate: null,
+      }
+
     default:
       return state
   }
@@ -109,6 +121,7 @@ interface AppStateContextValue {
   loadDay:      (date: string) => Promise<void>
   markOtw:      (stopId: string, sentAt: string)      => void
   markComplete: (stopId: string, completedAt: string) => void
+  clearCache:   () => void
 }
 
 // ─── Context ──────────────────────────────────────────────────────────────────
@@ -194,6 +207,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     } catch {}
   }, [])
 
+  const clearCache = useCallback(() => {
+    dispatch({ type: 'CLEAR_CACHE' })
+  }, [])
+
   return (
     <AppStateContext.Provider
       value={{
@@ -209,6 +226,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         loadDay,
         markOtw,
         markComplete,
+        clearCache,
       }}
     >
       {children}

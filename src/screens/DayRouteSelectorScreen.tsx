@@ -200,7 +200,7 @@ function ChevronRightIcon({ size = 16, color = C.muted }: IconProps) {
 export default function DayRouteSelectorScreen() {
   const router = useRouter()
   const { profile } = useAuth()
-  const { getRoutesForDate, getStopsForRoute, isLoading, error, loadDay } = useAppState()
+  const { getRoutesForDate, getStopsForRoute, isLoading, error, loadDay, clearCache } = useAppState()
 
   const [selectedDate, setSelectedDate] = useState<string>(todayStr())
   const [now, setNow]                   = useState<Date>(() => new Date())
@@ -240,6 +240,9 @@ export default function DayRouteSelectorScreen() {
           router.replace(`/route/${j.route_id}`)
           return
         }
+        // Flush any cached route/stop data from a previous session so the
+        // banner-only view can't render stale stops underneath it.
+        clearCache()
         setAssignmentState('no-assignment')
       } catch (err) {
         console.error('[DayRouteSelector] assigned-route check failed:', err)
@@ -280,8 +283,13 @@ export default function DayRouteSelectorScreen() {
   const hasGreeting = !!firstName
   const isEmpty     = !isLoading && !error && totalStopCount === 0
   // While the assignment check is in flight (or while we're navigating away),
-  // suppress every existing body branch so the manual UI doesn't flash.
-  const showBody    = assignmentState !== 'checking' && assignmentState !== 'navigating'
+  // suppress every existing body branch so the manual UI doesn't flash. When
+  // the check resolves to 'no-assignment' the banner stands alone — no
+  // loading/error/empty/populated branches render below it. Only 'error'
+  // (silent fallthrough on auth/network failure) keeps the manual selection.
+  const showBody    = assignmentState !== 'checking'
+                   && assignmentState !== 'navigating'
+                   && assignmentState !== 'no-assignment'
   const sub         = daySubcopy(totalStopCount)
   const breakdown   = useMemo(() => typeBreakdown(dayStops), [dayStops])
 
