@@ -394,6 +394,33 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     if (!stop) return
     setCompleteLoading(true)
     const completedAt = new Date().toISOString()
+
+    // Persist to Supabase first so the dashboard's realtime cascade fires
+    // and downstream stop ETAs recompute. On any failure (network, 404, 500),
+    // surface the error and stay put — don't silently swallow the failure
+    // and don't navigate away from a stop that's still pending in the DB.
+    try {
+      const r = await fetch('/api/complete-stop', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ stop_id: stop.stop_id }),
+      })
+      const j = await r.json().catch(() => null)
+      if (!r.ok || !j?.success) {
+        setNavMessage(j?.error ?? 'Could not mark stop complete — try again')
+        setShowCompleteModal(false)
+        setCompleteLoading(false)
+        return
+      }
+    } catch (err) {
+      console.error('[handleConfirmComplete] network error:', err)
+      setNavMessage('Could not mark stop complete — check your connection')
+      setShowCompleteModal(false)
+      setCompleteLoading(false)
+      return
+    }
+
+    // Server write succeeded — proceed with local state + navigation.
     markComplete(stop.stop_id, completedAt)
     logEvent('STOP_COMPLETED', routeId, stopId, stop.order_id, { completed_at: completedAt })
     setShowCompleteModal(false); setCompleteLoading(false)
