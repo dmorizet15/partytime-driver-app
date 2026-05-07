@@ -425,13 +425,21 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     logEvent('STOP_COMPLETED', routeId, stopId, stop.order_id, { completed_at: completedAt })
 
     // Force a fresh route-data fetch so downstream ETAs the dashboard cascade
-    // just recalculated land in the cache before the driver views the next
-    // stop. The `force=true` second arg bypasses loadDay's same-date
-    // early-return without nuking the existing cache (LOAD_START preserves
-    // routes/stops), so there's no "stop not found" flash on the next-stop
-    // render. Fire-and-forget — navigation happens immediately; LOAD_SUCCESS
-    // lands within seconds with the recalculated ETAs.
-    loadDay(route.operating_date, true)
+    // just recalculated land in the cache. The `force=true` second arg
+    // bypasses loadDay's same-date early-return without nuking the existing
+    // cache (LOAD_START preserves routes/stops), so there's no "stop not
+    // found" flash on the next-stop render. Fire-and-forget — navigation
+    // happens immediately; LOAD_SUCCESS lands later with the new ETAs.
+    //
+    // 5-second delay: the dashboard cascade (realtime → recalculate →
+    // writeCalculatedETAs → Supabase write) takes ~3–5s end-to-end after
+    // /api/complete-stop fires. Refetching sooner reads stale calculated_eta
+    // values. The timeout's closure captures route.operating_date by value;
+    // even if the screen unmounts before it fires (likely — router.replace
+    // is queued immediately below), the callback still runs against the
+    // still-mounted AppStateProvider and updates state for whatever screen
+    // the driver landed on.
+    setTimeout(() => loadDay(route.operating_date, true), 5000)
 
     setShowCompleteModal(false); setCompleteLoading(false)
     if (nextStop) { router.replace(`/route/${routeId}/stop/${nextStop.stop_id}`) } else { router.replace(`/route/${routeId}`) }
