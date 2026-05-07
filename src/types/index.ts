@@ -22,7 +22,7 @@ export interface Stop {
   route_id: string
   stop_sequence: number
   order_id: string
-  stop_type: 'delivery' | 'pickup' | 'service'
+  stop_type: 'delivery' | 'pickup' | 'service' | 'warehouse'
   customer_name: string
   company_name?: string      // TapGoods rental.name (the order/rental identifier)
   client_company?: string    // primary contact's client.companies[0].name (the org)

@@ -37,10 +37,13 @@ const FONT_DISPLAY = "var(--font-archivo), 'Archivo', 'Inter', system-ui, -apple
 const FONT_BODY    = "var(--font-inter), 'Inter', system-ui, -apple-system, sans-serif"
 
 // ─── Stop type pill colors ────────────────────────────────────────────────────
-const TYPE_PILL: Record<'delivery' | 'pickup' | 'service', { bg: string; color: string }> = {
-  delivery: { bg: C.blue, color: '#fff' },
-  pickup:   { bg: C.gold, color: C.ink },
-  service:  { bg: C.ink,  color: '#fff' },
+const TYPE_PILL: Record<'delivery' | 'pickup' | 'service' | 'warehouse', { bg: string; color: string }> = {
+  delivery:  { bg: C.blue, color: '#fff' },
+  pickup:    { bg: C.gold, color: C.ink },
+  service:   { bg: C.ink,  color: '#fff' },
+  // Neutral gray — matches the route-list WAREHOUSE chip; deliberately not an
+  // action color (blue/gold/green all signal a tap target).
+  warehouse: { bg: C.off,  color: C.muted },
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -340,6 +343,10 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   const nextStop = allStops[stopIndex + 1] ?? null
   const isCompleted = stop.current_status === 'completed'
   const isOtwSent = stop.on_the_way_sent
+  // Warehouse stops (Path A — synthetic depot returns from routes.break_blocks)
+  // skip SMS / COD / POD / Mark-Stop-Complete per spec. The action card shows
+  // a single Open-in-Maps button instead of the standard Mark/quick-actions stack.
+  const isWarehouse = stop.stop_type === 'warehouse'
 
   // Headline = venue/business if available, else customer name. Trailing period
   // applied in JSX so the period color can be toned independently if needed.
@@ -499,9 +506,10 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     // is on file — preserves behavior on stops not yet re-synced.
     const smsTarget = stop.customer_cell?.trim() || stop.customer_phone
     // EtaSmsService's stopType arg is typed 'delivery' | 'pickup'. Coerce
-    // 'service' → 'delivery' for the SMS (preserves prior behavior — service
-    // stops historically went out as deliveries when the mapper squashed them).
-    const smsStopType: 'delivery' | 'pickup' = stop.stop_type === 'service' ? 'delivery' : stop.stop_type
+    // anything that isn't 'pickup' → 'delivery'. Service historically squashed
+    // to delivery; warehouse never reaches this path (Send ETA UI is hidden
+    // for warehouse stops) but the union exhaustiveness check still demands it.
+    const smsStopType: 'delivery' | 'pickup' = stop.stop_type === 'pickup' ? 'pickup' : 'delivery'
     const result = await sendEtaSms({ stopId: stop.stop_id, routeId, stopType: smsStopType, customerPhone: smsTarget, customerName: stop.customer_name, orderId: stop.order_id, driverLat: loc.lat, driverLng: loc.lng, destination })
     if (result.success) {
       logEvent('ETA_SMS_SENT', routeId, stopId, stop.order_id, { etaRange: result.etaRange })
@@ -1135,7 +1143,8 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
           </div>
         ) : (
           <>
-            {/* ETA / SMS block */}
+            {/* ETA / SMS block — hidden for warehouse stops (no customer SMS) */}
+            {!isWarehouse && (
             <div style={{ padding: '16px 18px 0' }}>
               {etaStatus === 'sent' ? (
                 <>
@@ -1224,6 +1233,7 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
                 </>
               )}
             </div>
+            )}
 
             {/* Notes — dashed-border card, only when notes exist */}
             {stop.notes && stop.notes.trim().length > 0 && (
@@ -1362,6 +1372,38 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
                 padding: 14,
                 boxShadow: `5px 5px 0 ${C.ink}`,
               }}>
+                {isWarehouse ? (
+                  // Warehouse — navigate-to-depot only. No Mark Stop Complete
+                  // (Decision 1A), no SMS, no POD; the prominent CTA matches
+                  // the Mark button's geometry/shadow for visual consistency.
+                  <button
+                    onClick={handleNavigate}
+                    disabled={navLoading}
+                    style={{
+                      width: '100%', height: 60, borderRadius: 999,
+                      background: C.gold, color: C.ink,
+                      border: 0, cursor: navLoading ? 'default' : 'pointer',
+                      fontSize: 16, fontWeight: 900, fontFamily: FONT_DISPLAY,
+                      letterSpacing: '-0.01em',
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '0 8px 0 22px',
+                      boxShadow: '0 14px 30px -10px rgba(255,184,0,0.55)',
+                      opacity: navLoading ? 0.65 : 1,
+                      transition: 'opacity 120ms ease',
+                    }}
+                  >
+                    <span>{navLoading ? 'Opening…' : 'Open in Maps'}</span>
+                    <span style={{
+                      width: 44, height: 44, borderRadius: '50%',
+                      background: C.ink,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      flexShrink: 0,
+                    }}>
+                      <NavigateIcon size={18} color={C.gold}/>
+                    </span>
+                  </button>
+                ) : (
+                <>
                 {/* Mark Arrived — gold (pending) or green (otw_sent) */}
                 <button
                   onClick={() => setShowCompleteModal(true)}
@@ -1424,6 +1466,8 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
                     loading={pod.status === 'uploading'}
                   />
                 </div>
+                </>
+                )}
               </div>
 
               {navMessage && <InlinePill tone="muted">{navMessage}</InlinePill>}

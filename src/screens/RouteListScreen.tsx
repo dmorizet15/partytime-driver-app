@@ -321,10 +321,11 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
             {stops.map((stop) => {
               const isCompleted = stop.current_status === 'completed'
               const isOtw       = stop.current_status === 'on_the_way_sent'
+              const isWarehouse = stop.stop_type === 'warehouse'
               const payLabel    = paymentLabel(stop.payment_state)
               const sentAt      = stop.on_the_way_sent_at ? formatSentAt(stop.on_the_way_sent_at) : null
               const addressLine = [stop.address_line_1, stop.city].filter(Boolean).join(', ')
-              const hasChips    = isOtw || isCompleted || !!payLabel
+              const hasChips    = isOtw || isCompleted || !!payLabel || isWarehouse
 
               return (
                 <button
@@ -428,12 +429,24 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
                       </div>
                     )}
 
-                    {/* Chips row: status + payment */}
+                    {/* Chips row: type + status + payment */}
                     {hasChips && (
                       <div style={{
                         marginTop: 8,
                         display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center',
                       }}>
+                        {isWarehouse && (
+                          <span style={{
+                            display: 'inline-flex', alignItems: 'center',
+                            background: C.off, color: C.muted,
+                            padding: '4px 10px', borderRadius: 999,
+                            fontSize: 10.5, fontWeight: 800, letterSpacing: '0.08em',
+                            textTransform: 'uppercase',
+                            whiteSpace: 'nowrap',
+                          }}>
+                            Warehouse
+                          </span>
+                        )}
                         {isOtw && (
                           <span style={{
                             display: 'inline-flex', alignItems: 'center', gap: 6,

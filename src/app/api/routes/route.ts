@@ -45,6 +45,7 @@ export async function GET(req: NextRequest) {
       label,
       truck_id,
       truck_id_2,
+      break_blocks,
       truck:trucks!routes_truck_id_fkey(id, name),
       truck_2:trucks!routes_truck_id_2_fkey(id, name)
     `)
