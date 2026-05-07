@@ -1380,7 +1380,7 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
                     transition: 'background 160ms ease',
                   }}
                 >
-                  <span>Mark Arrived</span>
+                  <span>Mark Stop Complete</span>
                   <span style={{
                     width: 44, height: 44, borderRadius: '50%',
                     background: C.ink,
