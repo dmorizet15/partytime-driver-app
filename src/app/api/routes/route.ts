@@ -80,6 +80,12 @@ export async function GET(req: NextRequest) {
         tapgoods_order_token
       `)
       .in('route_id', routeIds)
+      // Filter to today's truck-roll. Without this, stops whose `route_id`
+      // points at a route that's been reused for today (or stops that were
+      // dragged onto a route long ago and never unassigned) leak into the
+      // driver's day view even though their `scheduled_date` is a past
+      // week. The dashboard's board query already filters this way.
+      .eq('scheduled_date', date)
       .order('route_position', { ascending: true, nullsFirst: false }),
     supabase
       .from('route_assignments')
