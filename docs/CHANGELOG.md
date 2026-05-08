@@ -4,6 +4,31 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-05-08 — `/api/routes` filter revert (evening)
+
+**Scope:** Revert the late-afternoon `calculated_eta IS NOT NULL` workaround back to the cleaner `scheduled_date = date` filter. Dashboard Migration 035 makes scheduled_date reliable on assigned stops.
+
+### Why
+- The afternoon's workaround coupled driver-app stop visibility to the dispatcher running Optimize (which populates `calculated_eta`). A stop assigned to today's route but never optimized would be invisible.
+- Dashboard Migration 035 (2026-05-08, evening session) installs `trg_sync_scheduled_date_to_route` — a `BEFORE INSERT OR UPDATE OF route_id` trigger that holds `dispatch_stops.scheduled_date = routes.route_date` whenever `route_id IS NOT NULL`. Pickup stubs no longer drift after assignment.
+- With the invariant in place, `.eq('scheduled_date', date)` is the cleanest per-day filter — no actionability proxy needed.
+
+### Files changed
+- `src/app/api/routes/route.ts` — filter reverted, comment updated to reference dashboard Migration 035.
+
+### Migrations applied
+- None in this repo. Dashboard Migration 035 is what unblocked the revert.
+
+### Smoke tests
+- `npx next build` clean (compile + type check + 16/16 static pages).
+- Vercel deploy `oa1e7cvxr` Ready in 29s on commit `9b8d269`.
+- End-to-end day-filter smoke deferred to next live route check.
+
+### Commits
+- `9b8d269` — fix(api/routes): revert filter to scheduled_date = date (Vercel deploy `oa1e7cvxr`, Ready 29s)
+
+---
+
 ## 2026-05-08 — Phase 2B stop-level weather + day-filter bug fix
 
 **Scope:** Two pieces of work, one driver-facing, one bug discovered during smoke test.
