@@ -13,6 +13,7 @@ export interface Route {
   stop_count: number
   route_status: 'active' | 'completed' | 'pending'
   truck_name?: string
+  truck_plate?: string
   truck_2_name?: string
 }
 

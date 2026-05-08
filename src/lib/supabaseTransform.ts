@@ -2,8 +2,9 @@ import type { PaymentState, Route, Stop, StopStatus } from '@/types'
 
 // ─── Row shapes returned by the Supabase queries ─────────────────────────────
 export interface SupabaseTruckRow {
-  id:   string
-  name: string
+  id:    string
+  name:  string
+  plate: string | null
 }
 
 // Mirrors the dashboard's BreakBlock shape (partytime-dashboard/src/types/board.ts).
@@ -245,6 +246,7 @@ export function transformSupabase({ routes: routeRows, assignments, stops: stopR
       stop_count:      stopCountByRoute.get(r.id) ?? 0,
       route_status:    'active',
       truck_name:      truck?.name,
+      truck_plate:     truck?.plate ?? undefined,
       truck_2_name:    truck_2?.name,
     }
   })

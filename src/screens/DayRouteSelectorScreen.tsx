@@ -4,7 +4,6 @@ import { useState, useEffect, useMemo } from 'react'
 import { useRouter }                    from 'next/navigation'
 import { useAppState }                  from '@/context/AppStateContext'
 import { useAuth }                      from '@/hooks/useAuth'
-import { hasAutoCheckedAssignmentThisSession, markAutoAssignmentChecked } from '@/lib/auth'
 import type { Stop }                    from '@/types'
 import BottomNav                        from '@/components/BottomNav'
 
@@ -30,7 +29,6 @@ const FONT_BODY    = "var(--font-inter), 'Inter', system-ui, -apple-system, sans
 // Slots stay in JSX so flipping these to `true` is a one-line change once the
 // backend is ready. While `false`, each slot renders a designed stub whose tap
 // fires a "Coming soon" toast — no fake data shipped.
-const HAS_TRUCK      = false
 const HAS_INSPECTION = false
 const HAS_AVA        = false
 // HAS_WEATHER reserved for the wind/weather pill on stop cards. Render gated
@@ -62,34 +60,12 @@ const TYPE_PILL: Record<'delivery' | 'pickup' | 'service' | 'warehouse', { bg: s
 }
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
-function parseLocal(dateStr: string): Date {
-  const [y, m, d] = dateStr.split('-').map(Number)
-  return new Date(y, m - 1, d)
-}
-
-function toDateStr(date: Date): string {
-  const y = date.getFullYear()
-  const m = String(date.getMonth() + 1).padStart(2, '0')
-  const d = String(date.getDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
-}
-
 function todayStr(): string {
-  return toDateStr(new Date())
-}
-
-function shiftDate(dateStr: string, days: number): string {
-  const d = parseLocal(dateStr)
-  d.setDate(d.getDate() + days)
-  return toDateStr(d)
-}
-
-function formatNavDate(dateStr: string): string {
-  return parseLocal(dateStr).toLocaleDateString('en-US', {
-    weekday: 'long',
-    month:   'short',
-    day:     'numeric',
-  })
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
 function formatLiveEyebrow(d: Date): string {
@@ -208,20 +184,11 @@ function ChevronRightIcon({ size = 16, color = C.muted }: IconProps) {
 export default function DayRouteSelectorScreen() {
   const router = useRouter()
   const { profile } = useAuth()
-  const { getRoutesForDate, getStopsForRoute, isLoading, error, loadDay, clearCache } = useAppState()
+  const { getRoutesForDate, getStopsForRoute, isLoading, error, loadDay } = useAppState()
 
-  const [selectedDate, setSelectedDate] = useState<string>(todayStr())
-  const [now, setNow]                   = useState<Date>(() => new Date())
-  const [toast, setToast]               = useState<string | null>(null)
-
-  // Driver auto-load: check on mount whether dispatch has assigned this driver
-  // a route for today. Result drives the body skeleton + banner below.
-  // 'manual' = user navigated to Home from BottomNav after the once-per-session
-  // auto-check already fired; render the day view, no redirect.
-  type AssignmentState = 'checking' | 'navigating' | 'no-assignment' | 'error' | 'manual'
-  const [assignmentState, setAssignmentState] = useState<AssignmentState>(
-    hasAutoCheckedAssignmentThisSession() ? 'manual' : 'checking'
-  )
+  const today = todayStr()
+  const [now, setNow]     = useState<Date>(() => new Date())
+  const [toast, setToast] = useState<string | null>(null)
 
   // Live eyebrow tick — refresh every 60s so the displayed time stays accurate
   useEffect(() => {
@@ -236,66 +203,19 @@ export default function DayRouteSelectorScreen() {
     return () => clearTimeout(t)
   }, [toast])
 
-  // Auto-load assigned route — runs once per browser session. If dispatch has
-  // assigned this driver a route for today, navigate directly on first mount
-  // post-login (router.replace so the back button doesn't return to the
-  // selector). On subsequent mounts (driver tapped Home in BottomNav after
-  // the initial redirect), skip the API call and the redirect so Home stays
-  // reachable. signOut() resets the flag so re-login retriggers it.
+  // Load today's routes once on mount. Home is driver-scoped to today only —
+  // no date picker, so no need to refetch on date change.
   useEffect(() => {
-    if (hasAutoCheckedAssignmentThisSession()) return
-    let cancelled = false
-    ;(async () => {
-      try {
-        const r = await fetch('/api/assigned-route')
-        const j = await r.json().catch(() => null)
-        if (cancelled) return
-        markAutoAssignmentChecked()
-        if (j?.assigned && typeof j.route_id === 'string') {
-          setAssignmentState('navigating')
-          router.replace(`/route/${j.route_id}`)
-          return
-        }
-        // Flush any cached route/stop data from a previous session so the
-        // banner-only view can't render stale stops underneath it.
-        clearCache()
-        setAssignmentState('no-assignment')
-      } catch (err) {
-        console.error('[DayRouteSelector] assigned-route check failed:', err)
-        if (!cancelled) {
-          markAutoAssignmentChecked()
-          setAssignmentState('error')
-        }
-      }
-    })()
-    return () => { cancelled = true }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    loadDay(today)
+  }, [today, loadDay])
 
-  // Load routes whenever the selected date changes
-  useEffect(() => {
-    loadDay(selectedDate)
-  }, [selectedDate, loadDay])
-
-  const isToday = selectedDate === todayStr()
-  const routes  = getRoutesForDate(selectedDate)
-
-  // Suppress every body branch + downstream stop counts while the assignment
-  // check is in flight, while we're navigating away, or when there's no
-  // assignment for today. Only 'error' (silent fallthrough on auth/network
-  // failure) renders the manual selection populated with today's data.
-  // Hoisted above dayStops so the same gate also drives totalStopCount and
-  // the hero subcopy — otherwise clearCache invalidates loadedDate, loadDay
-  // re-fetches, and the hero flashes a "X stops scheduled" line.
-  const showBody = assignmentState !== 'checking'
-                && assignmentState !== 'navigating'
-                && assignmentState !== 'no-assignment'
+  const routes = getRoutesForDate(today)
 
   // Aggregate stops across today's routes — the day list renders stops, not
   // routes. Composes existing context methods only; no hook/context edits.
   const dayStops = useMemo(
-    () => showBody ? routes.flatMap((r) => getStopsForRoute(r.route_id)) : [],
-    [routes, getStopsForRoute, showBody]
+    () => routes.flatMap((r) => getStopsForRoute(r.route_id)),
+    [routes, getStopsForRoute]
   )
 
   const totalStopCount = dayStops.length
@@ -314,6 +234,12 @@ export default function DayRouteSelectorScreen() {
   const isEmpty     = !isLoading && !error && totalStopCount === 0
   const sub         = daySubcopy(totalStopCount)
   const breakdown   = useMemo(() => typeBreakdown(dayStops), [dayStops])
+
+  // Driver app is single-truck per route per login — only the primary truck
+  // surfaces here. truck_2 is dispatcher-side data; ignored on Home.
+  const primaryRoute = routes[0]
+  const truckName    = primaryRoute?.truck_name?.trim() || null
+  const truckPlate   = primaryRoute?.truck_plate?.trim() || null
 
   function showToast(msg: string) { setToast(msg) }
 
@@ -419,22 +345,21 @@ export default function DayRouteSelectorScreen() {
           )}
         </div>
 
-        {/* Truck pill — designed stub (HAS_TRUCK=false). Hidden on empty state. */}
-        {!isEmpty && (
-          <button
-            onClick={() => showToast('Coming soon — this feature is in development.')}
-            style={{
-              marginTop: 18, position: 'relative',
-              display: 'inline-flex', alignItems: 'center', gap: 10,
-              background: 'rgba(255,255,255,0.10)',
-              border: '1px solid rgba(255,255,255,0.16)',
-              padding: '6px 14px 6px 6px',
-              borderRadius: 999,
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-              color: '#fff',
-            }}
-          >
+        {/* Truck pill — primary truck for today's route (driver app is single-truck
+            per login, so truck_2 is intentionally ignored). Hidden when there's
+            no truck assignment yet. Plate appears in regular weight after a
+            middle dot when present; name-only otherwise. */}
+        {!isEmpty && truckName && (
+          <div style={{
+            marginTop: 18, position: 'relative',
+            display: 'inline-flex', alignItems: 'center', gap: 10,
+            background: 'rgba(255,255,255,0.10)',
+            border: '1px solid rgba(255,255,255,0.16)',
+            padding: '6px 14px 6px 6px',
+            borderRadius: 999,
+            fontFamily: 'inherit',
+            color: '#fff',
+          }}>
             <span style={{
               width: 28, height: 28, borderRadius: '50%',
               background: C.gold,
@@ -444,33 +369,26 @@ export default function DayRouteSelectorScreen() {
               <TruckIcon size={14} color={C.ink}/>
             </span>
             <span style={{
-              fontSize: 12.5, fontWeight: 700, letterSpacing: '-0.005em',
+              fontSize: 12.5, letterSpacing: '-0.005em',
               fontVariantNumeric: 'tabular-nums',
             }}>
-              Your truck: — · —
+              <span style={{ fontWeight: 700 }}>{truckName}</span>
+              {truckPlate && (
+                <>
+                  <span style={{ fontWeight: 400, opacity: 0.85 }}> · </span>
+                  <span style={{ fontWeight: 400 }}>{truckPlate}</span>
+                </>
+              )}
             </span>
-          </button>
+          </div>
         )}
       </div>
 
       {/* ── SCROLL BODY ──────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto">
 
-        {/* No-assignment informational banner — only when the API returned
-            assigned: false and the driver is viewing today's date. Muted
-            text on cream, no gold/alarm treatment. */}
-        {assignmentState === 'no-assignment' && isToday && (
-          <div style={{ padding: '14px 22px 0' }}>
-            <div style={{
-              fontSize: 13, color: C.muted, lineHeight: 1.4, fontFamily: FONT_BODY,
-            }}>
-              No route assigned for today. Contact dispatch.
-            </div>
-          </div>
-        )}
-
         {/* Loading state */}
-        {showBody && isLoading && (
+        {isLoading && (
           <div style={{
             padding: '40px 24px',
             display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
@@ -488,7 +406,7 @@ export default function DayRouteSelectorScreen() {
         )}
 
         {/* Error state */}
-        {showBody && !isLoading && error && (
+        {!isLoading && error && (
           <div style={{ padding: '14px 18px 0' }}>
             <div style={{
               background: C.paper,
@@ -517,7 +435,7 @@ export default function DayRouteSelectorScreen() {
                 {error}
               </div>
               <button
-                onClick={() => loadDay(selectedDate)}
+                onClick={() => loadDay(today)}
                 style={{
                   marginTop: 14,
                   background: C.ink, color: '#fff',
@@ -534,7 +452,7 @@ export default function DayRouteSelectorScreen() {
         )}
 
         {/* Empty state — single quiet card. Hides truck pill, pre-trip, list, CTA. */}
-        {showBody && isEmpty && (
+        {isEmpty && (
           <div style={{ padding: '32px 22px 0' }}>
             <div style={{
               background: C.paper,
@@ -547,7 +465,7 @@ export default function DayRouteSelectorScreen() {
                 fontSize: 11, fontWeight: 800, color: C.muted,
                 letterSpacing: '0.22em', textTransform: 'uppercase',
               }}>
-                {isToday ? 'Today' : 'No work'}
+                Today
               </div>
               <div style={{
                 marginTop: 8, fontSize: 22, fontWeight: 900, color: C.ink,
@@ -565,7 +483,7 @@ export default function DayRouteSelectorScreen() {
         )}
 
         {/* Populated body — pre-trip + COD cards + day list + Ava + CTA */}
-        {showBody && !isLoading && !error && totalStopCount > 0 && (
+        {!isLoading && !error && totalStopCount > 0 && (
           <>
             {/* Pre-trip inspection card — designed stub */}
             <div style={{ padding: '14px 18px 0' }}>
@@ -738,68 +656,6 @@ export default function DayRouteSelectorScreen() {
                 </div>
               )
             })()}
-
-            {/* Date nav strip — small ghost buttons + center label */}
-            <div style={{
-              padding: '20px 22px 0',
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              gap: 10,
-            }}>
-              <button
-                onClick={() => setSelectedDate((d) => shiftDate(d, -1))}
-                aria-label="Previous day"
-                disabled={isLoading}
-                style={{
-                  width: 32, height: 32, borderRadius: 8,
-                  background: 'transparent',
-                  border: '1px solid rgba(10,11,20,0.14)',
-                  color: C.muted,
-                  fontSize: 16, fontWeight: 800,
-                  cursor: isLoading ? 'default' : 'pointer',
-                  opacity: isLoading ? 0.4 : 1,
-                  fontFamily: 'inherit',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}
-              >
-                ‹
-              </button>
-              <div style={{
-                fontSize: 12, fontWeight: 700, color: C.muted,
-                letterSpacing: '0.02em',
-                fontVariantNumeric: 'tabular-nums',
-                display: 'flex', alignItems: 'center', gap: 8,
-              }}>
-                {isToday && (
-                  <span style={{
-                    padding: '2px 6px', borderRadius: 4,
-                    background: C.ink, color: '#fff',
-                    fontSize: 9, fontWeight: 800, letterSpacing: '0.2em',
-                    textTransform: 'uppercase',
-                  }}>
-                    Today
-                  </span>
-                )}
-                <span>{formatNavDate(selectedDate)}</span>
-              </div>
-              <button
-                onClick={() => setSelectedDate((d) => shiftDate(d, 1))}
-                aria-label="Next day"
-                disabled={isLoading}
-                style={{
-                  width: 32, height: 32, borderRadius: 8,
-                  background: 'transparent',
-                  border: '1px solid rgba(10,11,20,0.14)',
-                  color: C.muted,
-                  fontSize: 16, fontWeight: 800,
-                  cursor: isLoading ? 'default' : 'pointer',
-                  opacity: isLoading ? 0.4 : 1,
-                  fontFamily: 'inherit',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}
-              >
-                ›
-              </button>
-            </div>
 
             {/* Day list eyebrow */}
             <div style={{
