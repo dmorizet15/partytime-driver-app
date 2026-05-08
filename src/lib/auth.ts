@@ -41,6 +41,18 @@ export async function signIn(email: string, password: string) {
   return supabase.auth.signInWithPassword({ email, password })
 }
 
+// Session-scoped flag for the home-page auto-redirect to today's assigned
+// route. Fires once per browser session so the Home tab in BottomNav stays
+// reachable on subsequent visits. Reset on signOut so re-login retriggers it.
+let _hasAutoCheckedAssignmentThisSession = false
+export function hasAutoCheckedAssignmentThisSession() {
+  return _hasAutoCheckedAssignmentThisSession
+}
+export function markAutoAssignmentChecked() {
+  _hasAutoCheckedAssignmentThisSession = true
+}
+
 export async function signOut() {
+  _hasAutoCheckedAssignmentThisSession = false
   return supabase.auth.signOut()
 }

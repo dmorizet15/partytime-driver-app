@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useRouter }                    from 'next/navigation'
 import { useAppState }                  from '@/context/AppStateContext'
 import { useAuth }                      from '@/hooks/useAuth'
+import { hasAutoCheckedAssignmentThisSession, markAutoAssignmentChecked } from '@/lib/auth'
 import type { Stop }                    from '@/types'
 import BottomNav                        from '@/components/BottomNav'
 
@@ -215,8 +216,12 @@ export default function DayRouteSelectorScreen() {
 
   // Driver auto-load: check on mount whether dispatch has assigned this driver
   // a route for today. Result drives the body skeleton + banner below.
-  type AssignmentState = 'checking' | 'navigating' | 'no-assignment' | 'error'
-  const [assignmentState, setAssignmentState] = useState<AssignmentState>('checking')
+  // 'manual' = user navigated to Home from BottomNav after the once-per-session
+  // auto-check already fired; render the day view, no redirect.
+  type AssignmentState = 'checking' | 'navigating' | 'no-assignment' | 'error' | 'manual'
+  const [assignmentState, setAssignmentState] = useState<AssignmentState>(
+    hasAutoCheckedAssignmentThisSession() ? 'manual' : 'checking'
+  )
 
   // Live eyebrow tick — refresh every 60s so the displayed time stays accurate
   useEffect(() => {
@@ -231,17 +236,21 @@ export default function DayRouteSelectorScreen() {
     return () => clearTimeout(t)
   }, [toast])
 
-  // Auto-load assigned route — runs once on mount. If dispatch has assigned
-  // this driver a route for today, navigate directly (router.replace so the
-  // back button doesn't return to the selector). On 'no-assignment' or any
-  // failure, fall through to manual selection silently.
+  // Auto-load assigned route — runs once per browser session. If dispatch has
+  // assigned this driver a route for today, navigate directly on first mount
+  // post-login (router.replace so the back button doesn't return to the
+  // selector). On subsequent mounts (driver tapped Home in BottomNav after
+  // the initial redirect), skip the API call and the redirect so Home stays
+  // reachable. signOut() resets the flag so re-login retriggers it.
   useEffect(() => {
+    if (hasAutoCheckedAssignmentThisSession()) return
     let cancelled = false
     ;(async () => {
       try {
         const r = await fetch('/api/assigned-route')
         const j = await r.json().catch(() => null)
         if (cancelled) return
+        markAutoAssignmentChecked()
         if (j?.assigned && typeof j.route_id === 'string') {
           setAssignmentState('navigating')
           router.replace(`/route/${j.route_id}`)
@@ -253,7 +262,10 @@ export default function DayRouteSelectorScreen() {
         setAssignmentState('no-assignment')
       } catch (err) {
         console.error('[DayRouteSelector] assigned-route check failed:', err)
-        if (!cancelled) setAssignmentState('error')
+        if (!cancelled) {
+          markAutoAssignmentChecked()
+          setAssignmentState('error')
+        }
       }
     })()
     return () => { cancelled = true }
