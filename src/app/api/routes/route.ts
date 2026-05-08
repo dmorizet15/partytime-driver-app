@@ -80,12 +80,17 @@ export async function GET(req: NextRequest) {
         tapgoods_order_token
       `)
       .in('route_id', routeIds)
-      // Filter to today's truck-roll. Without this, stops whose `route_id`
-      // points at a route that's been reused for today (or stops that were
-      // dragged onto a route long ago and never unassigned) leak into the
-      // driver's day view even though their `scheduled_date` is a past
-      // week. The dashboard's board query already filters this way.
-      .eq('scheduled_date', date)
+      // Drop stale ghost stops — pickup stubs that got assigned to a route
+      // long ago and never optimized or unassigned. The right discriminator
+      // is `calculated_eta`: a populated ETA means the dispatcher has
+      // optimized this stop into today's route and it's actionable. We
+      // CANNOT filter by `scheduled_date = date` because legit pickup stubs
+      // anchor their `scheduled_date` to a past Monday by design (auto-stub
+      // anchor pattern from tapgoodsSync); the dashboard works around this
+      // via a week-window filter on `scheduled_date OR order_start_date`,
+      // but the driver app needs a per-day filter, so actionability via
+      // `calculated_eta` is the cleanest signal. Discovered 2026-05-08.
+      .not('calculated_eta', 'is', null)
       .order('route_position', { ascending: true, nullsFirst: false }),
     supabase
       .from('route_assignments')
