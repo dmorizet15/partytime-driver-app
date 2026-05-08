@@ -99,11 +99,17 @@ Standalone Tools weather screen shipped to production.
   - `HAS_STOP_LEVEL_BADGES = false` — flip when Phase 2B ships
 - Out of v2A scope: stop-level badges (2B), anchoring guidance (2C), historical lookups, custom location search, tent-size threshold differentiation
 
-**Phase 2A blocker for Phase 2B:** most `stops.address_lat` / `address_lng` columns in `partytime-east` are NULL. The Tools weather screen renders ungeocoded stops as disabled options ("(no coords)"). Phase 2B stop-level badges cannot ship until the dashboard pipeline geocodes addresses on stop create/import (Google Maps Geocoding API is already enabled per Infrastructure table).
+### v2 Phase 2B SHIPPED ✅ — May 8, 2026 (commit `6804347`)
+Stop-level weather badges live on Stop Detail. `StopWeatherModule` reuses Phase 2A's locked threshold evaluators + `STATUS_COLORS` via the `WeatherService` facade. Placed above the manifest. Skipped on warehouse stops. `HAS_STOP_LEVEL_BADGES = true` in `thresholds.ts`. Geocoding gap that was the prerequisite was closed by dashboard Migration 034 same day — every `dispatch_stops` row with an address now has populated lat/lng. `HAS_TENT_SIZE_DATA` and `HAS_ANCHORING_GUIDANCE` stay `false` (separate work).
 
-### NEXT — Two parallel tracks
-- **Dashboard:** feature build per `~/Projects/partytime-dashboard` and Notion plan
-- **Driver app Phase 2B:** stop-level weather badges with hybrid adaptive pattern — blocked on stop geocoding (see Phase 2A note above)
+### Home rewrite — May 8, 2026 (commit `e72aa78`)
+Home (`/` → `DayRouteSelectorScreen`) is the day overview, not a router. Earlier auto-redirect from `/` → `/route/<id>` (commit `938f4b0`) was reverted — it made BottomNav's Home tab unreachable. Drivers reach `/route/<id>` via the explicit **Inspect & Start Route** CTA on Home. Date picker removed (driver app is single-day scope). Truck pill wired to real data via existing `/api/routes` join — renders `<truck_name> · <plate>` with name in semibold and plate in regular weight; falls back to name-only when plate is null; hidden when no truck assigned. Single-truck only — `truck_2` ignored on Home (one driver per route per login).
+
+### NEXT
+- Driver Profile / Compliance — doc upload, expiry tracking, 30-day reminders
+- Tools Hub content authoring (calculators, fire code checklist, equipment KB)
+- Training Module content authoring
+- Phase 2C wind-aware anchoring guidance (content layer + flag flip)
 
 ---
 

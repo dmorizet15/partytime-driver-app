@@ -35,3 +35,19 @@ Format: one lesson per block. Lead with the rule, then **Why** and **How to appl
 **Why:** As of dashboard Migration 034 (2026-05-08), every `dispatch_stops` row with a non-null `address` gets `address_lat` / `address_lng` populated automatically: backfilled once for existing rows, geocoded per-cycle in `tapgoodsSync.ts` for new/changed addresses, and reset by a `BEFORE UPDATE` trigger when the address text changes. The driver app's Stop type maps these to `latitude` / `longitude` via the supabaseTransform layer. Phase 2B's weather module uses these exact fields directly via `<StopWeatherModule lat={stop.latitude} lng={stop.longitude} />` — no separate geocoding in this repo.
 
 **How to apply:** When you need a stop's coordinates for any feature (mapping, weather, distance, geofencing), trust `stop.latitude` / `stop.longitude` directly. They reflect the customer's delivery/pickup address as geocoded by Google Maps. If lat/lng are null, render the feature gracefully disabled (defensive null guards) — but in production, all rows now have coords.
+
+---
+
+## Home is Home. Never auto-redirect away from it.
+
+**Why:** Commit 938f4b0 (May 6) added a `useEffect` on `src/app/page.tsx` → `DayRouteSelectorScreen` that silently `router.replace`'d to `/route/<assignedRouteId>` whenever the driver had an assignment for today. The intent was "skip manual selection on login," but the effect ran on every mount of `/`, so tapping **Home** in BottomNav also bounced to the route view. Drivers couldn't reach the day overview at all. Then a follow-up patch (cfc8d5c) added a once-per-session flag to make Home reachable on subsequent visits — band-aid on a wrong-shaped problem. The real fix (e72aa78, evening 2026-05-08) was to delete both: Home stays Home; the **Inspect & Start Route** CTA on Home is the explicit, driver-controlled entry into `/route/<id>` (RouteListScreen).
+
+**How to apply:** Keep landing screens and execution screens separate. `/` is the day overview (greeting, truck, day stop list, CTA); `/route/<id>` is the route execution view. Navigation between them is always driver-initiated — a CTA tap, never an effect-driven `router.replace`. If you find yourself writing "auto-load on mount" logic on a top-level page that has a BottomNav entry pointing back to it, stop — the redirect will eat the nav. Acceptable redirects are guard-shaped: unauthenticated → /login, no-role-access → /unauthorized. "Convenient default" is not a guard.
+
+---
+
+## Trust the data join. When the data is wired, delete the stub flag — don't keep the placeholder.
+
+**Why:** `HAS_TRUCK = false` in `DayRouteSelectorScreen.tsx` rendered a hardcoded "Your truck: — · —" stub on Home, with a "Coming soon" toast on tap. Meanwhile `/api/routes` had been joining `trucks!routes_truck_id_fkey(id, name)` and the `Route` type already exposed `truck_name` — `RouteListScreen.tsx:174` was consuming it. The data was live and shipping; only Home didn't read from it because the flag was never flipped. Result: drivers saw "— · —" on Home for weeks despite the data being one prop away. Surfaced 2026-05-08 — fixed by deleting `HAS_TRUCK`, adding `plate` to the existing trucks join + transform + Route type, and rendering `<truck_name> · <plate>` (or name-only when plate is null).
+
+**How to apply:** When a "designed-stub" feature flag's gating condition is already true (the API returns the data, the type has the field, a sibling screen is consuming it), the flag is a stale toggle — not a feature flag. Delete it, render the data, hide the slot when the data is null. Don't leave a placeholder pretending to be a feature. The audit pattern: search for `HAS_*` flags whenever you wire up a new API field; if any flag's spec is "show X when X exists in the API" and X now exists in the API, that flag is technical debt.
