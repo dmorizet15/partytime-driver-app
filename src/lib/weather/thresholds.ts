@@ -32,7 +32,7 @@ export const STATUS_COLORS: Record<
 // Flip when the supporting feature lands.
 export const HAS_TENT_SIZE_DATA     = false  // TapGoods size → stop record
 export const HAS_ANCHORING_GUIDANCE = false  // Phase 2C content layer
-export const HAS_STOP_LEVEL_BADGES  = false  // Phase 2B integration
+export const HAS_STOP_LEVEL_BADGES  = true   // Phase 2B integration — flipped 2026-05-08
 
 // ─── Wind ────────────────────────────────────────────────────────────────────
 // Watch window: install + use + pickup + 2 days. Highest severity across the

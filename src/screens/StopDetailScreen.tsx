@@ -11,6 +11,8 @@ import { logEvent } from '@/services/EventLogger'
 import { sendEtaSms, getStopSmsStatus, getDriverLocation } from '@/services/EtaSmsService'
 import type { StopSmsStatus } from '@/services/EtaSmsService'
 import BottomNav from '@/components/BottomNav'
+import StopWeatherModule from '@/components/weather/StopWeatherModule'
+import { HAS_STOP_LEVEL_BADGES } from '@/lib/weather/thresholds'
 import { formatEta } from '@/lib/formatEta'
 
 interface StopDetailScreenProps { routeId: string; stopId: string }
@@ -1473,6 +1475,14 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
               {navMessage && <InlinePill tone="muted">{navMessage}</InlinePill>}
             </div>
           </>
+        )}
+
+        {/* STOP WEATHER (Phase 2B) — gated on flag, lat/lng, and non-warehouse */}
+        {HAS_STOP_LEVEL_BADGES
+          && stop.stop_type !== 'warehouse'
+          && stop.latitude  != null
+          && stop.longitude != null && (
+          <StopWeatherModule lat={stop.latitude} lng={stop.longitude} />
         )}
 
         {/* MANIFEST */}
