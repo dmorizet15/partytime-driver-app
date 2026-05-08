@@ -80,17 +80,14 @@ export async function GET(req: NextRequest) {
         tapgoods_order_token
       `)
       .in('route_id', routeIds)
-      // Drop stale ghost stops — pickup stubs that got assigned to a route
-      // long ago and never optimized or unassigned. The right discriminator
-      // is `calculated_eta`: a populated ETA means the dispatcher has
-      // optimized this stop into today's route and it's actionable. We
-      // CANNOT filter by `scheduled_date = date` because legit pickup stubs
-      // anchor their `scheduled_date` to a past Monday by design (auto-stub
-      // anchor pattern from tapgoodsSync); the dashboard works around this
-      // via a week-window filter on `scheduled_date OR order_start_date`,
-      // but the driver app needs a per-day filter, so actionability via
-      // `calculated_eta` is the cleanest signal. Discovered 2026-05-08.
-      .not('calculated_eta', 'is', null)
+      // Dashboard Migration 035 (2026-05-08) installed a trigger that holds
+      // dispatch_stops.scheduled_date = routes.route_date whenever route_id
+      // IS NOT NULL. Auto-stub Monday anchors are reset on assignment, so the
+      // historical pickup-stub drift problem is gone. scheduled_date IS now
+      // the authoritative per-day filter for assigned stops. (The earlier
+      // `calculated_eta IS NOT NULL` workaround coupled visibility to the
+      // dispatcher running Optimize — no longer needed.)
+      .eq('scheduled_date', date)
       .order('route_position', { ascending: true, nullsFirst: false }),
     supabase
       .from('route_assignments')
