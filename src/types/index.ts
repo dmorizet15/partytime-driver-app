@@ -12,8 +12,14 @@ export interface Route {
   assigned_driver?: string
   stop_count: number
   route_status: 'active' | 'completed' | 'pending'
+  truck_id?: string
   truck_name?: string
   truck_plate?: string
+  // DVIR routing fields — primary truck only. Drives the pre-trip inspection
+  // flow's "always / when_towing / never" branching on Screen 1, plus the
+  // OOS-truck hard-block surfaces.
+  truck_dvir_requirement?:      'always' | 'when_towing' | 'never'
+  truck_current_defect_status?: 'ok' | 'non_oos_defect' | 'oos_defect'
   truck_2_name?: string
 }
 

@@ -5,6 +5,11 @@ export interface SupabaseTruckRow {
   id:    string
   name:  string
   plate: string | null
+  // Primary truck only — the inspection flow needs to branch on the truck's
+  // DVIR requirement and surface OOS hard-blocks. truck_2 doesn't need these
+  // fields (driver app is single-truck per login per the May 8 home rewrite).
+  dvir_requirement?:      'always' | 'when_towing' | 'never' | null
+  current_defect_status?: 'ok' | 'non_oos_defect' | 'oos_defect' | null
 }
 
 // Mirrors the dashboard's BreakBlock shape (partytime-dashboard/src/types/board.ts).
@@ -245,9 +250,12 @@ export function transformSupabase({ routes: routeRows, assignments, stops: stopR
       assigned_driver: drivers.length ? drivers.join(', ') : undefined,
       stop_count:      stopCountByRoute.get(r.id) ?? 0,
       route_status:    'active',
-      truck_name:      truck?.name,
-      truck_plate:     truck?.plate ?? undefined,
-      truck_2_name:    truck_2?.name,
+      truck_id:                    truck?.id,
+      truck_name:                  truck?.name,
+      truck_plate:                 truck?.plate ?? undefined,
+      truck_dvir_requirement:      truck?.dvir_requirement      ?? undefined,
+      truck_current_defect_status: truck?.current_defect_status ?? undefined,
+      truck_2_name:                truck_2?.name,
     }
   })
 

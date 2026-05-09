@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
       truck_id,
       truck_id_2,
       break_blocks,
-      truck:trucks!routes_truck_id_fkey(id, name, plate),
+      truck:trucks!routes_truck_id_fkey(id, name, plate, dvir_requirement, current_defect_status),
       truck_2:trucks!routes_truck_id_2_fkey(id, name, plate)
     `)
     .eq('route_date', date)
