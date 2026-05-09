@@ -101,11 +101,11 @@ const TABS: Tab[] = [
 export default function BottomNav() {
   const router   = useRouter()
   const pathname = usePathname() ?? ''
-  const { role } = useAuth()
+  const { roles } = useAuth()
 
   const visibleTabs = TABS.filter((t) => {
     if (!t.rolesAllowed) return true
-    return !!role && t.rolesAllowed.includes(role)
+    return !!roles && roles.some((r) => t.rolesAllowed!.includes(r))
   })
 
   return (

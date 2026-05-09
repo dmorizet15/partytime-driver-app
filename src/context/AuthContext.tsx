@@ -9,7 +9,7 @@ import type { Role, UserProfile } from '../types/auth'
 interface AuthContextValue {
   user:    User | null
   profile: UserProfile | null
-  role:    Role | null
+  roles:   Role[] | null
   loading: boolean
 }
 
@@ -53,7 +53,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   return (
-    <AuthContext.Provider value={{ user, profile, role: profile?.role ?? null, loading }}>
+    <AuthContext.Provider value={{ user, profile, roles: profile?.roles ?? null, loading }}>
       {children}
     </AuthContext.Provider>
   )

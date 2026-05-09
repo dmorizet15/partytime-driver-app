@@ -8,6 +8,6 @@ export type Role =
 
 export interface UserProfile {
   id: string
-  role: Role
+  roles: Role[]
   display_name: string | null
 }

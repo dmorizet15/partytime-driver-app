@@ -107,8 +107,11 @@ function SectionEyebrow({ children }: { children: ReactNode }) {
   )
 }
 
-function formatRole(role: Role | null | undefined): string {
-  switch (role) {
+function formatRole(roles: Role[] | null | undefined): string {
+  if (!roles || roles.length === 0) return '—'
+  // Prefer 'driver' display since this is the driver app; otherwise show the first role.
+  const primary = roles.includes('driver') ? 'driver' : roles[0]
+  switch (primary) {
     case 'driver':       return 'Driver'
     case 'super_admin':  return 'Super Admin'
     case 'scheduler':    return 'Scheduler'
@@ -249,7 +252,7 @@ export default function ProfileScreen() {
   const { user, profile } = useAuth()
 
   const displayName = profile?.display_name?.trim() || 'Driver'
-  const roleLabel   = formatRole(profile?.role)
+  const roleLabel   = formatRole(profile?.roles)
   const email       = user?.email ?? '—'
 
   async function handleSignOut() {

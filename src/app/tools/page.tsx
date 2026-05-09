@@ -15,7 +15,7 @@ const pageStyle = {
 
 export default function ToolsPage() {
   const router = useRouter()
-  const { user, role, loading } = useAuth()
+  const { user, roles, loading } = useAuth()
 
   useEffect(() => {
     if (!loading && !user) {
@@ -31,7 +31,7 @@ export default function ToolsPage() {
     )
   }
 
-  if (role !== 'driver' && role !== 'super_admin') {
+  if (!roles?.includes('driver') && !roles?.includes('super_admin')) {
     return (
       <div style={pageStyle}>
         <p style={{ color: '#EF4444', fontSize: 14 }}>Access denied.</p>
