@@ -1064,8 +1064,201 @@ export default function InspectionScreen({ routeId }: InspectionScreenProps) {
         </Shell>
       )
     }
-    case 'complete':
-      return <Placeholder title={`Screen 7 — complete (${state.form.submitResult?.outcome ?? 'unknown'})`} onAdvance={() => router.replace('/')} advanceLabel="Return to Home"/>
+    case 'complete': {
+      const result = state.form.submitResult
+      // Defensive: complete should only be reached via SUBMIT_SUCCESS, but if
+      // the user deep-links or the state desyncs, route home cleanly.
+      if (!result) {
+        router.replace('/')
+        return null
+      }
+
+      const towing = state.form.towingTrailer !== false
+      const visible = ALL_CATEGORIES.filter((k) => towing || !TRAILER_CATEGORIES.has(k))
+      const flagged = visible.filter((k) => state.form.checklist[k].state === 'fail')
+      const oosDefects = flagged.filter((k) => {
+        const it = state.form.checklist[k]
+        return it.state === 'fail' && it.severity === 'oos'
+      })
+      const nonOosDefects = flagged.filter((k) => {
+        const it = state.form.checklist[k]
+        return it.state === 'fail' && it.severity === 'non_oos'
+      })
+
+      // Outcome-driven content. Hero/body/CTA all derive from a single shape
+      // so the JSX below stays a flat render, not a nested switch.
+      type OutcomeUi = {
+        eyebrow:    string
+        title:      string
+        accent:     string             // status color used for badge + accent shadow
+        badge:      { label: string; bg: string; fg: string; icon: 'check' | 'alert' }
+        bodyTitle:  string
+        copy:       string
+        ctaLabel:   string
+        ctaVariant: 'gold' | 'neutral'
+      }
+
+      const ui: OutcomeUi =
+        result.outcome === 'clear' ? {
+          eyebrow:    'Inspection complete',
+          title:      'Truck is road-ready.',
+          accent:     C.green,
+          badge:      { label: 'All clear', bg: C.green, fg: '#fff', icon: 'check' },
+          bodyTitle:  'Truck is road-ready.',
+          copy:       'Every category passed. Have a safe day on the road.',
+          ctaLabel:   'Return to home',
+          ctaVariant: 'gold',
+        }
+        : result.outcome === 'non_oos' ? {
+          eyebrow:    'Inspection complete',
+          title:      'Truck can operate — defects logged.',
+          accent:     C.amber,
+          badge:      { label: 'Defects logged', bg: C.amber, fg: C.ink, icon: 'alert' },
+          bodyTitle:  'Defects logged for maintenance.',
+          copy:       `${nonOosDefects.length} drivable defect${nonOosDefects.length === 1 ? '' : 's'} flagged. The truck is safe to drive today; the dashboard fleet view shows an amber warning until repaired.`,
+          ctaLabel:   'Return to home',
+          ctaVariant: 'gold',
+        }
+        : {
+          eyebrow:    'Out of service',
+          title:      'Truck cannot be dispatched.',
+          accent:     C.red,
+          badge:      { label: 'Out of service', bg: C.red, fg: '#fff', icon: 'alert' },
+          bodyTitle:  'Truck is out of service.',
+          copy:       `${oosDefects.length} out-of-service defect${oosDefects.length === 1 ? '' : 's'} detected. This truck is hard-blocked from new assignments until cleared by a maintenance manager.`,
+          ctaLabel:   'Return to home',
+          ctaVariant: 'neutral',
+        }
+
+      return (
+        <Shell>
+          <Hero
+            eyebrow={ui.eyebrow}
+            title={ui.title}
+            truckName={state.form.truckName}
+          />
+          <div style={{ flex: 1, padding: '24px 22px 0', overflowY: 'auto' }}>
+
+            {/* Outcome card */}
+            <div style={{
+              background: C.paper,
+              border: `1.5px solid ${ui.accent}`,
+              borderRadius: 18,
+              padding: '22px 20px',
+              boxShadow: `4px 4px 0 ${ui.accent}`,
+            }}>
+              <div style={{
+                display: 'inline-flex', alignItems: 'center', gap: 8,
+                background: ui.badge.bg, color: ui.badge.fg,
+                padding: '5px 12px', borderRadius: 999,
+                fontSize: 10.5, fontWeight: 900, letterSpacing: '0.16em',
+                textTransform: 'uppercase',
+              }}>
+                {ui.badge.icon === 'check'
+                  ? <CheckCircleIcon size={14} color={ui.badge.fg}/>
+                  : <AlertIcon size={12} color={ui.badge.fg}/>}
+                {ui.badge.label}
+              </div>
+              <div style={{
+                marginTop: 12,
+                fontFamily: FONT_DISPLAY,
+                fontSize: 24, fontWeight: 900, color: C.ink,
+                lineHeight: 1.1, letterSpacing: '-0.02em',
+              }}>
+                {ui.bodyTitle}
+              </div>
+              <div style={{
+                marginTop: 10,
+                fontSize: 14, color: C.ink, lineHeight: 1.5,
+              }}>
+                {ui.copy}
+              </div>
+
+              {/* Defects list (non_oos + oos only) */}
+              {result.outcome !== 'clear' && flagged.length > 0 && (
+                <div style={{
+                  marginTop: 14,
+                  borderTop: '1px solid rgba(10,11,20,0.08)',
+                  paddingTop: 14,
+                  display: 'flex', flexDirection: 'column', gap: 8,
+                }}>
+                  {flagged.map((k) => {
+                    const item = state.form.checklist[k]
+                    if (item.state !== 'fail') return null
+                    const isOos = item.severity === 'oos'
+                    return (
+                      <div key={k} style={{
+                        display: 'flex', gap: 10, alignItems: 'flex-start',
+                      }}>
+                        <span style={{
+                          flexShrink: 0,
+                          marginTop: 2,
+                          display: 'inline-flex', alignItems: 'center', gap: 5,
+                          background: isOos ? C.red : C.amber,
+                          color:      isOos ? '#fff' : C.ink,
+                          padding: '3px 8px', borderRadius: 999,
+                          fontSize: 9.5, fontWeight: 900, letterSpacing: '0.14em',
+                          textTransform: 'uppercase',
+                        }}>
+                          {isOos && <AlertIcon size={10} color="#fff"/>}
+                          {isOos ? 'OOS' : 'NON-OOS'}
+                        </span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{
+                            fontFamily: FONT_DISPLAY,
+                            fontSize: 14, fontWeight: 800, color: C.ink,
+                            lineHeight: 1.25,
+                          }}>
+                            {CATEGORY_LABELS[k]}
+                          </div>
+                          <div style={{
+                            marginTop: 2,
+                            fontSize: 12.5, color: C.ink, opacity: 0.78, lineHeight: 1.4,
+                          }}>
+                            {item.description}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Quiet auto-notify confirmation — OOS only.
+                The actual SMS/email auto-notify is a Phase 2 feature (see
+                Notion DVIR spec). Today the dispatcher learns via the fleet
+                board's red banner on the OOS truck. The line below is the
+                user-facing promise; wire to a real notify when Phase 2 lands. */}
+            {result.outcome === 'oos' && (
+              <div style={{
+                marginTop: 14,
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '12px 14px',
+                background: 'rgba(31,191,107,0.08)',
+                border: `1px solid rgba(31,191,107,0.30)`,
+                borderRadius: 12,
+              }}>
+                <CheckCircleIcon size={16} color={C.green}/>
+                <div style={{
+                  fontSize: 12.5, color: C.ink, lineHeight: 1.35,
+                  fontVariantNumeric: 'tabular-nums',
+                }}>
+                  Dispatcher has been notified · {formatNowTime()}
+                </div>
+              </div>
+            )}
+          </div>
+          <Footer>
+            <PrimaryCTA
+              label={ui.ctaLabel}
+              variant={ui.ctaVariant}
+              onClick={() => router.replace('/')}
+            />
+          </Footer>
+        </Shell>
+      )
+    }
   }
 }
 
@@ -1358,6 +1551,17 @@ function formatPriorDate(dateStr: string): string {
 function todayDateStr(): string {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+// "7:42 PM" — used by Screen 7's OOS auto-notify confirmation. Mirrors the
+// formatSignedAt helper on DayRouteSelectorScreen.
+function formatNowTime(): string {
+  const d = new Date()
+  let h = d.getHours()
+  const m = d.getMinutes()
+  const ampm = h >= 12 ? 'PM' : 'AM'
+  h = h % 12 || 12
+  return `${h}:${String(m).padStart(2, '0')} ${ampm}`
 }
 
 function categoryLabel(category: string): string {
