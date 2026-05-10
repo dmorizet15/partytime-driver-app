@@ -4,6 +4,35 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-05-10 — Phase 2.5a cleanup — TapGoods legacy code removed
+
+**Scope:** Delete the orphaned TapGoods direct-call cluster from the driver app. The driver app has read routes/stops exclusively from Supabase (`/api/routes`) for weeks; the four-file TapGoods GraphQL path remained checked in but had zero consumers in `src/`.
+
+### What shipped (commit `15d3476`)
+- Deleted `src/app/api/tapgoods/routes/route.ts` (sole consumer of the GraphQL client).
+- Deleted `src/lib/tapgoodsClient.ts`, `src/lib/tapgoodsQueries.ts`, `src/lib/tapgoodsTransform.ts`.
+- Removed the now-empty `src/app/api/tapgoods/` directory tree.
+- Total: 4 files, 270 lines.
+
+### Verification
+- Pre-deletion grep across `src/` confirmed each file's only references were the four files referencing each other.
+- Repo-wide `tapgoods` grep (excluding `node_modules`/`.next`) found surviving references only in: `src/types/supabase.ts` (column types), `src/app/api/routes/route.ts` (`tapgoods_order_token` select), `src/lib/supabaseTransform.ts` (`order_id` mapping), `src/config/externalApps.ts` (View Order URL template). All legitimate, none consume the deleted code path.
+- `npx next build` clean. Route table no longer lists `/api/tapgoods/routes`.
+
+### Files changed
+- Deleted: 4 files (above).
+
+### Migrations applied
+- None.
+
+### Commits
+- `15d3476` — chore: remove dead TapGoods legacy code (Phase 2.5a cleanup)
+
+### For chat-Claude / Notion
+- Phase 2.5 — Driver App Source of Truth Migration: Phase A can now be marked **fully complete**. Status moves from "replaced" to "removed."
+
+---
+
 ## 2026-05-10 — Post-trip defect report — feature build
 
 **Scope:** Optional post-trip defect reporting on Home, surfaced after route completion. Symmetric counterpart to the pre-trip flow: pre-trip is a hard-gated full DVIR at the start of the day; post-trip is a single optional defect at the end of the day. No certify checkbox, no progress dots, no summary screen. One screen, three inputs (category, severity, description), submit.

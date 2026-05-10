@@ -51,7 +51,7 @@ Empty shells exist on `/tools` for the tile grid. Content + per-tool UI is the w
 - [ ] Rain thresholds will then differentiate by tent size; the existing 30x40+ conservative defaults stay until that lands
 
 ## Phase 2.5 — Driver App Source of Truth Migration (Notion-tracked)
-- [ ] Phase A: Stop data from Supabase (replace TapGoods direct calls)
+- [x] Phase A: Stop data from Supabase (replace TapGoods direct calls). 2.5a cleanup 2026-05-10 commit `15d3476` deleted the orphaned `/api/tapgoods/routes` handler + `tapgoodsClient.ts` + `tapgoodsQueries.ts` + `tapgoodsTransform.ts`. Driver app now exclusively reads routes/stops from Supabase via `/api/routes`. Surviving `tapgoods_*` column references in `src/types/supabase.ts`, `src/app/api/routes/route.ts`, `src/lib/supabaseTransform.ts`, and `src/config/externalApps.ts` are legitimate (column names + View Order URL template) and stay.
 - [ ] Phase B: Live ETA + status sync (mostly done — Migration 033 + cascade live)
 - [ ] Phase C: Driver assignment from dashboard (mostly done — auto-load shipped May 6)
 
