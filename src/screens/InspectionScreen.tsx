@@ -644,12 +644,125 @@ export default function InspectionScreen({ routeId }: InspectionScreenProps) {
         </Shell>
       )
     }
-    case 'towing':
-      return <Placeholder title="Screen 4 — towing" onAdvance={() => {
-        // Default to false in placeholder; real UI will collect user input.
-        dispatch({ type: 'SET_TOWING', payload: { towing: false } })
-        dispatch({ type: 'GO_TO', payload: { step: 'checklist' } })
-      }}/>
+    case 'towing': {
+      // Tap-to-advance: each option immediately writes towing + routes to
+      // checklist. No separate Continue CTA — binary high-impact question with
+      // visually distinct cards is hard to mis-tap, and the back arrow lets a
+      // driver correct course before signing in Screen 6.
+      const chooseTowing = (towing: boolean) => {
+        dispatch({ type: 'SET_TOWING', payload: { towing } })
+        dispatch({ type: 'GO_TO',      payload: { step: 'checklist' } })
+      }
+      return (
+        <Shell>
+          <Hero
+            eyebrow="Trailer"
+            title="Are you towing today?"
+            truckName={state.form.truckName}
+            onBack={() => router.replace('/')}
+            progress={{ total: progressTotal(state.form), index: progressIndex('towing', state.form) }}
+          />
+          <div style={{ flex: 1, padding: '20px 18px 0', overflowY: 'auto' }}>
+            <div style={{
+              padding: '4px 4px 16px',
+              fontSize: 13, color: C.muted, lineHeight: 1.45,
+            }}>
+              This truck only triggers a federal DVIR when towing pushes the
+              combined weight over 10,001 lbs. Pick the answer that matches
+              today.
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {/* Yes — towing. Gold-accent (the heavier consequence path) */}
+              <button
+                onClick={() => chooseTowing(true)}
+                style={{
+                  width: '100%', textAlign: 'left',
+                  background: C.goldSoft,
+                  border: `1.5px solid ${C.gold}`,
+                  borderRadius: 18,
+                  padding: '18px 20px',
+                  display: 'flex', alignItems: 'center', gap: 14,
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  boxShadow: `4px 4px 0 ${C.gold}`,
+                }}
+              >
+                <div style={{
+                  width: 44, height: 44, borderRadius: '50%',
+                  background: C.gold,
+                  border: `2px solid ${C.ink}`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0,
+                  fontFamily: FONT_DISPLAY, fontWeight: 900, fontSize: 18, color: C.ink,
+                }}>
+                  Y
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    fontFamily: FONT_DISPLAY,
+                    fontSize: 18, fontWeight: 900, color: C.ink,
+                    lineHeight: 1.15, letterSpacing: '-0.01em',
+                  }}>
+                    Yes — towing today
+                  </div>
+                  <div style={{
+                    marginTop: 4,
+                    fontSize: 12.5, color: C.goldDeep, lineHeight: 1.35,
+                  }}>
+                    Full 12-item DVIR · trailer brakes + coupling devices included
+                  </div>
+                </div>
+                <ArrowIcon size={18} color={C.ink}/>
+              </button>
+
+              {/* No — not towing. Neutral paper, lighter weight */}
+              <button
+                onClick={() => chooseTowing(false)}
+                style={{
+                  width: '100%', textAlign: 'left',
+                  background: C.paper,
+                  border: `1.5px solid rgba(10,11,20,0.12)`,
+                  borderRadius: 18,
+                  padding: '18px 20px',
+                  display: 'flex', alignItems: 'center', gap: 14,
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  boxShadow: `4px 4px 0 rgba(10,11,20,0.10)`,
+                }}
+              >
+                <div style={{
+                  width: 44, height: 44, borderRadius: '50%',
+                  background: C.paper,
+                  border: `2px solid ${C.ink}`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0,
+                  fontFamily: FONT_DISPLAY, fontWeight: 900, fontSize: 18, color: C.ink,
+                }}>
+                  N
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    fontFamily: FONT_DISPLAY,
+                    fontSize: 18, fontWeight: 900, color: C.ink,
+                    lineHeight: 1.15, letterSpacing: '-0.01em',
+                  }}>
+                    No — no trailer today
+                  </div>
+                  <div style={{
+                    marginTop: 4,
+                    fontSize: 12.5, color: C.muted, lineHeight: 1.35,
+                  }}>
+                    10-item checklist · trailer-specific rows hidden
+                  </div>
+                </div>
+                <ArrowIcon size={18} color={C.ink}/>
+              </button>
+            </div>
+          </div>
+        </Shell>
+      )
+    }
     case 'checklist':
       return <Placeholder title="Screen 5 — checklist" onAdvance={() => dispatch({ type: 'GO_TO', payload: { step: 'sign_submit' } })}/>
     case 'sign_submit':
