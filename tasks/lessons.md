@@ -6,6 +6,14 @@ Format: one lesson per block. Lead with the rule, then **Why** and **How to appl
 
 ---
 
+## Two-repo migration coordination has no clean self-service path through the Supabase CLI today.
+
+**Why:** `partytime-driver-app` and `partytime-dashboard` both write migrations to the same Supabase project (`partytime-east`, ref `fumprcyavpefyupurvsv`) but each repo only carries its OWN migration files locally. `supabase db push --linked` from either repo refuses to proceed with "Remote migration versions not found in local migrations directory" when the OTHER repo has pushed migrations since the last sync. The CLI's suggested escape (`supabase migration repair --status reverted <list>`) removes the rows from the remote `_supabase_migrations` table — which then makes the OTHER repo think those migrations need to be re-applied (which would fail non-idempotently). On 2026-05-10 the post-trip defect feature build couldn't push migration 009 from the driver-app because dashboard had pushed 27 migrations between then and the last driver-app push (May 2). No DB password is stored locally for `--db-url` direct push.
+
+**How to apply:** Two viable paths until a real workflow exists. (a) Apply the SQL via Supabase Studio SQL Editor, then `supabase migration repair --status applied <new_version>` from the originating repo to keep the tracking table honest. (b) Check in a periodic catch-up: have one designated repo (probably the dashboard, which owns most schema mutations) accept PR-style migration submissions from the driver-app and own all `db push` calls. Either way, when starting a session that needs a migration, the FIRST step after writing the SQL file is checking `supabase migration list --linked` to see if the gap exists; if it does, plan for the manual-apply path up front, don't discover the blocker partway through.
+
+---
+
 ## Phase 2A weather infrastructure was designed as a facade — reuse it through `WeatherService`, never re-fetch directly.
 
 **Why:** `src/lib/weather/weather-service.ts` exposes `getWeatherSnapshot(lat, lng)` as the single entry point. Threshold evaluators (`evaluateWindWindow`, `evaluateRainWindow`, `evaluateSnowWindow`, `evaluateLightning`) are LOCKED pure functions in `thresholds.ts` — locked because they're sourced verbatim from the Notion Weather Intelligence spec. Phase 2B (stop-level badges, May 8) reused all of this — no new threshold logic, no new vendor adapter calls, no duplication. Visual language matched Phase 2A's standalone screen so drivers recognize the same signals across surfaces.

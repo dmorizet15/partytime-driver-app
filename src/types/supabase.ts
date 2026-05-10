@@ -842,7 +842,7 @@ export type Database = {
           created_at: string
           description: string
           id: string
-          inspection_id: string
+          inspection_id: string | null
           last_acknowledged_at: string | null
           last_acknowledged_by_user_id: string | null
           overridden_at: string | null
@@ -850,6 +850,7 @@ export type Database = {
           override_reason: string | null
           reported_at: string
           reported_by_user_id: string
+          reported_context: string | null
           resolution_notes: string | null
           resolved_at: string | null
           resolved_by_user_id: string | null
@@ -863,7 +864,7 @@ export type Database = {
           created_at?: string
           description: string
           id?: string
-          inspection_id: string
+          inspection_id?: string | null
           last_acknowledged_at?: string | null
           last_acknowledged_by_user_id?: string | null
           overridden_at?: string | null
@@ -871,6 +872,7 @@ export type Database = {
           override_reason?: string | null
           reported_at?: string
           reported_by_user_id: string
+          reported_context?: string | null
           resolution_notes?: string | null
           resolved_at?: string | null
           resolved_by_user_id?: string | null
@@ -884,7 +886,7 @@ export type Database = {
           created_at?: string
           description?: string
           id?: string
-          inspection_id?: string
+          inspection_id?: string | null
           last_acknowledged_at?: string | null
           last_acknowledged_by_user_id?: string | null
           overridden_at?: string | null
@@ -892,6 +894,7 @@ export type Database = {
           override_reason?: string | null
           reported_at?: string
           reported_by_user_id?: string
+          reported_context?: string | null
           resolution_notes?: string | null
           resolved_at?: string | null
           resolved_by_user_id?: string | null

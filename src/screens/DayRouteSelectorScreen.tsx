@@ -7,6 +7,7 @@ import { useAuth }                      from '@/hooks/useAuth'
 import { useInspectionStatus }          from '@/hooks/useInspectionStatus'
 import type { Stop }                    from '@/types'
 import BottomNav                        from '@/components/BottomNav'
+import PostTripDefectCard               from '@/components/PostTripDefectCard'
 
 // ─── Direction 03 (Editorial) tokens ──────────────────────────────────────────
 const C = {
@@ -257,6 +258,40 @@ export default function DayRouteSelectorScreen() {
     ),
     [dayStops]
   )
+
+  // Route-complete = every stop on today's day list reads as completed.
+  // Drives whether the post-trip defect card is offered. Warehouse return
+  // stops count toward this — the driver isn't "done" until the truck is
+  // back at the depot.
+  const routeComplete =
+    totalStopCount > 0 && dayStops.every((s) => s.current_status === 'completed')
+
+  // Post-trip defect status — only fetched once route is complete and we have
+  // a session/truck. Single boolean: has the driver already submitted a
+  // post-trip defect today? Card hides when true. Re-checked on each Home
+  // mount; in-session submission also flips local state to hide.
+  const [postTripSubmitted, setPostTripSubmitted] = useState<boolean | null>(null)
+  useEffect(() => {
+    if (!routeComplete || !primaryTruckId) {
+      setPostTripSubmitted(null)
+      return
+    }
+    let cancelled = false
+    fetch('/api/defects/post-trip')
+      .then((r) => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+      .then((json) => {
+        if (cancelled) return
+        setPostTripSubmitted(json.submitted_today === true)
+      })
+      .catch((err) => {
+        console.warn('[Home] post-trip status fetch failed:', err instanceof Error ? err.message : err)
+        // Fail closed: if we can't confirm, hide the card. Avoids double-submit
+        // risk if the network is flaky and the driver submits twice across the
+        // failure window.
+        if (!cancelled) setPostTripSubmitted(true)
+      })
+    return () => { cancelled = true }
+  }, [routeComplete, primaryTruckId])
 
   const firstName   = firstNameOf(profile?.display_name)
   const hasGreeting = !!firstName
@@ -610,6 +645,15 @@ export default function DayRouteSelectorScreen() {
                 </div>
               )}
             </div>
+
+            {/* Post-trip defect card — appears only after the route is complete
+                and the driver hasn't already submitted a post-trip defect today.
+                Optional (no gate); symmetric end-of-day counterpart to the
+                pre-trip card above. Hidden during the day to keep Home focused
+                on the active work. */}
+            {routeComplete && primaryTruckId && postTripSubmitted === false && (
+              <PostTripDefectCard truckId={primaryTruckId}/>
+            )}
 
             {/* COD card — single stop: tappable card linking to that stop.
                 Multi-stop: consolidated rollup with count + names list (no nav

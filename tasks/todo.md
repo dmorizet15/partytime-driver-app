@@ -86,20 +86,13 @@ Empty shells exist on `/tools` for the tile grid. Content + per-tool UI is the w
       comment in the route handler documents the gap.
       Location: `src/app/api/inspection/submit/route.ts`, around the `defectRows.insert` call.
 
-## Post-trip defect report — feature spec (discovered 2026-05-09)
+## Post-trip defect report — feature spec (discovered 2026-05-09, shipped 2026-05-10 partial)
 
-- [ ] **Build the post-trip defect report flow.** Spec lives in Notion (to be
-      added there separately). Surface lives on Home, appears after route
-      complete, and is **optional** (no hard gate). Single-screen flow, no
-      certify checkbox, no progress dots, no summary screen. Inputs:
-      category picker (12 categories, reuse `CATEGORY_LABELS`), severity
-      (OOS / Non-OOS), description (free-text). Submit writes a row to
-      `vehicle_defects` with `inspection_type = 'post_trip'` and links to a
-      lightweight `vehicle_inspections` row of type `'post_trip'`. No
-      previous-DVIR review, no checklist — the driver is reporting a
-      specific defect they noticed during the day, not running a full DVIR.
-      Reuse `useInspectionStatus`, `OOS_DEFAULT_CATEGORIES`, `CATEGORY_LABELS`,
-      `CFR_SECTIONS`. Don't confuse with the pre-trip flow.
+- [x] **Build the post-trip defect report flow.** Built 2026-05-10. Surface lives on Home, appears after route complete, optional (no gate). Single screen with category picker, severity toggle, description, submit. Implementation diverged from the May 9 sketch: a single new column `vehicle_defects.reported_context` (instead of `inspection_type` + parallel `vehicle_inspections` row) was added in migration 009. Post-trip rows have `inspection_id = NULL` (the NOT NULL constraint was dropped in the same migration). Files: `src/components/PostTripDefectCard.tsx`, `src/app/api/defects/post-trip/route.ts`, `supabase/migrations/20260510_009_post_trip_reported_context.sql`. Wired into `src/screens/DayRouteSelectorScreen.tsx`. Category list duplicated locally in the new component pending pre-trip stabilization (TODO comment present in both surfaces).
+- [ ] **Apply migration 009 to partytime-east.** Could not be pushed by the driver-app CLI due to the two-repo migration coordination problem (see lessons.md). SQL must be run by Darren via Supabase Studio SQL Editor. Verification SQL + step-by-step instructions in `tasks/open-questions.md`.
+- [ ] **Extract 12-category list to `src/lib/defect-categories.ts`** when pre-trip stabilizes. Currently duplicated in `InspectionScreen.tsx`, `PostTripDefectCard.tsx`, `/api/inspection/submit/route.ts`, and `/api/defects/post-trip/route.ts` with `// TODO` markers in the new copies.
+- [ ] **Optional: add `route_id` to `vehicle_defects`** so a post-trip defect carries an explicit route link rather than relying on `reported_at::date` for the per-route audit trail. Low priority. Open question logged for Darren.
+- [ ] **Optional: real-time post-trip notification.** Today the post-trip submission writes to `vehicle_defects`; surfacing it to maintenance/dispatch is whatever the dashboard's existing defect view does. If push/SMS is desired (parallel to the planned pre-trip OOS auto-notify), that's a separate Phase 2 item.
 
 ## Active blockers
 - Easy RFID Pro launch on Android (out of v1.1 scope)
