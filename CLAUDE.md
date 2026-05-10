@@ -154,8 +154,20 @@ Driver app caught up to the dashboard's Multi-Role Refactor (dashboard Migration
 
 No schema changes (production schema was already correct as of dashboard's May 9 morning push). No new helpers introduced — driver app's auth check surface is small enough that the inline `roles?.includes(...)` pattern is sufficient. If this app grows more role-gated surfaces, port the dashboard's `hasRole()` / `hasAnyRole()` helpers from `usePermissions`.
 
+### Post-trip Defect Report SHIPPED ✅ (code) — May 10, 2026 (commit `184ca72`)
+Optional end-of-day defect surface on Home. Symmetric to pre-trip (which is a hard-gated full DVIR); post-trip is a single optional report after route completion. Implementation diverged from the original May 9 sketch (`inspection_type` + parallel `vehicle_inspections` row) — lands instead as a single new column `vehicle_defects.reported_context text DEFAULT 'pre_trip'` plus dropping NOT NULL on `vehicle_defects.inspection_id` so post-trip rows can carry NULL. Migration 009 file committed but NOT applied to remote (two-repo migration coordination block — see lessons.md and `tasks/open-questions.md`). Pre-trip path is unaffected.
+
+**Architecture — read this before touching post-trip code:**
+
+- **`vehicle_defects` is the single defects table for both pre-trip and post-trip.** Differentiator is `reported_context` ∈ `{'pre_trip','post_trip'}`. There is NO parallel `vehicle_inspections` row for post-trip — `inspection_id` is `NULL` on post-trip rows. The pre-trip path continues to populate `inspection_id` with a real UUID.
+- **`/api/defects/post-trip` is the single endpoint.** GET returns `{ submitted_today: boolean }` for Home's render gate (scoped by `reported_by_user_id` + `reported_context='post_trip'` + same calendar day). POST inserts one row. Same session-cookie + service-role pattern as `/api/inspection/submit`.
+- **The post-trip card renders on Home only when `routeComplete && primaryTruckId && postTripSubmitted === false`.** "Route complete" = every stop on today's day list (warehouse stops included) reads `current_status === 'completed'`. Once true and the gate clears, the card appears between the pre-trip card and the COD cards.
+- **Fail-closed on the GET.** If the `submitted_today` fetch fails, the card stays HIDDEN. Avoids double-submit risk on flaky network.
+- **The 12-category list is duplicated locally in `src/components/PostTripDefectCard.tsx`** with a `// TODO: extract to src/lib/defect-categories.ts when pre-trip stabilizes` marker. Do NOT extract pre-trip's category list as part of any post-trip touch — that's a separate cleanup. Same TODO marker in `src/app/api/defects/post-trip/route.ts`.
+- **Out of scope this session:** real-time push/SMS notification on post-trip submit (the row writes to `vehicle_defects`; dispatch surfacing is whatever the dashboard's existing defect view does). Phase 2 if a notification channel is wanted.
+
 ### NEXT
-- Post-trip defect report — Home-launched, optional, writes `vehicle_defects` with `inspection_type = 'post_trip'`. Spec in Notion.
+- **Apply migration 009 to partytime-east** (Darren, manual via Supabase Studio SQL Editor — instructions in `tasks/open-questions.md`). Until applied, the post-trip card and API return 500.
 - Pre-trip Phase 2 polish: transactional submit RPC, real OOS auto-notify (SMS/email), `'never'`-truck trailer-row hide
 - Driver Profile / Compliance — doc upload, expiry tracking, 30-day reminders
 - Tools Hub content authoring (calculators, fire code checklist, equipment KB)
