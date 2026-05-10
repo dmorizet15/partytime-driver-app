@@ -29,10 +29,18 @@ const FONT_BODY    = "var(--font-inter), 'Inter', system-ui, -apple-system, sans
 // Slots stay in JSX so flipping these to `true` is a one-line change once the
 // backend is ready. While `false`, each slot renders a designed stub whose tap
 // fires a "Coming soon" toast — no fake data shipped.
-const HAS_INSPECTION = false
-const HAS_AVA        = false
+const HAS_AVA = false
 // HAS_WEATHER reserved for the wind/weather pill on stop cards. Render gated
 // inline at the pill site rather than as a top-level flag here.
+
+// Pre-trip inspection state, fetched per primary route from /api/inspection/status.
+// `null` = not yet loaded or no inspection on file. A populated object means
+// the driver has signed off on this route's truck — gate is open.
+type InspectionState = {
+  id: string
+  signed_at: string  // ISO timestamptz from vehicle_inspections.signed_at
+  has_oos: boolean
+} | null
 
 // ─── COD detection ────────────────────────────────────────────────────────────
 // Only literal 'cod' triggers cash-collection UI. AR customers (state
@@ -73,6 +81,18 @@ function formatLiveEyebrow(d: Date): string {
   const hh = String(d.getHours()).padStart(2, '0')
   const mm = String(d.getMinutes()).padStart(2, '0')
   return `${wd} · ${hh}:${mm}`
+}
+
+// "7:42 AM" — used by the pre-trip inspected receipt. 12-hour with AM/PM
+// matches the brief's locked copy. Falls back to empty string on bad ISO.
+function formatSignedAt(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  let h = d.getHours()
+  const m = d.getMinutes()
+  const ampm = h >= 12 ? 'PM' : 'AM'
+  h = h % 12 || 12
+  return `${h}:${String(m).padStart(2, '0')} ${ampm}`
 }
 
 function timeGreeting(): string {
@@ -180,6 +200,15 @@ function ChevronRightIcon({ size = 16, color = C.muted }: IconProps) {
   )
 }
 
+function CheckIcon({ size = 18, color = C.ink }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+         strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 12l5 5L20 6"/>
+    </svg>
+  )
+}
+
 // ─── Screen ───────────────────────────────────────────────────────────────────
 export default function DayRouteSelectorScreen() {
   const router = useRouter()
@@ -187,8 +216,9 @@ export default function DayRouteSelectorScreen() {
   const { getRoutesForDate, getStopsForRoute, isLoading, error, loadDay } = useAppState()
 
   const today = todayStr()
-  const [now, setNow]     = useState<Date>(() => new Date())
-  const [toast, setToast] = useState<string | null>(null)
+  const [now, setNow]         = useState<Date>(() => new Date())
+  const [toast, setToast]     = useState<string | null>(null)
+  const [inspection, setInspection] = useState<InspectionState>(null)
 
   // Live eyebrow tick — refresh every 60s so the displayed time stays accurate
   useEffect(() => {
@@ -210,6 +240,33 @@ export default function DayRouteSelectorScreen() {
   }, [today, loadDay])
 
   const routes = getRoutesForDate(today)
+
+  // Pre-trip inspection status — refetched whenever the primary route changes.
+  // Drives the gate: stops are non-tappable, pre-trip card stays in "REQUIRED
+  // FIRST" state, and the gold CTA reads "Inspect & Start Route" until this
+  // resolves to a populated row. Per route assignment (route_id is the gate
+  // key), so a mid-day reassignment cleanly resets the gate.
+  const primaryRouteId = routes[0]?.route_id
+  const primaryTruckId = routes[0]?.truck_id
+  useEffect(() => {
+    if (!primaryRouteId || !primaryTruckId) {
+      setInspection(null)
+      return
+    }
+    let cancelled = false
+    fetch(`/api/inspection/status?route_id=${primaryRouteId}&truck_id=${primaryTruckId}`)
+      .then((r) => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+      .then((json) => {
+        if (cancelled) return
+        setInspection(json.current ?? null)
+      })
+      .catch((err) => {
+        // Non-fatal — leaving gate closed is the safe default. Logging only.
+        console.warn('[Home] inspection status fetch failed:', err instanceof Error ? err.message : err)
+        if (!cancelled) setInspection(null)
+      })
+    return () => { cancelled = true }
+  }, [primaryRouteId, primaryTruckId])
 
   // Aggregate stops across today's routes — the day list renders stops, not
   // routes. Composes existing context methods only; no hook/context edits.
@@ -243,18 +300,30 @@ export default function DayRouteSelectorScreen() {
 
   function showToast(msg: string) { setToast(msg) }
 
+  // Pre-inspection gate: stop taps are no-ops while the gate is closed. The
+  // visual treatment (40% opacity + pointer-events: none) handles affordance;
+  // this guard is belt-and-braces against keyboard/screen-reader bypass.
+  const inspected = inspection !== null
   function handleStopTap(stop: Stop) {
+    if (!inspected) return
     router.push(`/route/${stop.route_id}/stop/${stop.stop_id}`)
   }
 
+  // Pre-inspection: card tap and gold CTA both launch the inspection flow
+  // (per the May 9 two-button consolidation decision).
+  function handleInspect() {
+    if (!primaryRouteId) return
+    router.push(`/inspection?route_id=${primaryRouteId}`)
+  }
+
+  // Post-inspection: gold CTA navigates to Stop 1 detail. The brief locks
+  // "App stays on Home — driver taps Stop 1 themselves when ready" for
+  // inspection completion; this is the explicit user-initiated start, which
+  // does jump to the first stop.
   function handleStartRoute() {
-    if (routes.length === 0) return
-    if (HAS_INSPECTION) {
-      // TODO Phase 2: navigate to pre-trip inspection screen first
-      showToast('Coming soon — this feature is in development.')
-      return
-    }
-    router.push(`/route/${routes[0].route_id}`)
+    if (!inspected || dayStops.length === 0) return
+    const first = dayStops[0]
+    router.push(`/route/${first.route_id}/stop/${first.stop_id}`)
   }
 
   return (
@@ -485,45 +554,89 @@ export default function DayRouteSelectorScreen() {
         {/* Populated body — pre-trip + COD cards + day list + Ava + CTA */}
         {!isLoading && !error && totalStopCount > 0 && (
           <>
-            {/* Pre-trip inspection card — designed stub */}
+            {/* Pre-trip inspection card — two states locked May 9, 2026:
+                State A (no inspection): tappable CTA, launches /inspection
+                State B (inspected): persistent receipt, gold check, non-tappable.
+                The card stays in place all day post-inspection — the receipt is
+                a deliberate "communication hub" element on Home, not a transient
+                affordance. */}
             <div style={{ padding: '14px 18px 0' }}>
-              <button
-                onClick={() => showToast('Coming soon — this feature is in development.')}
-                style={{
-                  width: '100%',
-                  background: C.ink,
-                  border: 0, cursor: 'pointer',
-                  borderRadius: 18,
-                  padding: '14px 16px',
-                  display: 'flex', alignItems: 'center', gap: 14,
-                  fontFamily: 'inherit',
-                  textAlign: 'left',
-                }}
-              >
-                <div style={{
-                  width: 44, height: 44, borderRadius: 11,
-                  background: C.gold,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  flexShrink: 0,
-                }}>
-                  <DocIcon size={20} color={C.ink}/>
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
+              {!inspected ? (
+                <button
+                  onClick={handleInspect}
+                  style={{
+                    width: '100%',
+                    background: C.ink,
+                    border: 0, cursor: 'pointer',
+                    borderRadius: 18,
+                    padding: '14px 16px',
+                    display: 'flex', alignItems: 'center', gap: 14,
+                    fontFamily: 'inherit',
+                    textAlign: 'left',
+                  }}
+                >
                   <div style={{
-                    fontSize: 10.5, fontWeight: 900, letterSpacing: '0.18em',
-                    color: C.gold, textTransform: 'uppercase',
+                    width: 44, height: 44, borderRadius: 11,
+                    background: C.gold,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    flexShrink: 0,
                   }}>
-                    Required First
+                    <DocIcon size={20} color={C.ink}/>
                   </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontSize: 10.5, fontWeight: 900, letterSpacing: '0.18em',
+                      color: C.gold, textTransform: 'uppercase',
+                    }}>
+                      Required First
+                    </div>
+                    <div style={{
+                      marginTop: 2, fontSize: 15, fontWeight: 800, color: '#fff',
+                      fontFamily: FONT_DISPLAY, letterSpacing: '-0.01em',
+                    }}>
+                      Pre-trip inspection
+                    </div>
+                  </div>
+                  <ChevronRightIcon size={18} color="rgba(255,255,255,0.55)"/>
+                </button>
+              ) : (
+                <div
+                  role="status"
+                  aria-label={`Pre-trip inspected at ${formatSignedAt(inspection.signed_at)}`}
+                  style={{
+                    width: '100%',
+                    background: C.ink,
+                    borderRadius: 18,
+                    padding: '14px 16px',
+                    display: 'flex', alignItems: 'center', gap: 14,
+                    fontFamily: 'inherit',
+                  }}
+                >
                   <div style={{
-                    marginTop: 2, fontSize: 15, fontWeight: 800, color: '#fff',
-                    fontFamily: FONT_DISPLAY, letterSpacing: '-0.01em',
+                    width: 44, height: 44, borderRadius: '50%',
+                    background: C.gold,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    flexShrink: 0,
                   }}>
-                    Pre-trip inspection
+                    <CheckIcon size={22} color={C.ink}/>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontSize: 10.5, fontWeight: 900, letterSpacing: '0.18em',
+                      color: C.gold, textTransform: 'uppercase',
+                    }}>
+                      Pre-trip Inspected
+                    </div>
+                    <div style={{
+                      marginTop: 2, fontSize: 15, fontWeight: 800, color: '#fff',
+                      fontFamily: FONT_DISPLAY, letterSpacing: '-0.01em',
+                      fontVariantNumeric: 'tabular-nums',
+                    }}>
+                      Signed off · {formatSignedAt(inspection.signed_at)}
+                    </div>
                   </div>
                 </div>
-                <ChevronRightIcon size={18} color="rgba(255,255,255,0.55)"/>
-              </button>
+              )}
             </div>
 
             {/* COD card — single stop: tappable card linking to that stop.
@@ -541,6 +654,7 @@ export default function DayRouteSelectorScreen() {
                 <div key={`cod-${stop.stop_id}`} style={{ padding: '12px 18px 0' }}>
                   <button
                     onClick={() => handleStopTap(stop)}
+                    aria-disabled={!inspected || undefined}
                     style={{
                       width: '100%',
                       background: C.goldSoft,
@@ -548,10 +662,12 @@ export default function DayRouteSelectorScreen() {
                       borderRadius: 18,
                       padding: '14px 16px',
                       display: 'flex', alignItems: 'center', gap: 14,
-                      cursor: 'pointer',
+                      cursor: inspected ? 'pointer' : 'default',
                       fontFamily: 'inherit',
                       textAlign: 'left',
                       boxShadow: '0 14px 28px -16px rgba(176,127,0,0.45)',
+                      opacity:       inspected ? 1 : 0.4,
+                      pointerEvents: inspected ? 'auto' : 'none',
                     }}
                   >
                     <div style={{
@@ -617,6 +733,7 @@ export default function DayRouteSelectorScreen() {
                     padding: '14px 16px',
                     display: 'flex', alignItems: 'flex-start', gap: 14,
                     boxShadow: '0 14px 28px -16px rgba(176,127,0,0.45)',
+                    opacity: inspected ? 1 : 0.4,
                   }}>
                     <div style={{
                       width: 44, height: 44, borderRadius: '50%',
@@ -705,12 +822,16 @@ export default function DayRouteSelectorScreen() {
                   <button
                     key={stop.stop_id}
                     onClick={() => handleStopTap(stop)}
+                    aria-disabled={!inspected || undefined}
                     style={{
                       width: '100%', textAlign: 'left',
-                      background: 'transparent', border: 0, cursor: 'pointer',
+                      background: 'transparent', border: 0,
+                      cursor: inspected ? 'pointer' : 'default',
                       padding: '8px 0', display: 'flex', gap: 16,
                       alignItems: 'flex-start', fontFamily: 'inherit',
                       position: 'relative', zIndex: 1,
+                      opacity:       inspected ? 1 : 0.4,
+                      pointerEvents: inspected ? 'auto' : 'none',
                     }}
                   >
                     {/* Numbered circle (32px) — gold for COD, white-ink for standard */}
@@ -890,10 +1011,14 @@ export default function DayRouteSelectorScreen() {
               </button>
             </div>
 
-            {/* Inspect & Start Route gold CTA */}
+            {/* Gold CTA — two states locked May 9, 2026:
+                State A (no inspection): "Inspect & Start Route" → /inspection
+                State B (inspected):     "Start Route"           → Stop 1 detail
+                Both share the same gold pill — the label and onClick swap, the
+                visual treatment stays constant so muscle memory holds. */}
             <div style={{ padding: '18px 18px 0' }}>
               <button
-                onClick={handleStartRoute}
+                onClick={inspected ? handleStartRoute : handleInspect}
                 disabled={routes.length === 0}
                 style={{
                   width: '100%', height: 60, borderRadius: 999,
@@ -908,7 +1033,7 @@ export default function DayRouteSelectorScreen() {
                   boxShadow: '0 14px 30px -10px rgba(255,184,0,0.55)',
                 }}
               >
-                <span>Inspect &amp; Start Route</span>
+                <span>{inspected ? 'Start Route' : 'Inspect & Start Route'}</span>
                 <span style={{
                   width: 44, height: 44, borderRadius: '50%',
                   background: C.ink,
