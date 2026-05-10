@@ -31,7 +31,11 @@ export default function TrainingPage() {
     )
   }
 
-  if (!roles?.includes('driver') && !roles?.includes('super_admin')) {
+  if (
+    !roles?.includes('driver') &&
+    !roles?.includes('super_admin') &&
+    !roles?.includes('tools_only')
+  ) {
     return (
       <div style={pageStyle}>
         <p style={{ color: '#EF4444', fontSize: 14 }}>Access denied.</p>

@@ -87,8 +87,13 @@ type Tab = {
 // (the stop-list execution view per the May 9 design lock). Without an
 // assignment, it falls through to '/' so the driver sees the same no-assignment
 // state Home shows. The placeholder href below is overridden in render.
+// rolesAllowed: when present, the tab is visible only to users whose `roles`
+// array overlaps the list. Home and Routes are driver-only (a `tools_only`
+// user has no route assignments and is routed to /tools as their default).
+// Tools / Training / Profile have no allow-list — every authenticated
+// driver-app user can see them.
 const TABS: Tab[] = [
-  { id: 'home',     label: 'Home',     href: '/',         isActive: (p) => p === '/',                  Icon: HomeIcon },
+  { id: 'home',     label: 'Home',     href: '/',         isActive: (p) => p === '/',                  Icon: HomeIcon, rolesAllowed: ['driver', 'super_admin'] },
   { id: 'routes',   label: 'Routes',   href: '/',         isActive: (p) => p.startsWith('/route'),     Icon: RoutesIcon, rolesAllowed: ['driver', 'super_admin'] },
   { id: 'tools',    label: 'Tools',    href: '/tools',    isActive: (p) => p.startsWith('/tools'),     Icon: ToolsIcon },
   { id: 'training', label: 'Training', href: '/training', isActive: (p) => p.startsWith('/training'),  Icon: TrainingIcon },

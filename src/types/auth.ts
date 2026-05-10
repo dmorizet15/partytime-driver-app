@@ -5,6 +5,9 @@ export type Role =
   | 'driver'
   | 'read_only'
   | 'display'
+  | 'maintenance_manager'
+  | 'will_call'
+  | 'tools_only'
 
 export interface UserProfile {
   id: string

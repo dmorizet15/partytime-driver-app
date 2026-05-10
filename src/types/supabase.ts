@@ -176,6 +176,8 @@ export type Database = {
           dispatcher_notes: string | null
           duplicate_type: string | null
           estimated_minutes: number | null
+          geocode_attempted_at: string | null
+          geocoded_at: string | null
           id: string
           items: Json | null
           linked_stop_id: string | null
@@ -192,12 +194,15 @@ export type Database = {
           route_position: number | null
           scheduled_date: string
           scheduled_time: string | null
+          sms_override_phone: string | null
           stop_status: string | null
           stop_type: Database["public"]["Enums"]["stop_type_enum"]
           tapgoods_order_token: string | null
           tapgoods_stop_id: string | null
           tapgoods_writeback_at: string | null
           tapgoods_writeback_status: string | null
+          tg_date_drift_detected_at: string | null
+          tg_date_drift_value: string | null
           updated_at: string
         }
         Insert: {
@@ -220,6 +225,8 @@ export type Database = {
           dispatcher_notes?: string | null
           duplicate_type?: string | null
           estimated_minutes?: number | null
+          geocode_attempted_at?: string | null
+          geocoded_at?: string | null
           id?: string
           items?: Json | null
           linked_stop_id?: string | null
@@ -236,12 +243,15 @@ export type Database = {
           route_position?: number | null
           scheduled_date: string
           scheduled_time?: string | null
+          sms_override_phone?: string | null
           stop_status?: string | null
           stop_type: Database["public"]["Enums"]["stop_type_enum"]
           tapgoods_order_token?: string | null
           tapgoods_stop_id?: string | null
           tapgoods_writeback_at?: string | null
           tapgoods_writeback_status?: string | null
+          tg_date_drift_detected_at?: string | null
+          tg_date_drift_value?: string | null
           updated_at?: string
         }
         Update: {
@@ -264,6 +274,8 @@ export type Database = {
           dispatcher_notes?: string | null
           duplicate_type?: string | null
           estimated_minutes?: number | null
+          geocode_attempted_at?: string | null
+          geocoded_at?: string | null
           id?: string
           items?: Json | null
           linked_stop_id?: string | null
@@ -280,12 +292,15 @@ export type Database = {
           route_position?: number | null
           scheduled_date?: string
           scheduled_time?: string | null
+          sms_override_phone?: string | null
           stop_status?: string | null
           stop_type?: Database["public"]["Enums"]["stop_type_enum"]
           tapgoods_order_token?: string | null
           tapgoods_stop_id?: string | null
           tapgoods_writeback_at?: string | null
           tapgoods_writeback_status?: string | null
+          tg_date_drift_detected_at?: string | null
+          tg_date_drift_value?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -336,101 +351,59 @@ export type Database = {
         }
         Relationships: []
       }
-      fleet_vehicles: {
-        Row: {
-          active: boolean | null
-          color: string | null
-          created_at: string | null
-          current_mileage: number | null
-          ez_pass_tag: string | null
-          gvwr_lbs: number | null
-          id: number
-          inspection_expiry: string | null
-          insurance_expiry: string | null
-          lease_or_owned: string | null
-          make: string | null
-          model: string | null
-          notes: string | null
-          plate: string | null
-          purchase_date: string | null
-          registration_expiry: string | null
-          truck_key_number: string | null
-          updated_at: string | null
-          vehicle_name: string
-          vehicle_type: string | null
-          vin: string | null
-          year: number | null
-        }
-        Insert: {
-          active?: boolean | null
-          color?: string | null
-          created_at?: string | null
-          current_mileage?: number | null
-          ez_pass_tag?: string | null
-          gvwr_lbs?: number | null
-          id?: number
-          inspection_expiry?: string | null
-          insurance_expiry?: string | null
-          lease_or_owned?: string | null
-          make?: string | null
-          model?: string | null
-          notes?: string | null
-          plate?: string | null
-          purchase_date?: string | null
-          registration_expiry?: string | null
-          truck_key_number?: string | null
-          updated_at?: string | null
-          vehicle_name: string
-          vehicle_type?: string | null
-          vin?: string | null
-          year?: number | null
-        }
-        Update: {
-          active?: boolean | null
-          color?: string | null
-          created_at?: string | null
-          current_mileage?: number | null
-          ez_pass_tag?: string | null
-          gvwr_lbs?: number | null
-          id?: number
-          inspection_expiry?: string | null
-          insurance_expiry?: string | null
-          lease_or_owned?: string | null
-          make?: string | null
-          model?: string | null
-          notes?: string | null
-          plate?: string | null
-          purchase_date?: string | null
-          registration_expiry?: string | null
-          truck_key_number?: string | null
-          updated_at?: string | null
-          vehicle_name?: string
-          vehicle_type?: string | null
-          vin?: string | null
-          year?: number | null
-        }
-        Relationships: []
-      }
       profiles: {
         Row: {
+          archived_at: string | null
+          archived_by_user_id: string | null
           created_at: string
           display_name: string | null
           id: string
-          role: Database["public"]["Enums"]["user_role"]
+          invited_at: string | null
+          invited_by_user_id: string | null
+          mobile_number: string | null
+          roles: Database["public"]["Enums"]["user_role"][]
+          status: string
         }
         Insert: {
+          archived_at?: string | null
+          archived_by_user_id?: string | null
           created_at?: string
           display_name?: string | null
           id: string
-          role?: Database["public"]["Enums"]["user_role"]
+          invited_at?: string | null
+          invited_by_user_id?: string | null
+          mobile_number?: string | null
+          roles?: Database["public"]["Enums"]["user_role"][]
+          status?: string
         }
         Update: {
+          archived_at?: string | null
+          archived_by_user_id?: string | null
           created_at?: string
           display_name?: string | null
           id?: string
-          role?: Database["public"]["Enums"]["user_role"]
+          invited_at?: string | null
+          invited_by_user_id?: string | null
+          mobile_number?: string | null
+          roles?: Database["public"]["Enums"]["user_role"][]
+          status?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_archived_by_user_id_fkey"
+            columns: ["archived_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profiles_invited_by_user_id_fkey"
+            columns: ["invited_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       reservations: {
         Row: {
@@ -776,6 +749,7 @@ export type Database = {
           plate: string | null
           registration_expiry: string | null
           truck_key_number: string | null
+          updated_at: string | null
           vehicle_type: string | null
           vin: string | null
           year: number | null
@@ -803,6 +777,7 @@ export type Database = {
           plate?: string | null
           registration_expiry?: string | null
           truck_key_number?: string | null
+          updated_at?: string | null
           vehicle_type?: string | null
           vin?: string | null
           year?: number | null
@@ -830,6 +805,7 @@ export type Database = {
           plate?: string | null
           registration_expiry?: string | null
           truck_key_number?: string | null
+          updated_at?: string | null
           vehicle_type?: string | null
           vin?: string | null
           year?: number | null
@@ -1173,6 +1149,9 @@ export type Database = {
         | "driver"
         | "read_only"
         | "display"
+        | "maintenance_manager"
+        | "will_call"
+        | "tools_only"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1320,6 +1299,9 @@ export const Constants = {
         "driver",
         "read_only",
         "display",
+        "maintenance_manager",
+        "will_call",
+        "tools_only",
       ],
     },
   },
