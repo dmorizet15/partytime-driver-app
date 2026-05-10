@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { useAppState } from '@/context/AppStateContext'
+import { useInspectionStatus } from '@/hooks/useInspectionStatus'
 import { Stop, PaymentState } from '@/types'
 import Image from 'next/image'
 import BottomNav from '@/components/BottomNav'
@@ -114,6 +115,13 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
   const stops = route ? getStopsForRoute(routeId) : []
   const completedCount = stops.filter((s) => s.current_status === 'completed').length
 
+  // Pre-trip inspection gate — mirrors Home. Stops are non-tappable until the
+  // driver has signed off on this route+truck. Routes-tab deep-link makes this
+  // surface reachable pre-inspection; without the gate a driver could bypass
+  // the regulatory hard-stop.
+  const inspection = useInspectionStatus(route?.route_id, route?.truck_id)
+  const inspected  = inspection !== null
+
   // ── Route not found ────────────────────────────────────────────────────────
   if (!route) {
     return (
@@ -179,6 +187,9 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
   const showDots = stops.length > 0 && stops.length <= 8
 
   function handleStopTap(stop: Stop) {
+    // Belt-and-braces guard against keyboard/SR bypass — the visual treatment
+    // below (40% opacity + pointer-events: none) handles affordance.
+    if (!inspected) return
     router.push(`/route/${routeId}/stop/${stop.stop_id}`)
   }
 
@@ -331,11 +342,15 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
                 <button
                   key={stop.stop_id}
                   onClick={() => handleStopTap(stop)}
+                  aria-disabled={!inspected || undefined}
                   style={{
                     width: '100%', textAlign: 'left',
-                    background: 'transparent', border: 0, cursor: 'pointer',
+                    background: 'transparent', border: 0,
+                    cursor: inspected ? 'pointer' : 'default',
                     padding: '12px 0', display: 'flex', gap: 16,
                     alignItems: 'flex-start', fontFamily: 'inherit',
+                    opacity:       inspected ? 1 : 0.4,
+                    pointerEvents: inspected ? 'auto' : 'none',
                   }}
                 >
                   {/* Numbered circle (with optional gold-dot OTW indicator) */}

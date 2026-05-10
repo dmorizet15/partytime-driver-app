@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useRouter }                    from 'next/navigation'
 import { useAppState }                  from '@/context/AppStateContext'
 import { useAuth }                      from '@/hooks/useAuth'
+import { useInspectionStatus }          from '@/hooks/useInspectionStatus'
 import type { Stop }                    from '@/types'
 import BottomNav                        from '@/components/BottomNav'
 
@@ -32,15 +33,6 @@ const FONT_BODY    = "var(--font-inter), 'Inter', system-ui, -apple-system, sans
 const HAS_AVA = false
 // HAS_WEATHER reserved for the wind/weather pill on stop cards. Render gated
 // inline at the pill site rather than as a top-level flag here.
-
-// Pre-trip inspection state, fetched per primary route from /api/inspection/status.
-// `null` = not yet loaded or no inspection on file. A populated object means
-// the driver has signed off on this route's truck — gate is open.
-type InspectionState = {
-  id: string
-  signed_at: string  // ISO timestamptz from vehicle_inspections.signed_at
-  has_oos: boolean
-} | null
 
 // ─── COD detection ────────────────────────────────────────────────────────────
 // Only literal 'cod' triggers cash-collection UI. AR customers (state
@@ -218,7 +210,6 @@ export default function DayRouteSelectorScreen() {
   const today = todayStr()
   const [now, setNow]         = useState<Date>(() => new Date())
   const [toast, setToast]     = useState<string | null>(null)
-  const [inspection, setInspection] = useState<InspectionState>(null)
 
   // Live eyebrow tick — refresh every 60s so the displayed time stays accurate
   useEffect(() => {
@@ -241,32 +232,13 @@ export default function DayRouteSelectorScreen() {
 
   const routes = getRoutesForDate(today)
 
-  // Pre-trip inspection status — refetched whenever the primary route changes.
-  // Drives the gate: stops are non-tappable, pre-trip card stays in "REQUIRED
-  // FIRST" state, and the gold CTA reads "Inspect & Start Route" until this
-  // resolves to a populated row. Per route assignment (route_id is the gate
-  // key), so a mid-day reassignment cleanly resets the gate.
+  // Pre-trip inspection status — drives the gate (stops non-tappable, pre-trip
+  // card stays in "REQUIRED FIRST", gold CTA reads "Inspect & Start Route"
+  // until this resolves to a populated row). Per route assignment, so a
+  // mid-day reassignment cleanly resets the gate.
   const primaryRouteId = routes[0]?.route_id
   const primaryTruckId = routes[0]?.truck_id
-  useEffect(() => {
-    if (!primaryRouteId || !primaryTruckId) {
-      setInspection(null)
-      return
-    }
-    let cancelled = false
-    fetch(`/api/inspection/status?route_id=${primaryRouteId}&truck_id=${primaryTruckId}`)
-      .then((r) => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
-      .then((json) => {
-        if (cancelled) return
-        setInspection(json.current ?? null)
-      })
-      .catch((err) => {
-        // Non-fatal — leaving gate closed is the safe default. Logging only.
-        console.warn('[Home] inspection status fetch failed:', err instanceof Error ? err.message : err)
-        if (!cancelled) setInspection(null)
-      })
-    return () => { cancelled = true }
-  }, [primaryRouteId, primaryTruckId])
+  const inspection = useInspectionStatus(primaryRouteId, primaryTruckId)
 
   // Aggregate stops across today's routes — the day list renders stops, not
   // routes. Composes existing context methods only; no hook/context edits.

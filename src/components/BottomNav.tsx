@@ -2,6 +2,7 @@
 
 import { useRouter, usePathname } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
+import { useAppState } from '@/context/AppStateContext'
 
 // ─── Direction 03 (Editorial) tokens ──────────────────────────────────────────
 const C = {
@@ -81,14 +82,11 @@ type Tab = {
   rolesAllowed?: string[]
 }
 
-// NOTE on the Routes tab destination:
-// There's no top-level routes-list page in the app today — only
-// `/route/[routeId]` (RouteListScreen). Until a real routes-hub exists, the
-// Routes tab points to `/` (the day route picker), with active-state matching
-// `pathname.startsWith('/route')` so the tab still highlights when the user
-// drills into a specific route. Side effect: tapping Routes from a non-route
-// screen lands at `/` and lights the **Home** tab (because `pathname === '/'`
-// after navigation). Confusing — fix when a `/route` hub ships.
+// Routes tab is special-cased: its href is computed at render time from
+// AppStateContext. With an assigned route, it deep-links to /route/<route_id>
+// (the stop-list execution view per the May 9 design lock). Without an
+// assignment, it falls through to '/' so the driver sees the same no-assignment
+// state Home shows. The placeholder href below is overridden in render.
 const TABS: Tab[] = [
   { id: 'home',     label: 'Home',     href: '/',         isActive: (p) => p === '/',                  Icon: HomeIcon },
   { id: 'routes',   label: 'Routes',   href: '/',         isActive: (p) => p.startsWith('/route'),     Icon: RoutesIcon, rolesAllowed: ['driver', 'super_admin'] },
@@ -102,6 +100,19 @@ export default function BottomNav() {
   const router   = useRouter()
   const pathname = usePathname() ?? ''
   const { roles } = useAuth()
+  const { getRoutesForDate } = useAppState()
+
+  // Routes tab destination resolves at render time. Reads whatever AppState
+  // currently has — Home triggers loadDay on mount, so by the time the driver
+  // taps tabs the cache is populated. Deep-link entry (e.g. notification land
+  // on /tools first) means routes is empty here and the tab falls back to /,
+  // which is fine: driver lands on Home, sees the no-assignment state.
+  const today = (() => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  })()
+  const primaryRouteId = getRoutesForDate(today)[0]?.route_id
+  const routesHref     = primaryRouteId ? `/route/${primaryRouteId}` : '/'
 
   const visibleTabs = TABS.filter((t) => {
     if (!t.rolesAllowed) return true
@@ -128,10 +139,12 @@ export default function BottomNav() {
       {visibleTabs.map((tab) => {
         const active = tab.isActive(pathname)
         const color  = active ? C.gold : 'rgba(10,11,20,0.40)'
+        // Routes tab destination is dynamic; everything else uses its static href.
+        const href   = tab.id === 'routes' ? routesHref : tab.href
         return (
           <button
             key={tab.id}
-            onClick={() => router.push(tab.href)}
+            onClick={() => router.push(href)}
             aria-current={active ? 'page' : undefined}
             style={{
               flex: 1,
