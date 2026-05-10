@@ -827,12 +827,243 @@ export default function InspectionScreen({ routeId }: InspectionScreenProps) {
         </Shell>
       )
     }
-    case 'sign_submit':
-      return <Placeholder title="Screen 6 — sign_submit" onAdvance={() => {
-        // Placeholder submit — UI pass will wire to /api/inspection/submit.
-        dispatch({ type: 'SUBMIT_SUCCESS', payload: { id: 'placeholder', outcome: 'clear' } })
-        dispatch({ type: 'GO_TO', payload: { step: 'complete' } })
-      }}/>
+    case 'sign_submit': {
+      const towing = state.form.towingTrailer !== false
+      const visible = ALL_CATEGORIES.filter((k) => towing || !TRAILER_CATEGORIES.has(k))
+      const passed  = visible.filter((k) => state.form.checklist[k].state === 'pass').length
+      const flagged = visible.filter((k) => state.form.checklist[k].state === 'fail')
+
+      const submit = async () => {
+        if (!state.form.signed || state.form.submitting) return
+        dispatch({ type: 'SUBMIT_START' })
+        try {
+          const res = await fetch('/api/inspection/submit', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              route_id:                   state.form.routeId,
+              truck_id:                   state.form.truckId,
+              towing_trailer:             state.form.towingTrailer === true,
+              previous_dvir_reviewed_id:  state.form.previousInspection?.id ?? null,
+              previous_dvir_acknowledged: state.form.previousDvirAcknowledged,
+              checklist:                  state.form.checklist,
+              defect_acknowledgments:     Array.from(state.form.defectAcknowledgments),
+            }),
+          })
+          const json = await res.json()
+          if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`)
+          dispatch({ type: 'SUBMIT_SUCCESS', payload: { id: json.id, outcome: json.outcome } })
+          dispatch({ type: 'GO_TO',          payload: { step: 'complete' } })
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          console.error('[Inspection] submit failed:', message)
+          dispatch({ type: 'SUBMIT_ERROR', payload: { error: message } })
+        }
+      }
+
+      return (
+        <Shell>
+          <Hero
+            eyebrow="Sign & submit"
+            title="Review and submit"
+            truckName={state.form.truckName}
+            onBack={() => router.replace('/')}
+            progress={{ total: progressTotal(state.form), index: progressIndex('sign_submit', state.form) }}
+          />
+          <div style={{ flex: 1, padding: '18px 18px 24px', overflowY: 'auto' }}>
+
+            {/* Summary card */}
+            <div style={{
+              background: C.paper,
+              border: `1.5px solid rgba(10,11,20,0.10)`,
+              borderRadius: 18,
+              padding: '18px 18px 20px',
+              boxShadow: '0 2px 8px -4px rgba(10,11,20,0.08)',
+            }}>
+              <div style={{
+                fontSize: 11, fontWeight: 800, color: C.muted,
+                letterSpacing: '0.18em', textTransform: 'uppercase',
+              }}>
+                Summary
+              </div>
+              <div style={{
+                marginTop: 8,
+                fontFamily: FONT_DISPLAY,
+                fontSize: 22, fontWeight: 900, color: C.ink,
+                lineHeight: 1.15, letterSpacing: '-0.02em',
+              }}>
+                {state.form.truckName ?? 'Truck'}
+              </div>
+              <div style={{
+                marginTop: 4,
+                fontSize: 13, color: C.muted,
+                fontVariantNumeric: 'tabular-nums',
+              }}>
+                Pre-trip · {formatPriorDate(todayDateStr())}
+                {state.form.towingTrailer !== null && (
+                  <> · {state.form.towingTrailer ? 'Towing' : 'Not towing'}</>
+                )}
+              </div>
+
+              {/* Pass/fail counts */}
+              <div style={{
+                marginTop: 14,
+                display: 'flex', gap: 10, flexWrap: 'wrap',
+              }}>
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  background: passed > 0 ? C.green : C.off,
+                  color:      passed > 0 ? '#fff'   : C.muted,
+                  padding: '4px 10px', borderRadius: 999,
+                  fontSize: 11, fontWeight: 900, letterSpacing: '0.10em',
+                  textTransform: 'uppercase',
+                  fontVariantNumeric: 'tabular-nums',
+                }}>
+                  {passed} passed
+                </span>
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  background: flagged.length > 0 ? C.red : C.off,
+                  color:      flagged.length > 0 ? '#fff' : C.muted,
+                  padding: '4px 10px', borderRadius: 999,
+                  fontSize: 11, fontWeight: 900, letterSpacing: '0.10em',
+                  textTransform: 'uppercase',
+                  fontVariantNumeric: 'tabular-nums',
+                }}>
+                  {flagged.length} flagged
+                </span>
+              </div>
+
+              {/* Flagged defects list */}
+              {flagged.length > 0 && (
+                <div style={{
+                  marginTop: 16,
+                  borderTop: '1px solid rgba(10,11,20,0.08)',
+                  paddingTop: 14,
+                  display: 'flex', flexDirection: 'column', gap: 10,
+                }}>
+                  {flagged.map((k) => {
+                    const item = state.form.checklist[k]
+                    if (item.state !== 'fail') return null
+                    const isOos = item.severity === 'oos'
+                    return (
+                      <div key={k} style={{
+                        display: 'flex', gap: 10, alignItems: 'flex-start',
+                      }}>
+                        <span style={{
+                          flexShrink: 0,
+                          marginTop: 2,
+                          display: 'inline-flex', alignItems: 'center', gap: 5,
+                          background: isOos ? C.red : C.amber,
+                          color:      isOos ? '#fff' : C.ink,
+                          padding: '3px 8px', borderRadius: 999,
+                          fontSize: 9.5, fontWeight: 900, letterSpacing: '0.14em',
+                          textTransform: 'uppercase',
+                        }}>
+                          {isOos && <AlertIcon size={10} color="#fff"/>}
+                          {isOos ? 'OOS' : 'NON-OOS'}
+                        </span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{
+                            fontFamily: FONT_DISPLAY,
+                            fontSize: 14, fontWeight: 800, color: C.ink,
+                            lineHeight: 1.25,
+                          }}>
+                            {CATEGORY_LABELS[k]}
+                          </div>
+                          <div style={{
+                            marginTop: 2,
+                            fontSize: 12.5, color: C.ink, opacity: 0.78, lineHeight: 1.4,
+                          }}>
+                            {item.description}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Certify checkbox */}
+            <button
+              onClick={() => dispatch({ type: 'SET_SIGNED', payload: { signed: !state.form.signed } })}
+              aria-pressed={state.form.signed}
+              style={{
+                marginTop: 14,
+                width: '100%', textAlign: 'left',
+                background: state.form.signed ? C.ink : C.paper,
+                color:      state.form.signed ? '#fff' : C.ink,
+                border: `1.5px solid ${state.form.signed ? C.ink : 'rgba(10,11,20,0.16)'}`,
+                borderRadius: 18,
+                padding: '14px 16px',
+                display: 'flex', gap: 12, alignItems: 'flex-start',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                boxShadow: state.form.signed ? `4px 4px 0 ${C.gold}` : '0 2px 8px -4px rgba(10,11,20,0.08)',
+                transition: 'background 120ms ease, color 120ms ease, box-shadow 150ms ease',
+              }}
+            >
+              <div
+                aria-hidden="true"
+                style={{
+                  width: 22, height: 22, borderRadius: 6,
+                  border: `2px solid ${state.form.signed ? C.gold : 'rgba(10,11,20,0.30)'}`,
+                  background: state.form.signed ? C.gold : 'transparent',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0,
+                  marginTop: 1,
+                }}
+              >
+                {state.form.signed && <CheckIcon size={14} color={C.ink}/>}
+              </div>
+              <div style={{
+                flex: 1,
+                fontSize: 13.5, lineHeight: 1.45,
+                fontWeight: 600,
+              }}>
+                By submitting, I certify this vehicle is in safe operating
+                condition and that the information above is accurate.
+              </div>
+            </button>
+
+            {/* Submit error banner */}
+            {state.form.submitError && (
+              <div style={{
+                marginTop: 14,
+                background: C.paper,
+                border: `1.5px solid ${C.red}`,
+                borderRadius: 14,
+                padding: '12px 14px',
+                boxShadow: `4px 4px 0 ${C.red}`,
+              }}>
+                <div style={{
+                  fontSize: 11, fontWeight: 800, color: C.red,
+                  letterSpacing: '0.16em', textTransform: 'uppercase',
+                }}>
+                  Submit failed
+                </div>
+                <div style={{
+                  marginTop: 4,
+                  fontSize: 13, color: C.ink, lineHeight: 1.4,
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                  wordBreak: 'break-all',
+                }}>
+                  {state.form.submitError}
+                </div>
+              </div>
+            )}
+          </div>
+          <Footer>
+            <PrimaryCTA
+              label={state.form.submitting ? 'Submitting…' : 'Submit Inspection'}
+              disabled={!state.form.signed || state.form.submitting}
+              onClick={submit}
+            />
+          </Footer>
+        </Shell>
+      )
+    }
     case 'complete':
       return <Placeholder title={`Screen 7 — complete (${state.form.submitResult?.outcome ?? 'unknown'})`} onAdvance={() => router.replace('/')} advanceLabel="Return to Home"/>
   }
@@ -1121,6 +1352,12 @@ function formatPriorDate(dateStr: string): string {
   const [y, m, d] = dateStr.split('-').map(Number)
   const dt = new Date(y, m - 1, d)
   return dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+}
+
+// Today as YYYY-MM-DD (local, not UTC) — feeds formatPriorDate on Screen 6.
+function todayDateStr(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 function categoryLabel(category: string): string {
