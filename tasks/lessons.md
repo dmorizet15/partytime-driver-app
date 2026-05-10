@@ -6,6 +6,14 @@ Format: one lesson per block. Lead with the rule, then **Why** and **How to appl
 
 ---
 
+## Locked architectural invariants get re-enabled with a guard, not a removal.
+
+**Why:** Auto-load route (May 10, 2026) needed `/` → `/route/<id>` redirect behavior that was explicitly REVERTED on May 8 because it made BottomNav's Home tab unreachable (commit `938f4b0` → revert). The naive read of the new spec would have re-introduced the same bug. The fix wasn't to drop the May 8 invariant — it was to scope the redirect to the one moment when it actually helps (cold sign-in), and add a `sessionStorage` guard so subsequent Home visits via BottomNav stay on Home. The invariant survives; the new feature works.
+
+**How to apply:** When CLAUDE.md locks a behavior with a "reverted because…" note, treat the reason as a constraint, not history. A new feature that needs the reverted behavior must find a path that doesn't reintroduce the original failure mode. Common shapes: scope by session, scope by trigger (cold start vs. navigation), feature flag with a kill switch, or refuse the feature if the invariant can't be preserved. Never delete the lock — annotate it with the new constraint and the guard that satisfies it.
+
+---
+
 ## Two-repo migration coordination has no clean self-service path through the Supabase CLI today.
 
 **Why:** `partytime-driver-app` and `partytime-dashboard` both write migrations to the same Supabase project (`partytime-east`, ref `fumprcyavpefyupurvsv`) but each repo only carries its OWN migration files locally. `supabase db push --linked` from either repo refuses to proceed with "Remote migration versions not found in local migrations directory" when the OTHER repo has pushed migrations since the last sync. The CLI's suggested escape (`supabase migration repair --status reverted <list>`) removes the rows from the remote `_supabase_migrations` table — which then makes the OTHER repo think those migrations need to be re-applied (which would fail non-idempotently). On 2026-05-10 the post-trip defect feature build couldn't push migration 009 from the driver-app because dashboard had pushed 27 migrations between then and the last driver-app push (May 2). No DB password is stored locally for `--db-url` direct push.

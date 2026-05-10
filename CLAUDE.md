@@ -166,12 +166,28 @@ Optional end-of-day defect surface on Home. Symmetric to pre-trip (which is a ha
 - **The 12-category list is duplicated locally in `src/components/PostTripDefectCard.tsx`** with a `// TODO: extract to src/lib/defect-categories.ts when pre-trip stabilizes` marker. Do NOT extract pre-trip's category list as part of any post-trip touch — that's a separate cleanup. Same TODO marker in `src/app/api/defects/post-trip/route.ts`.
 - **Out of scope this session:** real-time push/SMS notification on post-trip submit (the row writes to `vehicle_defects`; dispatch surfacing is whatever the dashboard's existing defect view does). Phase 2 if a notification channel is wanted.
 
+### Driver Auto-Load Route SHIPPED ✅ — May 10, 2026 evening
+On cold sign-in, the app fetches the current driver's assignment for today and redirects them straight to `/route/<id>` (RouteListScreen) — no manual picking required. Manual flow preserved as fallback when there's no assignment, the fetch fails, or the session has already auto-jumped once.
+
+**Architecture — read this before touching auto-load code:**
+
+- **`/api/routes/assigned` GET is the only new endpoint.** Auth-gated via session cookie (`user.id` cannot be spoofed). Inner-joins `route_assignments` to `routes` on `route_date = today`, ordered `assigned_at DESC`. Returns `{ route_id: string | null }`. Multi-match edge case: logs a warning identifying the driver + count, returns the freshest assignment. Service-role client for the read — matches the `/api/inspection/status` and `/api/defects/post-trip` pattern (sidesteps RLS verification on dashboard-side `route_assignments` policies). No changes to `/api/routes/route.ts`.
+
+- **`useAssignedRoute()` is the single hook for the redirect.** Lives at `src/hooks/useAssignedRoute.ts`. Fires once per browser session, guarded by `sessionStorage['ptd_autoload_attempted']`. On match → `router.replace('/route/<id>')`. On no match → `'no_assignment'`. On fetch error → `'failed'` + console warn. The caller (DayRouteSelectorScreen) shows a "Finding your route…" spinner while `status === 'checking' || 'navigating'` and falls through to the existing day overview in every other case.
+
+- **Why session-scoped and not every-mount?** The May 8 home rewrite locks an invariant: BottomNav's Home tab must remain reachable. The earlier blanket `/` → `/route/<id>` auto-redirect (commit `938f4b0`) was reverted because tapping the Home tab would bounce the driver right back out of Home. The session guard re-enables auto-navigation without reintroducing that bug — cold sign-in jumps, but BottomNav-driven returns to Home stay on Home. If the driver is reassigned mid-session, they will NOT be auto-redirected to the new route; that's intentional (no yanking them out of an active stop). A forced re-route is a Phase 2 concern.
+
+- **`AppStateContext.clearCache` is unused for now.** Its comment references "the assigned-route check resolves to 'no-assignment'" — that was forward-leaning infra from a prior session. The current redirect-on-match design doesn't need it (Home unmounts cleanly on match; on no-match the day overview is what we want anyway). Kept in the context as future-proofing.
+
+**Out of scope this session:** server-pushed re-route signal, dashboard-side surfacing of the "multi-assignment" warning, clearing the session guard from the dashboard side.
+
 ### Phase 2.5a cleanup SHIPPED ✅ — May 10, 2026 (commit `15d3476`)
 Dead TapGoods direct-call cluster removed. The driver app has read routes/stops exclusively from Supabase via `/api/routes` for weeks; the four-file GraphQL path was orphaned but still checked in. Deleted: `src/app/api/tapgoods/routes/route.ts`, `src/lib/tapgoodsClient.ts`, `src/lib/tapgoodsQueries.ts`, `src/lib/tapgoodsTransform.ts`, plus the now-empty `src/app/api/tapgoods/` directory. 270 lines gone. Phase A of Phase 2.5 (Source of Truth Migration) is now fully complete — not just "replaced" but "removed."
 
 Surviving `tapgoods_*` references are all legitimate Supabase column names (`tapgoods_order_token`, `tapgoods_stop_id`, etc., written by the dashboard's sync layer) plus the View Order URL template in `src/config/externalApps.ts`. Do NOT delete these.
 
 ### NEXT
+- **Smoke-test driver auto-load on production** post-Vercel deploy: sign in as darren@partytime-rentals.com (assigned today) → confirm direct jump to `/route/<id>`. Sign in as an unassigned driver → confirm day overview renders. Tap Home in BottomNav after the initial jump → confirm Home is reachable (sessionStorage guard works).
 - **Apply migration 009 to partytime-east** (Darren, manual via Supabase Studio SQL Editor — instructions in `tasks/open-questions.md`). Until applied, the post-trip card and API return 500.
 - Pre-trip Phase 2 polish: transactional submit RPC, real OOS auto-notify (SMS/email), `'never'`-truck trailer-row hide
 - Driver Profile / Compliance — doc upload, expiry tracking, 30-day reminders

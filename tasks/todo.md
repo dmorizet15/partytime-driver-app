@@ -53,7 +53,7 @@ Empty shells exist on `/tools` for the tile grid. Content + per-tool UI is the w
 ## Phase 2.5 — Driver App Source of Truth Migration (Notion-tracked)
 - [x] Phase A: Stop data from Supabase (replace TapGoods direct calls). 2.5a cleanup 2026-05-10 commit `15d3476` deleted the orphaned `/api/tapgoods/routes` handler + `tapgoodsClient.ts` + `tapgoodsQueries.ts` + `tapgoodsTransform.ts`. Driver app now exclusively reads routes/stops from Supabase via `/api/routes`. Surviving `tapgoods_*` column references in `src/types/supabase.ts`, `src/app/api/routes/route.ts`, `src/lib/supabaseTransform.ts`, and `src/config/externalApps.ts` are legitimate (column names + View Order URL template) and stay.
 - [ ] Phase B: Live ETA + status sync (mostly done — Migration 033 + cascade live)
-- [ ] Phase C: Driver assignment from dashboard (mostly done — auto-load shipped May 6)
+- [x] Phase C: Driver assignment from dashboard — auto-load shipped 2026-05-10 evening. New endpoint `/api/routes/assigned` + hook `useAssignedRoute` + DayRouteSelectorScreen wiring. Once-per-session redirect from `/` → `/route/<id>` on cold sign-in when the driver has a `route_assignments` row for today; manual day overview preserved as fallback for unassigned drivers, fetch failures, and post-redirect BottomNav returns to Home.
 
 ## Pre-trip inspection — edge cases to revisit (discovered 2026-05-09)
 

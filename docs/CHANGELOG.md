@@ -4,6 +4,38 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-05-10 — Driver auto-load route — feature build
+
+**Scope:** When a driver opens the app, if they have a `route_assignments` row for today, redirect them straight to `/route/<id>` (RouteListScreen) instead of showing the Home day overview. Manual day-overview fallback preserved for unassigned drivers, fetch failures, and post-redirect Home-tab returns.
+
+### What shipped
+- New endpoint `GET /api/routes/assigned` — auth-gated via session cookie; queries `route_assignments` inner-joined to today's `routes`, ordered `assigned_at DESC`; returns `{ route_id: string | null }`. Multi-match edge case logs a warning and returns the freshest. Service-role read (matches `/api/inspection/status` and `/api/defects/post-trip` pattern).
+- New hook `useAssignedRoute()` — fetches the endpoint once per session, guarded by `sessionStorage['ptd_autoload_attempted']`. On match → `router.replace('/route/<id>')`. On no match / fetch error → caller renders day overview. The session guard preserves CLAUDE.md's May 8 lock: BottomNav's Home tab must remain reachable.
+- `DayRouteSelectorScreen` — adds "Finding your route…" spinner branch at the top of the scroll body while the assignment check is in flight (or the redirect is mid-flight). Existing isLoading / error / empty / populated branches gated with `!showAssignmentLoader` so they don't render under the loader. Hero stays visible throughout.
+
+### Files changed
+- Added: `src/app/api/routes/assigned/route.ts`
+- Added: `src/hooks/useAssignedRoute.ts`
+- Modified: `src/screens/DayRouteSelectorScreen.tsx`
+- Added: `tasks/session-summary-2026-05-10-autoload.md`
+- Updated: `CLAUDE.md` (Driver Auto-Load section + NEXT smoke test item), `tasks/todo.md` (Phase 2.5 Phase C → done), `tasks/lessons.md` (new lesson on guarded re-enablement of locked invariants)
+
+### Migrations applied
+- None. `route_assignments` schema already had `user_id`, `route_id`, `assigned_at`.
+
+### Verification
+- `npx next build` clean. `/api/routes/assigned` appears in the route table as a dynamic handler.
+- Dev server killed before build per the explicit session rule.
+
+### Commits
+- TBD (this session) — pushed to `main` after this changelog write.
+
+### For chat-Claude / Notion
+- Phase 2.5 — Driver App Source of Truth Migration: Phase C ("Driver assignment from dashboard") can be marked **shipped**. Note that the prior `tasks/todo.md` line saying "auto-load shipped May 6" was a forward-leaning note — the real ship date is today.
+- Master Build Checklist: tick the driver-app side of "Driver assignment from dashboard → auto-load on sign-in."
+
+---
+
 ## 2026-05-10 — Phase 2.5a cleanup — TapGoods legacy code removed
 
 **Scope:** Delete the orphaned TapGoods direct-call cluster from the driver app. The driver app has read routes/stops exclusively from Supabase (`/api/routes`) for weeks; the four-file TapGoods GraphQL path remained checked in but had zero consumers in `src/`.
