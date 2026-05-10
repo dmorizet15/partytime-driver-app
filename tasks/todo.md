@@ -61,11 +61,45 @@ Empty shells exist on `/tools` for the tile grid. Content + per-tool UI is the w
       treats `towingTrailer !== false` as "show trailer rows" — for `'always'`
       and `'never'` trucks (no Screen 4 fired), `towingTrailer` stays `null`,
       so the full 12-row checklist renders. Conservative default: include
-      trailer rows when we don't know. Revisit once we have field data on how
-      often `'never'` trucks are inspected with a trailer attached. Likely
-      target: surface a Screen 4 variant for `'never'` + `'always'` trucks too,
-      or remove trailer rows for `'never'` trucks entirely.
+      trailer rows when we don't know. By definition `'never'` trucks don't tow,
+      so hiding the trailer rows for that branch is safe. Low priority — the
+      conservative default (show all 12) is compliant and harmless. Likely
+      target: when `dvir_requirement === 'never'`, omit `TRAILER_CATEGORIES`
+      from the visible list in `case 'checklist'`.
       Location: `src/screens/InspectionScreen.tsx`, `case 'checklist'`.
+
+- [ ] **OOS auto-notify is user-facing copy only.** Screen 7's quiet green
+      "Dispatcher has been notified · HH:MM" line on the OOS state promises a
+      notification that doesn't actually fire. Today the dispatcher sees the
+      OOS via the fleet board's red banner. Wire to real SMS/email in Phase 2
+      per the Notion DVIR spec ("Phase 2 — SMS/email alert to designated
+      maintenance contact when OOS defect raised").
+      Location: `src/screens/InspectionScreen.tsx`, `case 'complete'` (OOS branch).
+
+- [ ] **Non-transactional inspection submit.** `POST /api/inspection/submit`
+      inserts `vehicle_inspections` first, then `vehicle_defects` rows. If the
+      defects insert fails after the inspection succeeded, the driver has an
+      inspection row with no defect rows — Home gate opens (status fetch sees
+      a current inspection), but maintenance loses visibility into the flagged
+      defects. Fail-open in the wrong direction. Fix with a Postgres RPC that
+      wraps both inserts in a transaction. Until then, the existing TODO
+      comment in the route handler documents the gap.
+      Location: `src/app/api/inspection/submit/route.ts`, around the `defectRows.insert` call.
+
+## Post-trip defect report — feature spec (discovered 2026-05-09)
+
+- [ ] **Build the post-trip defect report flow.** Spec lives in Notion (to be
+      added there separately). Surface lives on Home, appears after route
+      complete, and is **optional** (no hard gate). Single-screen flow, no
+      certify checkbox, no progress dots, no summary screen. Inputs:
+      category picker (12 categories, reuse `CATEGORY_LABELS`), severity
+      (OOS / Non-OOS), description (free-text). Submit writes a row to
+      `vehicle_defects` with `inspection_type = 'post_trip'` and links to a
+      lightweight `vehicle_inspections` row of type `'post_trip'`. No
+      previous-DVIR review, no checklist — the driver is reporting a
+      specific defect they noticed during the day, not running a full DVIR.
+      Reuse `useInspectionStatus`, `OOS_DEFAULT_CATEGORIES`, `CATEGORY_LABELS`,
+      `CFR_SECTIONS`. Don't confuse with the pre-trip flow.
 
 ## Active blockers
 - Easy RFID Pro launch on Android (out of v1.1 scope)

@@ -122,6 +122,27 @@ Stop-level weather badges live on Stop Detail. `StopWeatherModule` reuses Phase 
 ### Home rewrite — May 8, 2026 (commit `e72aa78`)
 Home (`/` → `DayRouteSelectorScreen`) is the day overview, not a router. Earlier auto-redirect from `/` → `/route/<id>` (commit `938f4b0`) was reverted — it made BottomNav's Home tab unreachable. Drivers reach `/route/<id>` via the explicit **Inspect & Start Route** CTA on Home. Date picker removed (driver app is single-day scope). Truck pill wired to real data via existing `/api/routes` join — renders `<truck_name> · <plate>` with name in semibold and plate in regular weight; falls back to name-only when plate is null; hidden when no truck assigned. Single-truck only — `truck_2` ignored on Home (one driver per route per login).
 
+### Pre-Trip Inspection Flow SHIPPED ✅ — May 9, 2026 evening
+End-to-end DOT pre-trip inspection lives at `/inspection`. Ten commits, `0d25f95` → `7526487`. Vercel deploy `qjggs2v7s` confirmed Ready.
+
+**Architecture — read this before touching any inspection code:**
+
+- **Flow lives at `/inspection`.** State machine in `src/screens/InspectionScreen.tsx` — 8 `FlowStep` states (`loading`, `never_prompt`, `review_clean`, `review_defects`, `towing`, `checklist`, `sign_submit`, `complete`), single `useReducer` with 11 action types. Routing helpers `nextAfterEntry` / `nextAfterReview` encode the spec's matrix; `progressTotal` / `progressIndex` drive the dynamic dot count (2–4 dots per truck/prior). Constants `ALL_CATEGORIES`, `TRAILER_CATEGORIES`, `OOS_DEFAULT_CATEGORIES`, `CFR_SECTIONS`, `CATEGORY_LABELS` are exported from this file — reuse, don't duplicate.
+
+- **`useInspectionStatus(routeId, truckId)` is the single source of truth for inspection status.** Lives at `src/hooks/useInspectionStatus.ts`. Both `DayRouteSelectorScreen` (Home) and `RouteListScreen` consume it. **Do not duplicate the fetch** — if a third surface needs the gate, add the hook call there.
+
+- **Inspection writes use server-side API routes with service-role key.** `GET /api/inspection/status` and `POST /api/inspection/submit` follow the existing `/api/routes` pattern: session-cookie client identifies the driver (`user.id` → `driver_id`, can't be spoofed), service-role client does the actual reads/writes. Sidesteps RLS verification on dashboard-side migrations 026–030. Do not rebuild this with anon-key + RLS unless you're prepared to verify the policies.
+
+- **Gate resets per `route_id` + `driver_id`, NOT per date.** A driver reassigned mid-day to a new route gets a fresh gate. The `vehicle_inspections` lookup is `WHERE route_id = ? AND driver_id = ?`. Date-based logic would break the mid-day-reassignment case.
+
+- **BottomNav Routes tab deep-links to `/route/<primary route_id>`** when the driver has an assignment; falls back to `/` (Home's no-assignment state) when not. Computed at render time from `AppStateContext.getRoutesForDate(today)[0]`. The `/route/<id>` destination (RouteListScreen) is gated identically to Home — same hook, same 40% opacity + pointer-events: none + tap guard.
+
+- **Post-trip defect report is a future feature** — spec lives in Notion, not yet built in this repo. **Do not confuse with pre-trip flow.** Pre-trip is launched from Home, hard-gates the day; post-trip will appear after route completion, optional, no certify checkbox. Both write to the same `vehicle_defects` table but with different `inspection_type` (`'pre_trip'` vs `'post_trip'`).
+
+**Shipped surfaces:** Home pre-trip card with receipt state, stop gating, CTA state machine, COD card gate, gold "Inspect & Start Route" → "Start Route" label/destination flip / Inspection flow Screens 1–7 / `/api/inspection/status` GET / `/api/inspection/submit` POST / Routes tab deep-link / RouteListScreen gate.
+
+**Out of scope this session:** transactional submit RPC, real OOS auto-notify (the green confirmation on Screen 7 is user-facing copy only — Phase 2), `'never'`-truck trailer-row hiding, post-trip defect report.
+
 ### Multi-Role Auth Migration — May 9, 2026 evening (commit `b937892`)
 Driver app caught up to the dashboard's Multi-Role Refactor (dashboard Migrations 036/037/038, applied earlier on May 9, dropped `profiles.role` in favor of `profiles.roles text[]`). Driver app was missed in the original sweep and was returning HTTP 400 from `/rest/v1/profiles?select=...,role,...` on every load, surfacing as "Access denied" because `role` resolved to `null`. Fix touched 10 files:
 - `src/types/auth.ts` — `UserProfile.role: Role` → `roles: Role[]`
@@ -134,6 +155,8 @@ Driver app caught up to the dashboard's Multi-Role Refactor (dashboard Migration
 No schema changes (production schema was already correct as of dashboard's May 9 morning push). No new helpers introduced — driver app's auth check surface is small enough that the inline `roles?.includes(...)` pattern is sufficient. If this app grows more role-gated surfaces, port the dashboard's `hasRole()` / `hasAnyRole()` helpers from `usePermissions`.
 
 ### NEXT
+- Post-trip defect report — Home-launched, optional, writes `vehicle_defects` with `inspection_type = 'post_trip'`. Spec in Notion.
+- Pre-trip Phase 2 polish: transactional submit RPC, real OOS auto-notify (SMS/email), `'never'`-truck trailer-row hide
 - Driver Profile / Compliance — doc upload, expiry tracking, 30-day reminders
 - Tools Hub content authoring (calculators, fire code checklist, equipment KB)
 - Training Module content authoring
@@ -162,7 +185,6 @@ No schema changes (production schema was already correct as of dashboard's May 9
 - Apple Sign In (deferred)
 - Google OAuth for driver app (deferred — email/password only on PWA)
 - Offline queue service worker (Phase 2+)
-- DOT pre-trip inspection (Phase 2+)
 
 ---
 
@@ -174,7 +196,13 @@ No schema changes (production schema was already correct as of dashboard's May 9
 1. `npx next build` — must succeed end-to-end (compile + type check + page generation)
 2. Only then `git push`
 
+**`npx next build` green is NOT deployed.** Build is the verification step; the push is the deployment trigger. Build-then-push is one indivisible sequence — never build and stop. If a build is green and you're not pushing immediately, name out loud why (e.g., "still mid-pass, will push after the bundle is done") so the deferred push doesn't get lost across the next hour of context.
+
+At the start of any session, treat `git status` showing "Your branch is ahead of origin/main by N commits" as a red flag, not a routine note.
+
 **Incident — May 6, 2026:** Cash-collection feature (commit `449693e`) passed `npx next lint` with zero errors but failed Vercel's `next build` on a `WorkflowEventType` mismatch (`'CASH_COLLECTED'` not in the union). Fix-forward in `4dda705`. Lesson: lint is a subset of build; never substitute one for the other.
+
+**Incident — May 9, 2026 evening:** During the inspection-flow build session, 9 commits sat local for hours because the build-then-push sequence was broken. After each pass `npx next build` ran green; `git push` was forgotten. Smoke testing against Vercel showed the pre-inspection app for 2+ hours. Recovered by pushing all 9 in one batch. Lesson: green build alone is meaningless until pushed.
 
 ---
 
