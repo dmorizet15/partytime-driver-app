@@ -8,6 +8,26 @@ interface InspectionScreenProps {
   routeId: string
 }
 
+// ─── Direction 03 (Editorial) tokens — match Home/RouteList ──────────────────
+const C = {
+  blue:     '#0000FF',
+  ink:      '#0A0B14',
+  cream:    '#FFF9EE',
+  gold:     '#FFB800',
+  goldDeep: '#B07F00',
+  goldSoft: '#FFEFC2',
+  muted:    '#6B7488',
+  paper:    '#FFFFFF',
+  off:      '#F4F6FA',
+  coral:    '#FF5A3C',
+  green:    '#1FBF6B',
+  amber:    '#F59E0B',
+  red:      '#DC2626',
+} as const
+
+const FONT_DISPLAY = "var(--font-archivo), 'Archivo', 'Inter', system-ui, -apple-system, sans-serif"
+const FONT_BODY    = "var(--font-inter), 'Inter', system-ui, -apple-system, sans-serif"
+
 // ─── Domain types ────────────────────────────────────────────────────────────
 
 export type FlowStep =
@@ -416,12 +436,90 @@ export default function InspectionScreen({ routeId }: InspectionScreenProps) {
     )
   }
 
-  // ── Step switch (placeholders — UI TBD next pass) ─────────────────────────
+  // ── Step switch ─────────────────────────────────────────────────────────────
   switch (state.step) {
     case 'loading':
-      return <Placeholder title="Screen 1 — loading"/>
+      return (
+        <Shell>
+          <Hero
+            eyebrow="Pre-trip"
+            title="Pre-trip inspection"
+            truckName={state.form.truckName}
+            onBack={() => router.replace('/')}
+          />
+          <div style={{
+            flex: 1,
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            gap: 14, padding: '40px 24px',
+          }}>
+            <div style={{
+              width: 28, height: 28,
+              border: '2px solid rgba(10,11,20,0.15)',
+              borderTopColor: C.ink,
+              borderRadius: '50%',
+              animation: 'ptw-spin 0.9s linear infinite',
+            }}/>
+            <span style={{ fontSize: 13, color: C.muted }}>
+              Resolving truck and previous DVIR…
+            </span>
+            <style>{`@keyframes ptw-spin { to { transform: rotate(360deg); } }`}</style>
+          </div>
+        </Shell>
+      )
+
     case 'never_prompt':
-      return <Placeholder title="Screen 1 (variant) — never_prompt" onAdvance={() => dispatch({ type: 'GO_TO', payload: { step: 'checklist' } })}/>
+      // Soft prompt for trucks with dvir_requirement = 'never'. Best-practice
+      // message, not a regulatory gate. Tapping Continue advances into the
+      // checklist same as the federal flow — the driver still produces an
+      // inspection record on submit.
+      return (
+        <Shell>
+          <Hero
+            eyebrow="Best practice"
+            title="Quick inspection"
+            truckName={state.form.truckName}
+            onBack={() => router.replace('/')}
+          />
+          <div style={{ flex: 1, padding: '24px 22px 0', overflowY: 'auto' }}>
+            <div style={{
+              background: C.paper,
+              border: `1.5px solid rgba(10,11,20,0.10)`,
+              borderRadius: 18,
+              padding: '22px 20px',
+              boxShadow: `4px 4px 0 ${C.gold}`,
+            }}>
+              <div style={{
+                fontSize: 11, fontWeight: 800, color: C.goldDeep,
+                letterSpacing: '0.18em', textTransform: 'uppercase',
+              }}>
+                Not federally required
+              </div>
+              <div style={{
+                marginTop: 8,
+                fontFamily: FONT_DISPLAY,
+                fontSize: 22, fontWeight: 900, color: C.ink,
+                lineHeight: 1.15, letterSpacing: '-0.02em',
+              }}>
+                This truck is below the DVIR threshold.
+              </div>
+              <div style={{
+                marginTop: 10,
+                fontSize: 14, color: C.ink, lineHeight: 1.5,
+              }}>
+                A full pre-trip is still good practice — a few seconds spent here
+                catches issues before the road. Same checklist; the record on
+                file matters if anything goes wrong.
+              </div>
+            </div>
+          </div>
+          <Footer>
+            <PrimaryCTA
+              label="Continue to checklist"
+              onClick={() => dispatch({ type: 'GO_TO', payload: { step: 'checklist' } })}
+            />
+          </Footer>
+        </Shell>
+      )
     case 'review_clean':
       return <Placeholder title="Screen 2 — review_clean" onAdvance={() => {
         dispatch({ type: 'ACK_PREVIOUS_DVIR' })
@@ -451,31 +549,246 @@ export default function InspectionScreen({ routeId }: InspectionScreenProps) {
   }
 }
 
-// ─── Placeholder ──────────────────────────────────────────────────────────────
-// Visible scaffolding so the state machine is testable without UI commitment.
-// Replaced screen-by-screen in the next pass.
+// ─── Placeholder (used by the still-stubbed screens until each pass lands) ──
 function Placeholder({ title, onAdvance, advanceLabel }: { title: string; onAdvance?: () => void; advanceLabel?: string }) {
   return (
     <div style={{
       minHeight: '100vh',
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
       gap: 16, padding: 24,
-      background: '#FFF9EE', color: '#0A0B14',
-      fontFamily: 'var(--font-inter), Inter, system-ui, sans-serif',
+      background: C.cream, color: C.ink,
+      fontFamily: FONT_BODY,
     }}>
       <div style={{ fontSize: 18, fontWeight: 800 }}>{title}</div>
       {onAdvance && (
         <button
           onClick={onAdvance}
           style={{
-            background: '#FFB800', color: '#0A0B14',
+            background: C.gold, color: C.ink,
             border: 0, padding: '12px 22px', borderRadius: 999,
             fontSize: 14, fontWeight: 800, cursor: 'pointer',
+            fontFamily: FONT_DISPLAY,
           }}
         >
           {advanceLabel ?? 'Advance →'}
         </button>
       )}
     </div>
+  )
+}
+
+// ─── Shared chrome ────────────────────────────────────────────────────────────
+
+// Full-height column with cream surface; every screen renders inside one.
+function Shell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="screen" style={{
+      background: C.cream, fontFamily: FONT_BODY, color: C.ink,
+      display: 'flex', flexDirection: 'column', minHeight: '100vh',
+    }}>
+      {children}
+    </div>
+  )
+}
+
+interface HeroProps {
+  eyebrow:    string
+  title:      string
+  truckName?: string | null
+  onBack?:    () => void
+  /** Progress dots — omit for non-working steps (loading/never_prompt/complete) */
+  progress?:  { total: number; index: number }
+}
+
+function Hero({ eyebrow, title, truckName, onBack, progress }: HeroProps) {
+  return (
+    <div style={{
+      background: C.blue, color: '#fff',
+      padding: '32px 22px 22px',
+      position: 'relative', overflow: 'hidden', flexShrink: 0,
+    }}>
+      {/* Decorative tilted gold star — same accent as Home/RouteList */}
+      <svg
+        aria-hidden="true"
+        width={160} height={160} viewBox="0 0 100 100"
+        style={{
+          position: 'absolute', right: -14, top: -8,
+          opacity: 0.20,
+          transform: 'rotate(25deg)', transformOrigin: 'center',
+          pointerEvents: 'none',
+        }}
+      >
+        <path d="M50 8l8 28 28 8-28 8-8 28-8-28-28-8 28-8z" fill={C.gold}/>
+      </svg>
+
+      {/* Top row: back button + brand mark */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        position: 'relative',
+      }}>
+        {onBack ? (
+          <button
+            onClick={onBack}
+            aria-label="Back to home"
+            style={{
+              width: 38, height: 38, borderRadius: 11,
+              background: 'rgba(255,255,255,0.16)',
+              border: 0, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            <BackIcon size={18} color="#fff"/>
+          </button>
+        ) : <div style={{ width: 38, height: 38 }}/>}
+        <div style={{
+          width: 32, height: 32, borderRadius: 9,
+          background: C.paper,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          overflow: 'hidden', flexShrink: 0,
+        }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/ptr-mark.png"
+            alt="PartyTime Rentals"
+            style={{ width: '74%', height: '74%', objectFit: 'contain' }}
+          />
+        </div>
+      </div>
+
+      {/* Eyebrow */}
+      <div style={{
+        marginTop: 18, position: 'relative',
+        fontSize: 11, fontWeight: 800, letterSpacing: '0.22em',
+        color: C.gold, textTransform: 'uppercase',
+        fontVariantNumeric: 'tabular-nums',
+      }}>
+        {eyebrow}
+      </div>
+
+      {/* Headline */}
+      <div style={{
+        marginTop: 6, position: 'relative',
+        fontFamily: FONT_DISPLAY,
+        fontSize: 30, fontWeight: 900,
+        lineHeight: 0.95, letterSpacing: '-0.03em',
+        color: '#fff',
+      }}>
+        {title}
+      </div>
+
+      {/* Truck pill */}
+      {truckName && (
+        <div style={{
+          marginTop: 12, position: 'relative',
+          fontSize: 13, color: 'rgba(255,255,255,0.85)',
+          letterSpacing: '-0.005em',
+        }}>
+          {truckName}
+        </div>
+      )}
+
+      {/* Progress dots — dynamic count, locked May 8 design (see Notion §Design Decisions) */}
+      {progress && (
+        <div style={{
+          marginTop: 16, position: 'relative',
+          display: 'flex', gap: 6, alignItems: 'center',
+        }} aria-hidden="true">
+          {Array.from({ length: progress.total }).map((_, i) => {
+            const done = i <  progress.index
+            const live = i === progress.index
+            return (
+              <span
+                key={i}
+                style={{
+                  width:  live ? 26 : 8,
+                  height: 8, borderRadius: 999,
+                  background: done ? C.gold : live ? C.gold : 'transparent',
+                  border: done || live ? 'none' : '1.5px solid rgba(255,255,255,0.45)',
+                  transition: 'width 200ms ease',
+                }}
+              />
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Sticky bottom CTA container. Matches Home's gold-CTA layout (60px pill).
+function Footer({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{
+      flexShrink: 0,
+      padding: '18px 18px calc(18px + env(safe-area-inset-bottom))',
+      background: C.cream,
+    }}>
+      {children}
+    </div>
+  )
+}
+
+interface PrimaryCTAProps {
+  label:     string
+  onClick:   () => void
+  disabled?: boolean
+  /** Override the gold pill — used by Screen 7 OOS state for a quieter neutral */
+  variant?:  'gold' | 'neutral'
+}
+
+function PrimaryCTA({ label, onClick, disabled, variant = 'gold' }: PrimaryCTAProps) {
+  const bg    = variant === 'neutral' ? C.ink   : C.gold
+  const fg    = variant === 'neutral' ? '#fff'  : C.ink
+  const arrowFg = variant === 'neutral' ? C.ink : '#fff'
+  const arrowBg = variant === 'neutral' ? '#fff' : C.ink
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        width: '100%', height: 60, borderRadius: 999,
+        background: bg, color: fg,
+        border: 0,
+        cursor: disabled ? 'default' : 'pointer',
+        opacity: disabled ? 0.5 : 1,
+        fontSize: 16, fontWeight: 900, fontFamily: FONT_DISPLAY,
+        letterSpacing: '-0.01em',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '0 8px 0 22px',
+        boxShadow: variant === 'gold' ? '0 14px 30px -10px rgba(255,184,0,0.55)' : 'none',
+      }}
+    >
+      <span>{label}</span>
+      <span style={{
+        width: 44, height: 44, borderRadius: '50%',
+        background: arrowBg,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        flexShrink: 0,
+      }}>
+        <ArrowIcon size={18} color={arrowFg}/>
+      </span>
+    </button>
+  )
+}
+
+// ─── Inline icons ─────────────────────────────────────────────────────────────
+type IconProps = { size?: number; color?: string }
+
+function BackIcon({ size = 18, color = '#fff' }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+         strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M19 12H5M12 19l-7-7 7-7"/>
+    </svg>
+  )
+}
+
+function ArrowIcon({ size = 18, color = '#fff' }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+         strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M5 12h14M13 5l7 7-7 7"/>
+    </svg>
   )
 }
