@@ -763,8 +763,70 @@ export default function InspectionScreen({ routeId }: InspectionScreenProps) {
         </Shell>
       )
     }
-    case 'checklist':
-      return <Placeholder title="Screen 5 — checklist" onAdvance={() => dispatch({ type: 'GO_TO', payload: { step: 'sign_submit' } })}/>
+    case 'checklist': {
+      // Hide trailer-specific rows when the driver answered "no" on Screen 4.
+      // For dvir_requirement = 'always' / 'never' trucks (no Screen 4 rendered),
+      // towingTrailer stays null — those trucks render the full 12 rows since
+      // we don't know they're not towing. Acceptable conservative default.
+      const towing = state.form.towingTrailer !== false
+      const visible = ALL_CATEGORIES.filter((k) => towing || !TRAILER_CATEGORIES.has(k))
+
+      // CTA enabled when every visible row has a complete record. Pass = always
+      // complete; fail requires non-empty description (severity is always set
+      // because tapping Fail prefills the OOS-default).
+      const canAdvance = visible.every((k) => {
+        const item = state.form.checklist[k]
+        if (item.state === 'pass') return true
+        if (item.state === 'fail') return item.description.trim().length > 0
+        return false
+      })
+
+      const failCount = visible.filter((k) => state.form.checklist[k].state === 'fail').length
+
+      return (
+        <Shell>
+          <Hero
+            eyebrow="Checklist"
+            title="Pre-trip checklist"
+            truckName={state.form.truckName}
+            onBack={() => router.replace('/')}
+            progress={{ total: progressTotal(state.form), index: progressIndex('checklist', state.form) }}
+          />
+          <div style={{ flex: 1, padding: '18px 18px 24px', overflowY: 'auto' }}>
+            <div style={{
+              padding: '4px 4px 16px',
+              fontSize: 13, color: C.muted, lineHeight: 1.45,
+            }}>
+              {visible.length} categor{visible.length === 1 ? 'y' : 'ies'} ·
+              default <strong style={{ color: C.green }}>Pass</strong>.
+              Tap <strong style={{ color: C.red }}>Fail</strong> if anything is wrong —
+              severity and notes appear inline.
+              {failCount > 0 && (
+                <> <span style={{ color: C.ink, fontWeight: 800 }}>{failCount} flagged.</span></>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {visible.map((k) => (
+                <ChecklistRow
+                  key={k}
+                  category={k}
+                  item={state.form.checklist[k]}
+                  onSet={(item) => dispatch({ type: 'SET_CHECKLIST_ITEM', payload: { category: k, item } })}
+                />
+              ))}
+            </div>
+          </div>
+          <Footer>
+            <PrimaryCTA
+              label={canAdvance ? 'Review & sign' : 'Add description to flagged items'}
+              disabled={!canAdvance}
+              onClick={() => dispatch({ type: 'GO_TO', payload: { step: 'sign_submit' } })}
+            />
+          </Footer>
+        </Shell>
+      )
+    }
     case 'sign_submit':
       return <Placeholder title="Screen 6 — sign_submit" onAdvance={() => {
         // Placeholder submit — UI pass will wire to /api/inspection/submit.
@@ -1161,6 +1223,210 @@ function DefectCard({ defect, acknowledged, onToggle }:
       >
         {acknowledged && <CheckIcon size={14} color={C.gold}/>}
       </div>
+    </button>
+  )
+}
+
+// ─── Checklist row (Screen 5) ────────────────────────────────────────────────
+
+// Compose a fail state with the locked OOS-default applied + a sensible
+// description prefill that the driver can edit. Tapping FAIL skips the
+// "fail_pending_severity" intermediate and lands directly on a complete
+// record — the severity prompt is still visible so the driver can flip
+// the choice without ceremony.
+function defaultFailState(category: CategoryKey): ChecklistItem {
+  const severity: 'oos' | 'non_oos' = OOS_DEFAULT_CATEGORIES.has(category) ? 'oos' : 'non_oos'
+  const description = `${CATEGORY_LABELS[category]} issue noted during pre-trip inspection.`
+  return { state: 'fail', severity, description }
+}
+
+function ChecklistRow({ category, item, onSet }:
+  { category: CategoryKey; item: ChecklistItem; onSet: (item: ChecklistItem) => void }) {
+
+  const isPass = item.state === 'pass'
+  const isFail = item.state === 'fail'
+
+  return (
+    <div style={{
+      background: C.paper,
+      border: `1.5px solid ${isFail ? C.red : 'rgba(10,11,20,0.10)'}`,
+      borderRadius: 18,
+      overflow: 'hidden',
+      boxShadow: isFail ? `4px 4px 0 ${C.red}` : '0 2px 8px -4px rgba(10,11,20,0.08)',
+      transition: 'border-color 150ms ease, box-shadow 150ms ease',
+    }}>
+      {/* Row header: label + pass/fail toggle */}
+      <div style={{
+        padding: '14px 16px',
+        display: 'flex', alignItems: 'center', gap: 12,
+      }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontSize: 10.5, fontWeight: 800, color: C.muted,
+            letterSpacing: '0.16em', textTransform: 'uppercase',
+            fontVariantNumeric: 'tabular-nums',
+          }}>
+            {CFR_SECTIONS[category]}
+          </div>
+          <div style={{
+            marginTop: 2,
+            fontFamily: FONT_DISPLAY,
+            fontSize: 16, fontWeight: 800, color: C.ink,
+            lineHeight: 1.2, letterSpacing: '-0.01em',
+          }}>
+            {CATEGORY_LABELS[category]}
+          </div>
+        </div>
+        {/* Pass/Fail toggle — paired buttons. Active = filled status color. */}
+        <div style={{
+          display: 'inline-flex',
+          background: C.off,
+          border: `1px solid rgba(10,11,20,0.08)`,
+          borderRadius: 999,
+          padding: 3,
+          flexShrink: 0,
+        }}>
+          <button
+            onClick={() => onSet({ state: 'pass' })}
+            aria-pressed={isPass}
+            style={{
+              background: isPass ? C.green : 'transparent',
+              color:      isPass ? '#fff'  : C.muted,
+              border: 0,
+              padding: '8px 14px', borderRadius: 999,
+              fontSize: 11.5, fontWeight: 900,
+              letterSpacing: '0.12em', textTransform: 'uppercase',
+              cursor: 'pointer',
+              fontFamily: FONT_DISPLAY,
+            }}
+          >
+            Pass
+          </button>
+          <button
+            onClick={() => onSet(defaultFailState(category))}
+            aria-pressed={isFail}
+            style={{
+              background: isFail ? C.red : 'transparent',
+              color:      isFail ? '#fff' : C.muted,
+              border: 0,
+              padding: '8px 14px', borderRadius: 999,
+              fontSize: 11.5, fontWeight: 900,
+              letterSpacing: '0.12em', textTransform: 'uppercase',
+              cursor: 'pointer',
+              fontFamily: FONT_DISPLAY,
+            }}
+          >
+            Fail
+          </button>
+        </div>
+      </div>
+
+      {/* Severity panel + description — inline expansion below the header.
+          Renders only when the row is in 'fail' state. */}
+      {isFail && item.state === 'fail' && (
+        <div style={{
+          borderTop: `1px solid rgba(220,38,38,0.20)`,
+          background: 'rgba(220,38,38,0.04)',
+          padding: '14px 16px 16px',
+        }}>
+          <div style={{
+            fontSize: 12, fontWeight: 800, color: C.ink,
+            letterSpacing: '0.04em',
+          }}>
+            Is the truck safe to drive?
+          </div>
+
+          <div style={{
+            marginTop: 8,
+            display: 'flex', gap: 8,
+          }}>
+            <SeverityButton
+              label="Out of service"
+              tone="oos"
+              selected={item.severity === 'oos'}
+              onClick={() => onSet({ ...item, severity: 'oos' })}
+            />
+            <SeverityButton
+              label="Drivable defect"
+              tone="non_oos"
+              selected={item.severity === 'non_oos'}
+              onClick={() => onSet({ ...item, severity: 'non_oos' })}
+            />
+          </div>
+
+          <div style={{
+            marginTop: 14,
+            fontSize: 11, fontWeight: 800, color: C.muted,
+            letterSpacing: '0.14em', textTransform: 'uppercase',
+          }}>
+            Description
+          </div>
+          <textarea
+            value={item.description}
+            onChange={(e) => onSet({ ...item, description: e.target.value })}
+            rows={2}
+            placeholder={`${CATEGORY_LABELS[category]} issue noted during pre-trip inspection.`}
+            style={{
+              marginTop: 6,
+              width: '100%',
+              background: C.paper,
+              border: `1.5px solid ${C.red}`,
+              borderRadius: 12,
+              padding: '10px 12px',
+              fontSize: 13.5, lineHeight: 1.4,
+              color: C.ink,
+              fontFamily: 'inherit',
+              resize: 'vertical',
+              minHeight: 56,
+              outline: 'none',
+              boxSizing: 'border-box',
+            }}
+          />
+          {item.description.trim().length === 0 && (
+            <div style={{
+              marginTop: 6,
+              fontSize: 11.5, color: C.red, fontWeight: 700,
+            }}>
+              Description required.
+            </div>
+          )}
+        </div>
+      )}
+
+    </div>
+  )
+}
+
+interface SeverityButtonProps {
+  label:    string
+  tone:     'oos' | 'non_oos'
+  selected: boolean
+  onClick:  () => void
+}
+
+function SeverityButton({ label, tone, selected, onClick }: SeverityButtonProps) {
+  const accent  = tone === 'oos' ? C.red : C.amber
+  const fg      = selected ? (tone === 'oos' ? '#fff' : C.ink) : accent
+  const bg      = selected ? accent : C.paper
+  const border  = `1.5px solid ${accent}`
+  return (
+    <button
+      onClick={onClick}
+      aria-pressed={selected}
+      style={{
+        flex: 1,
+        background: bg, color: fg, border,
+        borderRadius: 12,
+        padding: '10px 12px',
+        fontSize: 12, fontWeight: 900,
+        letterSpacing: '0.10em', textTransform: 'uppercase',
+        cursor: 'pointer',
+        fontFamily: FONT_DISPLAY,
+        boxShadow: selected ? `2px 2px 0 ${C.ink}` : 'none',
+        transition: 'background 120ms ease, color 120ms ease',
+      }}
+    >
+      {label}
     </button>
   )
 }

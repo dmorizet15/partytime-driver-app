@@ -55,6 +55,18 @@ Empty shells exist on `/tools` for the tile grid. Content + per-tool UI is the w
 - [ ] Phase B: Live ETA + status sync (mostly done — Migration 033 + cascade live)
 - [ ] Phase C: Driver assignment from dashboard (mostly done — auto-load shipped May 6)
 
+## Pre-trip inspection — edge cases to revisit (discovered 2026-05-09)
+
+- [ ] **Trailer rows on `dvir_requirement = 'never'` trucks.** Screen 5 currently
+      treats `towingTrailer !== false` as "show trailer rows" — for `'always'`
+      and `'never'` trucks (no Screen 4 fired), `towingTrailer` stays `null`,
+      so the full 12-row checklist renders. Conservative default: include
+      trailer rows when we don't know. Revisit once we have field data on how
+      often `'never'` trucks are inspected with a trailer attached. Likely
+      target: surface a Screen 4 variant for `'never'` + `'always'` trucks too,
+      or remove trailer rows for `'never'` trucks entirely.
+      Location: `src/screens/InspectionScreen.tsx`, `case 'checklist'`.
+
 ## Active blockers
 - Easy RFID Pro launch on Android (out of v1.1 scope)
 - CoPilot destination import — final validation on real device
