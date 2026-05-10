@@ -520,16 +520,130 @@ export default function InspectionScreen({ routeId }: InspectionScreenProps) {
           </Footer>
         </Shell>
       )
-    case 'review_clean':
-      return <Placeholder title="Screen 2 — review_clean" onAdvance={() => {
-        dispatch({ type: 'ACK_PREVIOUS_DVIR' })
+    case 'review_clean': {
+      const prior = state.form.previousInspection
+      // Defensive fallback — routing matrix shouldn't land here without a prior,
+      // but the !state-flag covers a manual GO_TO in the future.
+      if (!prior) {
         dispatch({ type: 'GO_TO', payload: { step: nextAfterReview(state.form) } })
-      }}/>
-    case 'review_defects':
-      return <Placeholder title="Screen 3 — review_defects" onAdvance={() => {
-        dispatch({ type: 'ACK_PREVIOUS_DVIR' })
+        return null
+      }
+      return (
+        <Shell>
+          <Hero
+            eyebrow={`Previous DVIR · ${formatPriorDate(prior.inspection_date)}`}
+            title="Review previous report"
+            truckName={state.form.truckName}
+            onBack={() => router.replace('/')}
+            progress={{ total: progressTotal(state.form), index: progressIndex('review_clean', state.form) }}
+          />
+          <div style={{ flex: 1, padding: '24px 22px 0', overflowY: 'auto' }}>
+            <div style={{
+              background: C.paper,
+              border: `1.5px solid ${C.green}`,
+              borderRadius: 18,
+              padding: '22px 20px',
+              boxShadow: `4px 4px 0 ${C.green}`,
+            }}>
+              <div style={{
+                display: 'inline-flex', alignItems: 'center', gap: 10,
+                background: C.green, color: '#fff',
+                padding: '5px 12px', borderRadius: 999,
+                fontSize: 10.5, fontWeight: 900, letterSpacing: '0.16em',
+                textTransform: 'uppercase',
+              }}>
+                <CheckCircleIcon size={14} color="#fff"/>
+                No defects
+              </div>
+              <div style={{
+                marginTop: 12,
+                fontFamily: FONT_DISPLAY,
+                fontSize: 22, fontWeight: 900, color: C.ink,
+                lineHeight: 1.15, letterSpacing: '-0.02em',
+              }}>
+                Truck was clean at last inspection.
+              </div>
+              <div style={{
+                marginTop: 10,
+                fontSize: 14, color: C.ink, lineHeight: 1.5,
+              }}>
+                {formatPriorDate(prior.inspection_date)} — no defects reported.
+                Confirm you&apos;ve reviewed the report and continue to your own
+                pre-trip.
+              </div>
+            </div>
+          </div>
+          <Footer>
+            <PrimaryCTA
+              label="I've reviewed the report"
+              onClick={() => {
+                dispatch({ type: 'ACK_PREVIOUS_DVIR' })
+                dispatch({ type: 'GO_TO', payload: { step: nextAfterReview(state.form) } })
+              }}
+            />
+          </Footer>
+        </Shell>
+      )
+    }
+
+    case 'review_defects': {
+      const prior = state.form.previousInspection
+      if (!prior || prior.open_defects.length === 0) {
         dispatch({ type: 'GO_TO', payload: { step: nextAfterReview(state.form) } })
-      }}/>
+        return null
+      }
+      const defects  = prior.open_defects
+      const allAcked = defects.every((d) => state.form.defectAcknowledgments.has(d.id))
+      const oosCount = defects.filter((d) => d.severity === 'oos').length
+
+      return (
+        <Shell>
+          <Hero
+            eyebrow={`Previous DVIR · ${formatPriorDate(prior.inspection_date)}`}
+            title="Acknowledge open defects"
+            truckName={state.form.truckName}
+            onBack={() => router.replace('/')}
+            progress={{ total: progressTotal(state.form), index: progressIndex('review_defects', state.form) }}
+          />
+          <div style={{ flex: 1, padding: '14px 18px 22px', overflowY: 'auto' }}>
+            <div style={{
+              padding: '10px 4px 14px',
+              fontSize: 12.5, color: C.muted, lineHeight: 1.45,
+            }}>
+              <strong style={{ color: C.ink, fontWeight: 800 }}>
+                {defects.length} open defect{defects.length === 1 ? '' : 's'}
+              </strong>
+              {oosCount > 0 && (
+                <> · <span style={{ color: C.red, fontWeight: 800 }}>{oosCount} OOS</span></>
+              )}
+              {' '}must be acknowledged before continuing. Tap each card to confirm
+              you&apos;ve read it.
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {defects.map((d) => (
+                <DefectCard
+                  key={d.id}
+                  defect={d}
+                  acknowledged={state.form.defectAcknowledgments.has(d.id)}
+                  onToggle={() => dispatch({ type: 'TOGGLE_DEFECT_ACK', payload: { defectId: d.id } })}
+                />
+              ))}
+            </div>
+          </div>
+          <Footer>
+            <PrimaryCTA
+              label={allAcked ? 'Confirm & continue' : `Acknowledge ${defects.length - countAcked(defects, state.form.defectAcknowledgments)} more`}
+              disabled={!allAcked}
+              onClick={() => {
+                if (!allAcked) return
+                dispatch({ type: 'ACK_PREVIOUS_DVIR' })
+                dispatch({ type: 'GO_TO', payload: { step: nextAfterReview(state.form) } })
+              }}
+            />
+          </Footer>
+        </Shell>
+      )
+    }
     case 'towing':
       return <Placeholder title="Screen 4 — towing" onAdvance={() => {
         // Default to false in placeholder; real UI will collect user input.
@@ -790,5 +904,150 @@ function ArrowIcon({ size = 18, color = '#fff' }: IconProps) {
          strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M5 12h14M13 5l7 7-7 7"/>
     </svg>
+  )
+}
+
+function CheckIcon({ size = 14, color = C.ink }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+         strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 12l5 5L20 6"/>
+    </svg>
+  )
+}
+
+function CheckCircleIcon({ size = 16, color = C.green }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+         strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="10"/>
+      <path d="M8 12l3 3 5-6"/>
+    </svg>
+  )
+}
+
+function AlertIcon({ size = 16, color = C.red }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+         strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 2L2 22h20L12 2z"/>
+      <line x1="12" y1="10" x2="12" y2="14"/>
+      <circle cx="12" cy="17.5" r="0.6" fill={color} stroke="none"/>
+    </svg>
+  )
+}
+
+// ─── Date + label helpers ─────────────────────────────────────────────────────
+
+// "Wed, May 8" — used in review screen eyebrows. Treats input as a local
+// date (not UTC) since vehicle_inspections.inspection_date is a DATE column,
+// not timestamptz. Avoids the off-by-one TZ shift on YYYY-MM-DD parsing.
+function formatPriorDate(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const dt = new Date(y, m - 1, d)
+  return dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+}
+
+function categoryLabel(category: string): string {
+  return CATEGORY_LABELS[category as CategoryKey] ?? category
+}
+
+function categoryCfr(category: string): string {
+  return CFR_SECTIONS[category as CategoryKey] ?? ''
+}
+
+function countAcked(defects: OpenDefect[], acked: ReadonlySet<string>): number {
+  let n = 0
+  for (const d of defects) if (acked.has(d.id)) n++
+  return n
+}
+
+// ─── Defect card (Screen 3) ───────────────────────────────────────────────────
+
+function DefectCard({ defect, acknowledged, onToggle }:
+  { defect: OpenDefect; acknowledged: boolean; onToggle: () => void }) {
+
+  const isOos       = defect.severity === 'oos'
+  const accent      = isOos ? C.red : C.amber
+  const badgeBg     = isOos ? C.red : C.amber
+  const badgeFg     = isOos ? '#fff' : C.ink
+  const badgeLabel  = isOos ? 'OOS' : 'NON-OOS'
+  const cfr         = categoryCfr(defect.category)
+
+  return (
+    <button
+      onClick={onToggle}
+      aria-pressed={acknowledged}
+      style={{
+        width: '100%', textAlign: 'left',
+        background: C.paper,
+        border: `1.5px solid ${acknowledged ? C.ink : accent}`,
+        borderRadius: 18,
+        padding: '14px 16px',
+        display: 'flex', gap: 14, alignItems: 'flex-start',
+        cursor: 'pointer',
+        fontFamily: 'inherit',
+        boxShadow: acknowledged ? `4px 4px 0 ${C.ink}` : `4px 4px 0 ${accent}`,
+        transition: 'box-shadow 150ms ease, border-color 150ms ease',
+      }}
+    >
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {/* Severity badge + CFR ref */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+        }}>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            background: badgeBg, color: badgeFg,
+            padding: '3px 9px', borderRadius: 999,
+            fontSize: 10, fontWeight: 900, letterSpacing: '0.16em',
+            textTransform: 'uppercase',
+          }}>
+            {isOos && <AlertIcon size={11} color="#fff"/>}
+            {badgeLabel}
+          </span>
+          {cfr && (
+            <span style={{
+              fontSize: 10.5, fontWeight: 800, color: C.muted,
+              letterSpacing: '0.08em', textTransform: 'uppercase',
+              fontVariantNumeric: 'tabular-nums',
+            }}>
+              {cfr}
+            </span>
+          )}
+        </div>
+        {/* Category + description */}
+        <div style={{
+          marginTop: 8,
+          fontFamily: FONT_DISPLAY,
+          fontSize: 16, fontWeight: 800, color: C.ink,
+          lineHeight: 1.2, letterSpacing: '-0.01em',
+        }}>
+          {categoryLabel(defect.category)}
+        </div>
+        <div style={{
+          marginTop: 4,
+          fontSize: 13.5, color: C.ink, lineHeight: 1.45,
+          opacity: 0.85,
+        }}>
+          {defect.description}
+        </div>
+      </div>
+
+      {/* Ack indicator — outline circle when unacked, filled ink with check when acked */}
+      <div
+        aria-hidden="true"
+        style={{
+          width: 28, height: 28, borderRadius: '50%',
+          border: `2px solid ${acknowledged ? C.ink : 'rgba(10,11,20,0.20)'}`,
+          background: acknowledged ? C.ink : 'transparent',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          flexShrink: 0,
+          marginTop: 2,
+        }}
+      >
+        {acknowledged && <CheckIcon size={14} color={C.gold}/>}
+      </div>
+    </button>
   )
 }
