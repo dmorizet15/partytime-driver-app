@@ -184,6 +184,15 @@ On cold sign-in, the app fetches the current driver's assignment for today and r
 ### Phase 2.5a cleanup SHIPPED ✅ — May 10, 2026 (commit `15d3476`)
 Dead TapGoods direct-call cluster removed. The driver app has read routes/stops exclusively from Supabase via `/api/routes` for weeks; the four-file GraphQL path was orphaned but still checked in. Deleted: `src/app/api/tapgoods/routes/route.ts`, `src/lib/tapgoodsClient.ts`, `src/lib/tapgoodsQueries.ts`, `src/lib/tapgoodsTransform.ts`, plus the now-empty `src/app/api/tapgoods/` directory. 270 lines gone. Phase A of Phase 2.5 (Source of Truth Migration) is now fully complete — not just "replaced" but "removed."
 
+### tools_only Home variant — May 11, 2026 (Session C of overnight run)
+**Reverses the May-10 User Management Phase 1 redirect.** Previously: `tools_only` users hitting `/` were redirected to `/tools` so they wouldn't see "Access denied". Now: `tools_only` users stay on `/` and see `ToolsOnlyHomeScreen` — a minimal Home variant with a blue greeting hero, a "This Week" card linking to `/schedule`, and a "Notifications and work schedule coming soon" placeholder. The redirect logic in `src/app/page.tsx` is gone; `tools_only` is just a third branch alongside driver / super_admin.
+
+Bottom nav update: Home tab's `rolesAllowed` now includes `tools_only` (was driver / super_admin only). Routes tab is still driver / super_admin only — `tools_only` users have no route assignments. Net visible tabs for `tools_only`: Home, Tools, Training, Profile.
+
+New `/schedule` route renders `WeekScheduleView` for driver / tools_only / super_admin. Drivers also reach the same component via a Today | Week toggle on the Routes tab (added to `RouteListScreen`). The Week view shows YOU treatment (gold pill, gold left bar, cream tint) on routes where `driver_id === currentUserId` for drivers and super_admin; `tools_only` sees all routes uniformly.
+
+Reason for the reversal: the original /tools-redirect was a placeholder while the Home variant was being designed. With Session C the variant exists, so `tools_only` users get their proper landing surface and the schedule view is exposed cleanly. The redirect-bounce is also gone — fewer hops to the user's actual workspace.
+
 Surviving `tapgoods_*` references are all legitimate Supabase column names (`tapgoods_order_token`, `tapgoods_stop_id`, etc., written by the dashboard's sync layer) plus the View Order URL template in `src/config/externalApps.ts`. Do NOT delete these.
 
 ### NEXT

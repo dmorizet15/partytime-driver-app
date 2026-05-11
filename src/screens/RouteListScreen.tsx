@@ -1,12 +1,20 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAppState } from '@/context/AppStateContext'
+import { useAuth } from '@/hooks/useAuth'
 import { useInspectionStatus } from '@/hooks/useInspectionStatus'
 import { Stop, PaymentState } from '@/types'
 import Image from 'next/image'
 import BottomNav from '@/components/BottomNav'
+import WeekScheduleView from '@/components/WeekScheduleView'
 import { formatEta } from '@/lib/formatEta'
+
+// Persisted per session — sessionStorage clears on cold app start, so the
+// driver gets the "Today" default each fresh launch, but can flip to Week
+// and have it stick through normal in-session navigation.
+const VIEW_KEY = 'routes:view'
 
 interface RouteListScreenProps {
   routeId: string
@@ -110,6 +118,22 @@ function BrandMark() {
 export default function RouteListScreen({ routeId }: RouteListScreenProps) {
   const router = useRouter()
   const { getRoute, getStopsForRoute, getRoutesForDate } = useAppState()
+  const { user, roles } = useAuth()
+
+  // Routes-tab Today/Week toggle. Default 'today'. sessionStorage persists
+  // across in-session navigation but clears on cold app start per spec.
+  const [view, setView] = useState<'today' | 'week'>('today')
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const stored = window.sessionStorage.getItem(VIEW_KEY)
+    if (stored === 'week') setView('week')
+  }, [])
+  const setViewPersisted = (next: 'today' | 'week') => {
+    setView(next)
+    if (typeof window !== 'undefined') {
+      try { window.sessionStorage.setItem(VIEW_KEY, next) } catch {}
+    }
+  }
 
   const route = getRoute(routeId)
   const stops = route ? getStopsForRoute(routeId) : []
@@ -193,8 +217,26 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
     router.push(`/route/${routeId}/stop/${stop.stop_id}`)
   }
 
+  // Week view short-circuits the Today render entirely — same surface chrome
+  // (toggle + BottomNav) but the body is the shared WeekScheduleView.
+  if (view === 'week') {
+    return (
+      <div className="screen" style={{ background: C.cream, fontFamily: FONT_BODY, color: C.ink }}>
+        <ViewToggle view={view} onChange={setViewPersisted} />
+        <div style={{ flex: 1, overflowY: 'auto' }}>
+          <WeekScheduleView
+            currentUserId={user?.id ?? null}
+            currentUserRole={roles?.includes('super_admin') ? 'super_admin' : (roles?.includes('driver') ? 'driver' : null)}
+          />
+        </div>
+        <BottomNav />
+      </div>
+    )
+  }
+
   return (
     <div className="screen" style={{ background: C.cream, fontFamily: FONT_BODY, color: C.ink }}>
+      <ViewToggle view={view} onChange={setViewPersisted} />
       {/* ── HERO ─────────────────────────────────────────────────────────── */}
       <div style={{
         background: C.blue, color: '#fff',
@@ -526,5 +568,55 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
 
       <BottomNav/>
     </div>
+  )
+}
+
+// ─── View toggle (Today | Week) ──────────────────────────────────────────────
+function ViewToggle({ view, onChange }: { view: 'today' | 'week'; onChange: (next: 'today' | 'week') => void }) {
+  return (
+    <div style={{
+      background: C.cream,
+      padding: '10px 18px',
+      display: 'flex', justifyContent: 'center',
+      borderBottom: '1px solid rgba(10,11,20,0.06)',
+      flexShrink: 0,
+    }}>
+      <div
+        role="tablist"
+        aria-label="Routes view"
+        style={{
+          display: 'inline-flex',
+          background: 'rgba(10,11,20,0.06)',
+          borderRadius: 999,
+          padding: 3,
+          fontFamily: FONT_BODY,
+        }}
+      >
+        <ToggleBtn active={view === 'today'} label="Today" onClick={() => onChange('today')} />
+        <ToggleBtn active={view === 'week'}  label="Week"  onClick={() => onChange('week')} />
+      </div>
+    </div>
+  )
+}
+
+function ToggleBtn({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      style={{
+        padding: '6px 16px', borderRadius: 999,
+        border: 0, cursor: 'pointer',
+        fontSize: 12, fontWeight: active ? 800 : 600,
+        fontFamily: 'inherit',
+        background: active ? C.ink : 'transparent',
+        color: active ? '#fff' : C.muted,
+        transition: 'background 120ms, color 120ms',
+      }}
+    >
+      {label}
+    </button>
   )
 }

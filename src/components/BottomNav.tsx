@@ -88,12 +88,14 @@ type Tab = {
 // assignment, it falls through to '/' so the driver sees the same no-assignment
 // state Home shows. The placeholder href below is overridden in render.
 // rolesAllowed: when present, the tab is visible only to users whose `roles`
-// array overlaps the list. Home and Routes are driver-only (a `tools_only`
-// user has no route assignments and is routed to /tools as their default).
-// Tools / Training / Profile have no allow-list — every authenticated
-// driver-app user can see them.
+// array overlaps the list. Home is visible to driver, super_admin, AND
+// tools_only (tools_only sees a minimal Home variant as of 2026-05-11 —
+// reversal of the May-10 redirect-to-/tools rule). Routes stays driver/
+// super_admin only — tools_only has no route assignments. Tools / Training
+// / Profile have no allow-list — every authenticated driver-app user can
+// see them.
 const TABS: Tab[] = [
-  { id: 'home',     label: 'Home',     href: '/',         isActive: (p) => p === '/',                  Icon: HomeIcon, rolesAllowed: ['driver', 'super_admin'] },
+  { id: 'home',     label: 'Home',     href: '/',         isActive: (p) => p === '/',                  Icon: HomeIcon, rolesAllowed: ['driver', 'super_admin', 'tools_only'] },
   { id: 'routes',   label: 'Routes',   href: '/',         isActive: (p) => p.startsWith('/route'),     Icon: RoutesIcon, rolesAllowed: ['driver', 'super_admin'] },
   { id: 'tools',    label: 'Tools',    href: '/tools',    isActive: (p) => p.startsWith('/tools'),     Icon: ToolsIcon },
   { id: 'training', label: 'Training', href: '/training', isActive: (p) => p.startsWith('/training'),  Icon: TrainingIcon },
