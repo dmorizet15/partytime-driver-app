@@ -739,7 +739,6 @@ export type Database = {
           id: string
           inspection_expiry: string | null
           insurance_expiry: string | null
-          license_plate: string | null
           make: string | null
           model: string | null
           name: string
@@ -767,7 +766,6 @@ export type Database = {
           id?: string
           inspection_expiry?: string | null
           insurance_expiry?: string | null
-          license_plate?: string | null
           make?: string | null
           model?: string | null
           name: string
@@ -795,7 +793,6 @@ export type Database = {
           id?: string
           inspection_expiry?: string | null
           insurance_expiry?: string | null
-          license_plate?: string | null
           make?: string | null
           model?: string | null
           name?: string
