@@ -94,6 +94,13 @@ export default function TentReferenceScreen() {
       setError(error?.message ?? 'Could not generate file link.')
       return
     }
+    // iOS Safari ignores iframe PDFs (renders blank or a download prompt).
+    // Hand off to the native viewer via a new tab instead.
+    const isIOS = typeof navigator !== 'undefined' && /iPhone|iPad|iPod/i.test(navigator.userAgent)
+    if (isIOS) {
+      window.open(data.signedUrl, '_blank')
+      return
+    }
     setViewer({ url: data.signedUrl, title: `${item.manufacturer} ${item.size}` })
   }
 
