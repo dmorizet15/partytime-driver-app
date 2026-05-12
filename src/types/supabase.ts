@@ -354,6 +354,53 @@ export type Database = {
         }
         Relationships: []
       }
+      flame_certificates: {
+        Row: {
+          created_at: string
+          file_name: string
+          file_path: string
+          id: string
+          manufacturer: string
+          notes: string | null
+          tent_reference_id: string | null
+          tent_size: string | null
+          updated_at: string
+          uploaded_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          file_name: string
+          file_path: string
+          id?: string
+          manufacturer: string
+          notes?: string | null
+          tent_reference_id?: string | null
+          tent_size?: string | null
+          updated_at?: string
+          uploaded_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          file_name?: string
+          file_path?: string
+          id?: string
+          manufacturer?: string
+          notes?: string | null
+          tent_reference_id?: string | null
+          tent_size?: string | null
+          updated_at?: string
+          uploaded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "flame_certificates_tent_reference_id_fkey"
+            columns: ["tent_reference_id"]
+            isOneToOne: false
+            referencedRelation: "tent_reference_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           archived_at: string | null
