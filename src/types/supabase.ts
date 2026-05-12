@@ -187,6 +187,7 @@ export type Database = {
           notes: string | null
           order_end_date: string | null
           order_start_date: string | null
+          order_status: string | null
           payment_state: Database["public"]["Enums"]["payment_state_enum"]
           required_pickup_count: number
           reservation_id: string
@@ -236,6 +237,7 @@ export type Database = {
           notes?: string | null
           order_end_date?: string | null
           order_start_date?: string | null
+          order_status?: string | null
           payment_state: Database["public"]["Enums"]["payment_state_enum"]
           required_pickup_count?: number
           reservation_id: string
@@ -285,6 +287,7 @@ export type Database = {
           notes?: string | null
           order_end_date?: string | null
           order_start_date?: string | null
+          order_status?: string | null
           payment_state?: Database["public"]["Enums"]["payment_state_enum"]
           required_pickup_count?: number
           reservation_id?: string
@@ -725,6 +728,80 @@ export type Database = {
         }
         Relationships: []
       }
+      tent_drawing_tapgoods_links: {
+        Row: {
+          created_at: string
+          id: string
+          tapgoods_product_id: string
+          tapgoods_product_name: string | null
+          tent_reference_item_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          tapgoods_product_id: string
+          tapgoods_product_name?: string | null
+          tent_reference_item_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          tapgoods_product_id?: string
+          tapgoods_product_name?: string | null
+          tent_reference_item_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tent_drawing_tapgoods_links_tent_reference_item_id_fkey"
+            columns: ["tent_reference_item_id"]
+            isOneToOne: false
+            referencedRelation: "tent_reference_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tent_reference_items: {
+        Row: {
+          created_at: string
+          file_name: string
+          id: string
+          is_primary: boolean
+          manufacturer: string
+          notes: string | null
+          size: string
+          storage_path: string
+          tent_type: string | null
+          updated_at: string
+          uploaded_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          file_name: string
+          id?: string
+          is_primary?: boolean
+          manufacturer: string
+          notes?: string | null
+          size: string
+          storage_path: string
+          tent_type?: string | null
+          updated_at?: string
+          uploaded_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          file_name?: string
+          id?: string
+          is_primary?: boolean
+          manufacturer?: string
+          notes?: string | null
+          size?: string
+          storage_path?: string
+          tent_type?: string | null
+          updated_at?: string
+          uploaded_by?: string | null
+        }
+        Relationships: []
+      }
       trucks: {
         Row: {
           active: boolean
@@ -1136,6 +1213,7 @@ export type Database = {
         | "otw"
         | "complete"
         | "cancelled"
+        | "cancelled_in_tg"
       payment_state_enum: "paid_in_full" | "cod" | "ar_customer" | "balance_due"
       route_status_enum: "draft" | "dispatched" | "in_progress" | "complete"
       stop_type_enum: "delivery" | "pickup"
@@ -1285,6 +1363,7 @@ export const Constants = {
         "otw",
         "complete",
         "cancelled",
+        "cancelled_in_tg",
       ],
       payment_state_enum: ["paid_in_full", "cod", "ar_customer", "balance_due"],
       route_status_enum: ["draft", "dispatched", "in_progress", "complete"],

@@ -124,7 +124,8 @@ type ToolTile = {
 }
 
 const TOOLS: ToolTile[] = [
-  { id: 'tenting',     name: 'Tenting',          sub: 'Calculators, diagrams, anchoring', Icon: TentIcon },
+  { id: 'tent-drawings', name: 'Tent Drawings',   sub: 'Manufacturer diagrams by size',    Icon: TentIcon, href: '/reference/tents' },
+  { id: 'tenting',     name: 'Tenting',          sub: 'Calculators, anchoring',           Icon: TentIcon },
   { id: 'dance-floor', name: 'Dance Floor',      sub: 'Size calculator',                  Icon: DanceFloorIcon },
   { id: 'stage',       name: 'Stage',            sub: 'Stage size calculator',            Icon: StageIcon },
   { id: 'heat-air',    name: 'Heat & Air',       sub: 'Tent climate calculator',          Icon: ThermometerIcon },
