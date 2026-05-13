@@ -299,8 +299,8 @@ export default function WeekScheduleView({
                       isCollapsed={collapsedRoutes.has(route.id)}
                       onToggle={() => toggleRoute(route.id)}
                       isYou={showYou && route.driver_id === currentUserId}
-                      showTown={townFilter || !equipFilter}
-                      showEquip={equipFilter || !townFilter}
+                      showTown={equipFilter || !townFilter}
+                      showEquip={townFilter || !equipFilter}
                     />
                   ))}
                 </div>

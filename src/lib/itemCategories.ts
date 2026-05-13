@@ -12,22 +12,27 @@
 // the manifest should show. Pass-through for unknown values keeps future
 // TapGoods additions visible instead of silently dropping them.
 
+// Keys are intentionally lowercased so the lookup tolerates whatever casing
+// TapGoods returns (productCategoryName has come through as both "Tents" and
+// "tents" across accounts). Values keep canonical display casing — exact-match
+// downstream consumers (StopCard `i.display === 'Tents'`, equipmentSummary
+// bucketOf) continue to work.
 const CATEGORY_MAP: Record<string, string> = {
-  'Misc':                'Miscellaneous',
-  'Tents':               'Tents',
-  'Tables':              'Tables',
-  'Chairs':              'Chairs',
-  'Tabletop':            'Tabletop',
-  'Linens':              'Linens',
-  'Inflatables':         'Inflatables',
-  'Lighting':            'Lighting',
-  'Audio & Video':       'Audio & Video',
-  // Legacy TapGoods category names — kept as the lookup key, mapped to the
-  // current display name. Confirmed against production samples:
+  'misc':                'Miscellaneous',
+  'tents':               'Tents',
+  'tables':              'Tables',
+  'chairs':              'Chairs',
+  'tabletop':            'Tabletop',
+  'linens':              'Linens',
+  'inflatables':         'Inflatables',
+  'lighting':            'Lighting',
+  'audio & video':       'Audio & Video',
+  // Legacy TapGoods category names — mapped to the current display name.
+  // Confirmed against production samples:
   //   Catering & Utility → BAKER'S RACK / SPEEDRACK     → Catering & Cooking
   //   Venues & Outdoors  → PATIO HEATER                 → Heating & Cooling
-  'Catering & Utility':  'Catering & Cooking',
-  'Venues & Outdoors':   'Heating & Cooling',
+  'catering & utility':  'Catering & Cooking',
+  'venues & outdoors':   'Heating & Cooling',
 }
 
 // Returns the display-name bucket for a single items[] entry. Order of
@@ -51,5 +56,5 @@ export function resolveCategory(rawCategory: string | undefined | null, name: st
     if (upper.includes('TENT') || upper.includes('WALL')) return 'Tents'
     return 'Miscellaneous'
   }
-  return CATEGORY_MAP[raw] ?? raw
+  return CATEGORY_MAP[raw.toLowerCase()] ?? raw
 }
