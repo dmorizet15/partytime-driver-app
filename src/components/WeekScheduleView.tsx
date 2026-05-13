@@ -26,12 +26,17 @@ const C = {
 const FONT_DISPLAY = "var(--font-archivo), 'Archivo', 'Inter', system-ui, -apple-system, sans-serif"
 const FONT_BODY    = "var(--font-inter), 'Inter', system-ui, -apple-system, sans-serif"
 
+interface EquipmentSummary {
+  tier1: string[]
+  tier2: string[]
+}
+
 interface Stop {
   id:            string
   stop_type:     string
   customer_name: string
   town:          string
-  line_items:    string
+  equipment:     EquipmentSummary
 }
 interface Route {
   id:          string
@@ -430,9 +435,36 @@ function StopRow({ stop }: { stop: Stop }) {
           {stop.town}
         </span>
       </div>
-      {stop.line_items && (
-        <div style={{ paddingLeft: 32, fontSize: 11.5, color: C.muted, lineHeight: 1.35, whiteSpace: 'pre-line' }}>
-          {stop.line_items}
+      {(stop.equipment.tier1.length > 0 || stop.equipment.tier2.length > 0) && (
+        <div style={{ paddingLeft: 32, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {stop.equipment.tier1.length > 0 && (
+            <div style={{ fontSize: 11.5, color: C.muted, lineHeight: 1.35 }}>
+              {stop.equipment.tier1.join(' · ')}
+            </div>
+          )}
+          {stop.equipment.tier2.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              {stop.equipment.tier2.map((cat) => (
+                <span
+                  key={cat}
+                  style={{
+                    padding: '2px 8px',
+                    borderRadius: 999,
+                    background: 'rgba(10,11,20,0.06)',
+                    color: C.muted,
+                    fontSize: 9.5,
+                    fontWeight: 700,
+                    letterSpacing: '0.04em',
+                    textTransform: 'uppercase',
+                    whiteSpace: 'nowrap',
+                    lineHeight: 1.2,
+                  }}
+                >
+                  {cat}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

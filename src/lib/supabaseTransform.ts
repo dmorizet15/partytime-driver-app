@@ -1,4 +1,5 @@
 import type { PaymentState, Route, Stop, StopStatus } from '@/types'
+import { buildEquipmentSummary } from './equipmentSummary'
 
 // ─── Row shapes returned by the Supabase queries ─────────────────────────────
 export interface SupabaseTruckRow {
@@ -63,39 +64,8 @@ export interface SupabaseStopRow {
   tapgoods_order_token:  string | null
 }
 
-// ─── Items formatter ─────────────────────────────────────────────────────────
-// Mirrors the dashboard's print/route formatter so drivers see the same item
-// summary the warehouse sees on the load list.
+// Local alias — the items[] row shape coming back from dispatch_stops.
 type RawItem = { category?: string | null; name?: string | null; qty?: number | null }
-
-function formatItemsText(items: unknown): string | undefined {
-  if (!Array.isArray(items) || items.length === 0) return undefined
-  const lines = items as RawItem[]
-
-  const tents = lines
-    .filter((i) => (i.category ?? '').toLowerCase() === 'tents')
-    .map((t) => {
-      const m = (t.name ?? '').match(/(\d+\s*[xX×]\s*\d+)/)
-      const size = m ? m[1] : (t.name ?? '').trim()
-      const qty  = t.qty ?? 1
-      return qty > 1 ? `${size} ×${qty}` : size
-    })
-    .filter(Boolean)
-
-  const catTotals = new Map<string, number>()
-  for (const o of lines.filter((i) => (i.category ?? '').toLowerCase() !== 'tents')) {
-    const cat = o.category ?? ''
-    if (!cat) continue
-    catTotals.set(cat, (catTotals.get(cat) ?? 0) + (o.qty ?? 1))
-  }
-  const others: string[] = []
-  catTotals.forEach((qty, cat) => others.push(qty > 1 ? `${cat} ×${qty}` : cat))
-
-  const parts: string[] = []
-  if (tents.length)  parts.push(`Tents: ${tents.join(', ')}`)
-  if (others.length) parts.push(others.join(', '))
-  return parts.length ? parts.join(' · ') : undefined
-}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 // PostgREST embedded relationships can come back as either an object or a
@@ -141,7 +111,7 @@ function toRealStop(s: SupabaseStopRow, routeId: string, seq: number): Stop {
     customer_phone: s.customer_phone ?? '',
     customer_cell:  s.customer_cell  ?? undefined,
     notes:          s.notes ?? undefined,
-    items_text:     formatItemsText(s.items),
+    equipment:      buildEquipmentSummary(s.items),
     items:          Array.isArray(s.items) ? (s.items as RawItem[]) : undefined,
     payment_state:  mapPaymentState(s.payment_state),
     balance_due_amount: s.balance_due_amount,
@@ -185,7 +155,7 @@ function buildWarehouseStop(block: BreakBlock, routeId: string, seq: number): St
     customer_phone: '',
     customer_cell:  undefined,
     notes:          undefined,
-    items_text:     undefined,
+    equipment:      { tier1: [], tier2: [] },
     items:          undefined,
     payment_state:  undefined,
     balance_due_amount: null,

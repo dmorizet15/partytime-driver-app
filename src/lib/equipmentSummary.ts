@@ -1,31 +1,30 @@
 // equipmentSummary.ts
 // ───────────────────
-// Builds a 1–2 line equipment summary string for a stop, prioritized per
-// Schedule View v1 spec:
+// Two-tier equipment summary used by every space-constrained surface:
+// dashboard condensed board, driver-app week view, driver-app condensed
+// route list. Full-card surfaces render the manifest in their own way and
+// do not consume this helper.
 //
-//   1. TENTS first — consolidated by parsed size, count-prefixed
-//      ("1 40×100 · 3 20×20 · 2 20×40")
-//   2. CHAIRS and TABLES — single rolled-up totals ("100 chairs · 6 tables")
-//   3. FLOORING & STAGING — category-level mention ("dance floor · stage")
-//   4. Everything else — category names only, joined with " · "
+// Tier 1 — always spelled out as text, in this fixed order when present:
+//   1. Tents       — consolidated by parsed size ("1 40×100 · 2 20×20")
+//   2. Chairs      — rolled-up total ("100 chairs"). Chair-name override:
+//                    any item whose name contains CHAIR routes here even if
+//                    raw category is "Misc" (mirrors itemCategories
+//                    resolveCategory; chair counts matter operationally).
+//   3. Tables      — rolled-up total ("6 tables")
+//   4. Linens      — rolled-up total ("12 linens")
+//   5. Inflatables — one token per line item, qty-prefixed, original order
+//                    ("1 Bounce House · 1 Giant Slide"). No name-dedup —
+//                    each line stays separately visible.
 //
-// Existing line-item formatters in the codebase informed the shape but each
-// targets a different surface and none implements the spec's exact ordering:
-//   • dashboard print/route: formatItemsFull() — splits tents vs others,
-//     qty-suffixes per item rather than per consolidated size
-//   • driver-app supabaseTransform: formatItemsText() — same shape as print,
-//     joins with " · "
-//   • stopTimeEstimator: estimateMinutes() — counts tent sqft for the time
-//     formula, owns the (\d+)\s*[xX×]\s*(\d+) regex
+// Tier 2 — every category not matched above, deduped + lowercased,
+// alphabetically sorted. Renderers display these as small pills (no qty).
 //
-// All three live independently and serve different surfaces — no shared
-// helper to extend. Stop.items is stored as untyped JSON in dispatch_stops
-// (column type `unknown | null` in /src/types/board.ts) with the shape
-// { category, name, qty } established at sync time in tapgoodsSync.ts
-// buildItems().
+// Inflatable classification reuses the keyword list in inflatable.ts so
+// the same definition drives both the INFLATABLE badge and the Tier 1
+// inflatables group.
 
-const LINE_LIMIT = 2
-const LINE_CHAR_CAP = 90 // soft per-line cap; truncate with "…" on overflow
+import { isInflatableCategory } from './inflatable'
 
 interface ItemLine {
   category: string
@@ -37,129 +36,86 @@ interface StopLike {
   items: unknown
 }
 
-// Public API — pass any object with an `items` field (DispatchStop, Stop, etc).
-export function buildStopEquipmentSummary(stop: StopLike): string {
+export interface EquipmentSummary {
+  tier1: string[]
+  tier2: string[]
+}
+
+export function buildStopEquipmentSummary(stop: StopLike): EquipmentSummary {
   return buildEquipmentSummary(stop.items)
 }
 
-// Lower-level entry — useful for tests and direct callers that already have
-// a parsed items array.
-export function buildEquipmentSummary(items: unknown): string {
-  if (!Array.isArray(items) || items.length === 0) return ''
+export function buildEquipmentSummary(items: unknown): EquipmentSummary {
+  const empty: EquipmentSummary = { tier1: [], tier2: [] }
+  if (!Array.isArray(items) || items.length === 0) return empty
   const lines = items as ItemLine[]
 
-  const groups: { tents: string[]; chairs: number; tables: number; flooringStaging: string[]; others: string[] } = {
-    tents:            buildTentTokens(lines),
-    chairs:           sumByExactCategory(lines, 'chairs'),
-    tables:           sumByExactCategory(lines, 'tables'),
-    flooringStaging:  flooringStagingTokens(lines),
-    others:           otherCategoryTokens(lines),
+  type Bucket = 'tents' | 'chairs' | 'tables' | 'linens' | 'inflatables' | 'other'
+  function bucketOf(i: ItemLine): Bucket {
+    const cat  = (i.category ?? '').toLowerCase().trim()
+    const name = (i.name ?? '').toUpperCase()
+    if (name.includes('CHAIR'))      return 'chairs'
+    if (isInflatableCategory(cat))   return 'inflatables'
+    if (cat === 'tents')             return 'tents'
+    if (cat === 'chairs')            return 'chairs'
+    if (cat === 'tables')            return 'tables'
+    if (cat === 'linens')            return 'linens'
+    return 'other'
   }
 
-  const tokens: string[] = []
-  tokens.push(...groups.tents)
-  if (groups.chairs > 0) tokens.push(`${groups.chairs} chairs`)
-  if (groups.tables > 0) tokens.push(`${groups.tables} tables`)
-  tokens.push(...groups.flooringStaging)
-  tokens.push(...groups.others)
+  const tents:       ItemLine[] = []
+  const chairs:      ItemLine[] = []
+  const tables:      ItemLine[] = []
+  const linens:      ItemLine[] = []
+  const inflatables: ItemLine[] = []
+  const others:      ItemLine[] = []
 
-  if (tokens.length === 0) return ''
-
-  return wrapAndCap(tokens)
-}
-
-// Tents consolidated by parsed size. "40×100" extracted from item.name; falls
-// back to the raw name when the dimension regex doesn't match (rare — e.g.
-// "Pole tent assembly fee" line items). Token format: "1 40×100", "3 20×20".
-function buildTentTokens(lines: ItemLine[]): string[] {
-  const tents = lines.filter((i) => (i.category ?? '').toLowerCase() === 'tents')
-  if (tents.length === 0) return []
-  const counts = new Map<string, number>()
-  for (const t of tents) {
-    const m = (t.name ?? '').match(/(\d+)\s*[xX×]\s*(\d+)/)
-    const size = m ? `${m[1]}×${m[2]}` : (t.name ?? '').trim()
-    if (!size) continue
-    counts.set(size, (counts.get(size) ?? 0) + (t.qty || 1))
-  }
-  return Array.from(counts.entries())
-    .sort((a, b) => b[1] - a[1])
-    .map(([size, qty]) => `${qty} ${size}`)
-}
-
-function sumByExactCategory(lines: ItemLine[], target: string): number {
-  return lines
-    .filter((i) => (i.category ?? '').toLowerCase() === target)
-    .reduce((sum, i) => sum + (i.qty || 1), 0)
-}
-
-// "Flooring & Staging" is typically one TapGoods category; some accounts
-// split into separate "Dance Floor" / "Staging" categories. Both flow into
-// the same group here as bare category names (no qty), per spec.
-function flooringStagingTokens(lines: ItemLine[]): string[] {
-  const seen = new Set<string>()
-  const out: string[] = []
   for (const i of lines) {
-    const c = (i.category ?? '').toLowerCase()
-    const isMatch =
-      c.includes('flooring') ||
-      c.includes('staging') ||
-      c === 'stage' ||
-      c === 'dance floor' ||
-      c === 'dance floors'
-    if (!isMatch) continue
-    const key = (i.category ?? '').trim().toLowerCase()
-    if (!key || seen.has(key)) continue
-    seen.add(key)
-    out.push((i.category ?? '').trim().toLowerCase())
+    switch (bucketOf(i)) {
+      case 'tents':       tents.push(i); break
+      case 'chairs':      chairs.push(i); break
+      case 'tables':      tables.push(i); break
+      case 'linens':      linens.push(i); break
+      case 'inflatables': inflatables.push(i); break
+      default:            others.push(i); break
+    }
   }
-  return out
-}
 
-function otherCategoryTokens(lines: ItemLine[]): string[] {
+  const tier1: string[] = []
+
+  if (tents.length > 0) {
+    const counts = new Map<string, number>()
+    for (const t of tents) {
+      const m = (t.name ?? '').match(/(\d+)\s*[xX×]\s*(\d+)/)
+      const size = m ? `${m[1]}×${m[2]}` : (t.name ?? '').trim()
+      if (!size) continue
+      counts.set(size, (counts.get(size) ?? 0) + (t.qty || 1))
+    }
+    for (const [size, qty] of Array.from(counts.entries()).sort((a, b) => b[1] - a[1])) {
+      tier1.push(`${qty} ${size}`)
+    }
+  }
+
+  const chairTotal = chairs.reduce((s, i) => s + (i.qty || 1), 0)
+  if (chairTotal > 0) tier1.push(`${chairTotal} chairs`)
+  const tableTotal = tables.reduce((s, i) => s + (i.qty || 1), 0)
+  if (tableTotal > 0) tier1.push(`${tableTotal} tables`)
+  const linenTotal = linens.reduce((s, i) => s + (i.qty || 1), 0)
+  if (linenTotal > 0) tier1.push(`${linenTotal} linens`)
+
+  for (const inf of inflatables) {
+    const name = (inf.name ?? '').trim() || 'Inflatable'
+    const qty  = inf.qty || 1
+    tier1.push(`${qty} ${name}`)
+  }
+
   const seen = new Set<string>()
-  const out: string[] = []
-  for (const i of lines) {
-    const raw = (i.category ?? '').trim()
+  for (const o of others) {
+    const raw = (o.category ?? '').trim().toLowerCase()
     if (!raw) continue
-    const lower = raw.toLowerCase()
-    if (
-      lower === 'tents' ||
-      lower === 'chairs' ||
-      lower === 'tables' ||
-      lower.includes('flooring') ||
-      lower.includes('staging') ||
-      lower === 'stage' ||
-      lower === 'dance floor' ||
-      lower === 'dance floors'
-    ) continue
-    if (seen.has(lower)) continue
-    seen.add(lower)
-    out.push(lower)
+    seen.add(raw)
   }
-  return out
-}
+  const tier2 = Array.from(seen).sort()
 
-// Joins tokens with " · " and wraps to at most LINE_LIMIT lines. If the
-// content would overflow, truncate the last visible token with "…".
-function wrapAndCap(tokens: string[]): string {
-  const lines: string[] = []
-  let current = ''
-  for (const tok of tokens) {
-    const candidate = current ? `${current} · ${tok}` : tok
-    if (candidate.length <= LINE_CHAR_CAP) {
-      current = candidate
-      continue
-    }
-    if (current) lines.push(current)
-    current = tok
-    if (lines.length >= LINE_LIMIT - 1 && (current.length > LINE_CHAR_CAP || tokens.indexOf(tok) < tokens.length - 1)) {
-      const truncated = current.length > LINE_CHAR_CAP
-        ? current.slice(0, LINE_CHAR_CAP - 1) + '…'
-        : current + ' …'
-      lines.push(truncated)
-      return lines.slice(0, LINE_LIMIT).join('\n')
-    }
-  }
-  if (current) lines.push(current)
-  return lines.slice(0, LINE_LIMIT).join('\n')
+  return { tier1, tier2 }
 }

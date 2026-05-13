@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
 import { createClient } from '@supabase/supabase-js'
-import { buildEquipmentSummary } from '@/lib/equipmentSummary'
+import { buildEquipmentSummary, type EquipmentSummary } from '@/lib/equipmentSummary'
 
 function getSessionClient() {
   const cookieStore = cookies()
@@ -64,7 +64,7 @@ interface ScheduleStop {
   stop_type:     string
   customer_name: string
   town:          string
-  line_items:    string
+  equipment:     EquipmentSummary
 }
 
 interface ScheduleRoute {
@@ -157,7 +157,7 @@ export async function GET(req: NextRequest) {
       stop_type:     (s.stop_type as string) ?? 'delivery',
       customer_name: (s.customer_name as string) ?? '',
       town:          extractTown(s.address as string | null),
-      line_items:    buildEquipmentSummary(s.items),
+      equipment:     buildEquipmentSummary(s.items),
     }
     const arr = stopsByRoute.get(s.route_id as string)
     if (arr) arr.push(stop)

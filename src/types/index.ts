@@ -23,6 +23,15 @@ export interface Route {
   truck_2_name?: string
 }
 
+// ─── Equipment summary ───────────────────────────────────────────────────────
+// Two-tier shape produced by lib/equipmentSummary.ts. Tier 1 is the
+// fixed-order text headline (tents, chairs, tables, linens, inflatables).
+// Tier 2 is the deduped category names rendered downstream as pills.
+export interface EquipmentSummary {
+  tier1: string[]
+  tier2: string[]
+}
+
 // ─── Stop ────────────────────────────────────────────────────────────────────
 export interface Stop {
   stop_id: string
@@ -44,7 +53,7 @@ export interface Stop {
   customer_phone: string     // legacy: whatever phoneNumbers[0].cell returned (often landline)
   customer_cell?: string     // explicit Mobile-typed phone — preferred for SMS
   notes?: string
-  items_text?: string
+  equipment: EquipmentSummary
   items?: Array<{ category?: string | null; name?: string | null; qty?: number | null }>
   payment_state?: PaymentState
   balance_due_amount?: number | null  // dollars owed at delivery; null when nothing to collect

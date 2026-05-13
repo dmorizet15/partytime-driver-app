@@ -476,13 +476,40 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
                       </div>
                     )}
 
-                    {stop.items_text && (
-                      <div style={{
-                        marginTop: 2, fontSize: 11.5,
-                        color: 'rgba(107,116,136,0.75)',
-                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                      }}>
-                        {stop.items_text}
+                    {(stop.equipment.tier1.length > 0 || stop.equipment.tier2.length > 0) && (
+                      <div style={{ marginTop: 2, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        {stop.equipment.tier1.length > 0 && (
+                          <div style={{
+                            fontSize: 11.5,
+                            color: 'rgba(107,116,136,0.75)',
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          }}>
+                            {stop.equipment.tier1.join(' · ')}
+                          </div>
+                        )}
+                        {stop.equipment.tier2.length > 0 && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                            {stop.equipment.tier2.map((cat) => (
+                              <span
+                                key={cat}
+                                style={{
+                                  padding: '2px 8px',
+                                  borderRadius: 999,
+                                  background: 'rgba(10,11,20,0.06)',
+                                  color: C.muted,
+                                  fontSize: 9.5,
+                                  fontWeight: 700,
+                                  letterSpacing: '0.04em',
+                                  textTransform: 'uppercase',
+                                  whiteSpace: 'nowrap',
+                                  lineHeight: 1.2,
+                                }}
+                              >
+                                {cat}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )}
 
