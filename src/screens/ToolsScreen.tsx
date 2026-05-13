@@ -103,6 +103,20 @@ function DocIcon({ size = 22, color = C.gold }: IconProps) {
   )
 }
 
+function BookIcon({ size = 22, color = C.gold }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+         strokeWidth={STROKE_WIDTH} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 4.5A1.5 1.5 0 0 1 5.5 3H11v17H5.5A1.5 1.5 0 0 1 4 18.5z"/>
+      <path d="M20 4.5A1.5 1.5 0 0 0 18.5 3H13v17h5.5A1.5 1.5 0 0 0 20 18.5z"/>
+      <line x1="6.5" y1="7" x2="9" y2="7"/>
+      <line x1="6.5" y1="10" x2="9" y2="10"/>
+      <line x1="15" y1="7" x2="17.5" y2="7"/>
+      <line x1="15" y1="10" x2="17.5" y2="10"/>
+    </svg>
+  )
+}
+
 function CloudIcon({ size = 22, color = C.gold }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
@@ -124,7 +138,8 @@ type ToolTile = {
 }
 
 const TOOLS: ToolTile[] = [
-  { id: 'tent-drawings', name: 'Tent Drawings',   sub: 'Manufacturer diagrams by size',    Icon: TentIcon, href: '/reference/tents' },
+  { id: 'tent-drawings',     name: 'Tent Drawings',     sub: 'Manufacturer diagrams by size',    Icon: TentIcon, href: '/reference/tents' },
+  { id: 'reference-library', name: 'Reference Library', sub: 'Heater, generator & equipment docs', Icon: BookIcon, href: '/reference/library' },
   { id: 'tenting',     name: 'Tenting',          sub: 'Calculators, anchoring',           Icon: TentIcon },
   { id: 'dance-floor', name: 'Dance Floor',      sub: 'Size calculator',                  Icon: DanceFloorIcon },
   { id: 'stage',       name: 'Stage',            sub: 'Stage size calculator',            Icon: StageIcon },

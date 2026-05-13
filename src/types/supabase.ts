@@ -455,6 +455,153 @@ export type Database = {
           },
         ]
       }
+      reference_library_categories: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          sort_order: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          sort_order?: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          sort_order?: number
+        }
+        Relationships: []
+      }
+      reference_library_item_tags: {
+        Row: {
+          item_id: string
+          tag_id: string
+        }
+        Insert: {
+          item_id: string
+          tag_id: string
+        }
+        Update: {
+          item_id?: string
+          tag_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reference_library_item_tags_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "reference_library_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reference_library_item_tags_tag_id_fkey"
+            columns: ["tag_id"]
+            isOneToOne: false
+            referencedRelation: "reference_library_tags"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reference_library_items: {
+        Row: {
+          category_id: string | null
+          created_at: string
+          description: string
+          external_url: string | null
+          file_path: string | null
+          id: string
+          is_public: boolean
+          manufacturer_id: string | null
+          name: string
+          updated_at: string
+          uploaded_by: string | null
+        }
+        Insert: {
+          category_id?: string | null
+          created_at?: string
+          description: string
+          external_url?: string | null
+          file_path?: string | null
+          id?: string
+          is_public?: boolean
+          manufacturer_id?: string | null
+          name: string
+          updated_at?: string
+          uploaded_by?: string | null
+        }
+        Update: {
+          category_id?: string | null
+          created_at?: string
+          description?: string
+          external_url?: string | null
+          file_path?: string | null
+          id?: string
+          is_public?: boolean
+          manufacturer_id?: string | null
+          name?: string
+          updated_at?: string
+          uploaded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reference_library_items_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "reference_library_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reference_library_items_manufacturer_id_fkey"
+            columns: ["manufacturer_id"]
+            isOneToOne: false
+            referencedRelation: "reference_library_manufacturers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reference_library_manufacturers: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
+      reference_library_tags: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          tag_type: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          tag_type: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          tag_type?: string
+        }
+        Relationships: []
+      }
       reservations: {
         Row: {
           created_at: string
@@ -1251,7 +1398,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      is_super_admin: { Args: never; Returns: boolean }
     }
     Enums: {
       dispatch_status_enum:
