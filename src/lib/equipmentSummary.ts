@@ -89,14 +89,27 @@ export function buildEquipmentSummary(items: unknown): EquipmentSummary {
   const tier1: string[] = []
 
   if (tents.length > 0) {
-    const counts = new Map<string, number>()
+    // Tent dimension parser — mirrors parseTentSqft in the dashboard's
+    // stopTimeEstimator.ts. Handles optional foot/inch marks on either
+    // side (44'X83', 7'X20') which the simpler `\d×\d` regex would miss.
+    const TENT_DIM_RE = /(\d+)\s*['"′″]?\s*[xX×]\s*['"′″]?\s*(\d+)/
+    const counts = new Map<string, { qty: number; sqft: number }>()
     for (const t of tents) {
-      const m = (t.name ?? '').match(/(\d+)\s*[xX×]\s*(\d+)/)
+      const m = (t.name ?? '').match(TENT_DIM_RE)
       const size = m ? `${m[1]}×${m[2]}` : (t.name ?? '').trim()
       if (!size) continue
-      counts.set(size, (counts.get(size) ?? 0) + (t.qty || 1))
+      const sqft = m ? Number(m[1]) * Number(m[2]) : 0
+      const existing = counts.get(size)
+      if (existing) existing.qty += t.qty || 1
+      else counts.set(size, { qty: t.qty || 1, sqft })
     }
-    for (const [size, qty] of Array.from(counts.entries()).sort((a, b) => b[1] - a[1])) {
+    // Sort by physical sqft × qty descending — same priority weighting the
+    // full StopCard / WarehouseStopCard use so the largest pieces always
+    // lead the line (40×100 before 7×20, etc.). Non-parseable entries
+    // (assembly fees, walls without dims) get sqft=0 and trail.
+    for (const [size, { qty }] of Array.from(counts.entries()).sort(
+      ([, a], [, b]) => b.sqft * b.qty - a.sqft * a.qty,
+    )) {
       tier1.push(`${qty} ${size}`)
     }
   }
