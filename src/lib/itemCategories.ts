@@ -67,5 +67,14 @@ export function resolveCategory(rawCategory: string | undefined | null, name: st
     if (upper.includes('STAGE') || upper.includes('DANCE FLOOR')) return 'Flooring and Staging'
     return 'Miscellaneous'
   }
+  // Misc-category rescue: TapGoods sometimes files staging hardware
+  // (skirts, ramps, deck panels, stage segments) under "Misc" because the
+  // UI category doesn't match the API category value. Catch by name before
+  // CATEGORY_MAP collapses everything to Miscellaneous. CHAIR is already
+  // caught at the top of the function so it applies to Misc rows too.
+  if (raw.toLowerCase() === 'misc') {
+    if (upper.includes('STAGE') || upper.includes('SKIRT')) return 'Flooring and Staging'
+    if (upper.includes('RAMP')  || upper.includes('DECK'))  return 'Flooring and Staging'
+  }
   return CATEGORY_MAP[raw.toLowerCase()] ?? raw
 }
