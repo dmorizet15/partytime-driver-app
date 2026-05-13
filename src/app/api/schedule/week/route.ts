@@ -60,11 +60,12 @@ function extractTown(address: string | null): string {
 }
 
 interface ScheduleStop {
-  id:            string
-  stop_type:     string
-  customer_name: string
-  town:          string
-  equipment:     EquipmentSummary
+  id:                   string
+  stop_type:            string
+  customer_name:        string
+  town:                 string
+  equipment:            EquipmentSummary
+  tapgoods_order_token: string | null
 }
 
 interface ScheduleRoute {
@@ -110,7 +111,7 @@ export async function GET(req: NextRequest) {
       .order('route_number', { ascending: true, nullsFirst: false }),
     db
       .from('dispatch_stops')
-      .select('id, route_id, route_position, stop_type, customer_name, address, items')
+      .select('id, route_id, route_position, stop_type, customer_name, address, items, tapgoods_order_token')
       .gte('scheduled_date', start)
       .lt('scheduled_date', endExclusive)
       .not('route_id', 'is', null)
@@ -153,11 +154,12 @@ export async function GET(req: NextRequest) {
   for (const s of stops) {
     if (!s.route_id) continue
     const stop: ScheduleStop = {
-      id:            s.id as string,
-      stop_type:     (s.stop_type as string) ?? 'delivery',
-      customer_name: (s.customer_name as string) ?? '',
-      town:          extractTown(s.address as string | null),
-      equipment:     buildEquipmentSummary(s.items),
+      id:                   s.id as string,
+      stop_type:             (s.stop_type as string) ?? 'delivery',
+      customer_name:         (s.customer_name as string) ?? '',
+      town:                  extractTown(s.address as string | null),
+      equipment:             buildEquipmentSummary(s.items),
+      tapgoods_order_token:  (s.tapgoods_order_token as string | null) ?? null,
     }
     const arr = stopsByRoute.get(s.route_id as string)
     if (arr) arr.push(stop)

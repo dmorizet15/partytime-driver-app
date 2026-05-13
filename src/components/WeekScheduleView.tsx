@@ -7,6 +7,7 @@
 // endpoint, identical payload shape to the dashboard's).
 
 import { useEffect, useMemo, useState } from 'react'
+import { externalAppService } from '@/services/ExternalAppService'
 
 const C = {
   blue:     '#0000FF',
@@ -32,11 +33,12 @@ interface EquipmentSummary {
 }
 
 interface Stop {
-  id:            string
-  stop_type:     string
-  customer_name: string
-  town:          string
-  equipment:     EquipmentSummary
+  id:                   string
+  stop_type:            string
+  customer_name:        string
+  town:                 string
+  equipment:            EquipmentSummary
+  tapgoods_order_token: string | null
 }
 interface Route {
   id:          string
@@ -109,7 +111,13 @@ export default function WeekScheduleView({
   currentUserId = null,
   currentUserRole = null,
 }: Props) {
-  const start = startDate ?? todayISO()
+  // start is internal state so prev/next nav can mutate it without a parent
+  // re-mount. Re-initialize when the prop changes (e.g., parent navigates).
+  const [start, setStart] = useState<string>(startDate ?? todayISO())
+  useEffect(() => {
+    setStart(startDate ?? todayISO())
+  }, [startDate])
+
   const endInclusive = addDays(start, days - 1)
   const today = todayISO()
 
@@ -201,7 +209,7 @@ export default function WeekScheduleView({
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
         }}>
-          <NavBtn label="←" disabled />
+          <NavBtn label="←" onClick={() => setStart(addDays(start, -days))} />
           <div style={{ textAlign: 'center' }}>
             <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 900, fontSize: 16, color: C.ink }}>
               Schedule
@@ -210,7 +218,7 @@ export default function WeekScheduleView({
               {formatRange(start, endInclusive)} · {days} days
             </div>
           </div>
-          <NavBtn label="→" disabled />
+          <NavBtn label="→" onClick={() => setStart(addDays(start, days))} />
         </div>
 
         {/* Filter pills */}
@@ -291,6 +299,8 @@ export default function WeekScheduleView({
                       isCollapsed={collapsedRoutes.has(route.id)}
                       onToggle={() => toggleRoute(route.id)}
                       isYou={showYou && route.driver_id === currentUserId}
+                      showTown={townFilter || !equipFilter}
+                      showEquip={equipFilter || !townFilter}
                     />
                   ))}
                 </div>
@@ -303,21 +313,20 @@ export default function WeekScheduleView({
   )
 }
 
-function NavBtn({ label, disabled }: { label: string; disabled?: boolean }) {
+function NavBtn({ label, onClick }: { label: string; onClick: () => void }) {
   return (
     <button
       type="button"
-      disabled={disabled}
+      onClick={onClick}
       style={{
         width: 32, height: 32, borderRadius: 10,
         background: C.paper, border: `1px solid ${C.border}`,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        color: C.muted, fontSize: 14,
+        cursor: 'pointer',
+        color: C.ink, fontSize: 14,
         display: 'grid', placeItems: 'center',
-        fontFamily: 'inherit', opacity: disabled ? 0.5 : 1,
+        fontFamily: 'inherit',
       }}
       aria-label={label === '←' ? 'Previous week' : 'Next week'}
-      title="Week navigation lands in a follow-up"
     >
       {label}
     </button>
@@ -343,9 +352,10 @@ function FilterPill({ label, active, onClick }: { label: string; active: boolean
 }
 
 function RouteBlock({
-  route, isCollapsed, onToggle, isYou,
+  route, isCollapsed, onToggle, isYou, showTown, showEquip,
 }: {
   route: Route; isCollapsed: boolean; onToggle: () => void; isYou: boolean
+  showTown: boolean; showEquip: boolean
 }) {
   return (
     <div
@@ -400,7 +410,7 @@ function RouteBlock({
               </div>
             )}
             {route.stops.map((stop) => (
-              <StopRow key={stop.id} stop={stop} />
+              <StopRow key={stop.id} stop={stop} showTown={showTown} showEquip={showEquip} />
             ))}
           </div>
         )}
@@ -409,8 +419,13 @@ function RouteBlock({
   )
 }
 
-function StopRow({ stop }: { stop: Stop }) {
+function StopRow({ stop, showTown, showEquip }: { stop: Stop; showTown: boolean; showEquip: boolean }) {
   const isPickup = stop.stop_type === 'pickup'
+  const hasEquipment = stop.equipment.tier1.length > 0 || stop.equipment.tier2.length > 0
+  const handleTapGoodsClick = () => {
+    if (!stop.tapgoods_order_token) return
+    externalAppService.openTapGoodsOrder(stop.tapgoods_order_token)
+  }
   return (
     <div style={{
       padding: '8px 14px',
@@ -431,11 +446,13 @@ function StopRow({ stop }: { stop: Stop }) {
         <span style={{ fontSize: 12.5, color: C.ink, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {stop.customer_name || '(no name)'}
         </span>
-        <span style={{ color: C.muted, fontFamily: 'monospace', fontSize: 11, flexShrink: 0 }}>
-          {stop.town}
-        </span>
+        {showTown && (
+          <span style={{ color: C.muted, fontFamily: 'monospace', fontSize: 11, flexShrink: 0 }}>
+            {stop.town}
+          </span>
+        )}
       </div>
-      {(stop.equipment.tier1.length > 0 || stop.equipment.tier2.length > 0) && (
+      {showEquip && hasEquipment && (
         <div style={{ paddingLeft: 32, display: 'flex', flexDirection: 'column', gap: 4 }}>
           {stop.equipment.tier1.length > 0 && (
             <div style={{ fontSize: 11.5, color: C.muted, lineHeight: 1.35 }}>
@@ -465,6 +482,27 @@ function StopRow({ stop }: { stop: Stop }) {
               ))}
             </div>
           )}
+        </div>
+      )}
+      {stop.tapgoods_order_token && (
+        <div style={{ paddingLeft: 32, marginTop: 4 }}>
+          <button
+            type="button"
+            onClick={handleTapGoodsClick}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              padding: '4px 10px', borderRadius: 999,
+              background: 'rgba(0,0,255,0.06)',
+              color: C.blue, fontSize: 10.5, fontWeight: 700,
+              letterSpacing: '0.04em', textTransform: 'uppercase',
+              border: 0, cursor: 'pointer',
+              fontFamily: 'inherit',
+              whiteSpace: 'nowrap',
+            }}
+            aria-label="Open order in TapGoods"
+          >
+            View in TapGoods ↗
+          </button>
         </div>
       )}
     </div>

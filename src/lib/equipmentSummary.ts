@@ -7,24 +7,29 @@
 //
 // Tier 1 — always spelled out as text, in this fixed order when present:
 //   1. Tents       — consolidated by parsed size ("1 40×100 · 2 20×20")
-//   2. Chairs      — rolled-up total ("100 chairs"). Chair-name override:
-//                    any item whose name contains CHAIR routes here even if
-//                    raw category is "Misc" (mirrors itemCategories
-//                    resolveCategory; chair counts matter operationally).
+//   2. Chairs      — rolled-up total ("100 chairs"). Chair-name override
+//                    is part of resolveCategory(): any item whose name
+//                    contains CHAIR routes here even if raw category is
+//                    "Misc". TapGoods chair miscategorization happens
+//                    often enough to matter operationally.
 //   3. Tables      — rolled-up total ("6 tables")
 //   4. Linens      — rolled-up total ("12 linens")
 //   5. Inflatables — one token per line item, qty-prefixed, original order
 //                    ("1 Bounce House · 1 Giant Slide"). No name-dedup —
 //                    each line stays separately visible.
 //
-// Tier 2 — every category not matched above, deduped + lowercased,
-// alphabetically sorted. Renderers display these as small pills (no qty).
+// Tier 2 — every category not matched above, normalized through
+// resolveCategory (legacy "Venues & Outdoors" → "Heating & Cooling",
+// "Catering & Utility" → "Catering & Cooking", empty + non-tent → Miscellaneous),
+// deduped, alphabetically sorted. Renderers display these as small pills
+// (no qty). Casing comes from CATEGORY_MAP so pills read as proper labels.
 //
 // Inflatable classification reuses the keyword list in inflatable.ts so
 // the same definition drives both the INFLATABLE badge and the Tier 1
 // inflatables group.
 
 import { isInflatableCategory } from './inflatable'
+import { resolveCategory }      from './itemCategories'
 
 interface ItemLine {
   category: string
@@ -51,15 +56,12 @@ export function buildEquipmentSummary(items: unknown): EquipmentSummary {
   const lines = items as ItemLine[]
 
   type Bucket = 'tents' | 'chairs' | 'tables' | 'linens' | 'inflatables' | 'other'
-  function bucketOf(i: ItemLine): Bucket {
-    const cat  = (i.category ?? '').toLowerCase().trim()
-    const name = (i.name ?? '').toUpperCase()
-    if (name.includes('CHAIR'))      return 'chairs'
-    if (isInflatableCategory(cat))   return 'inflatables'
-    if (cat === 'tents')             return 'tents'
-    if (cat === 'chairs')            return 'chairs'
-    if (cat === 'tables')            return 'tables'
-    if (cat === 'linens')            return 'linens'
+  function bucketOf(displayCategory: string): Bucket {
+    if (displayCategory === 'Tents')  return 'tents'
+    if (displayCategory === 'Chairs') return 'chairs'
+    if (displayCategory === 'Tables') return 'tables'
+    if (displayCategory === 'Linens') return 'linens'
+    if (isInflatableCategory(displayCategory)) return 'inflatables'
     return 'other'
   }
 
@@ -68,16 +70,19 @@ export function buildEquipmentSummary(items: unknown): EquipmentSummary {
   const tables:      ItemLine[] = []
   const linens:      ItemLine[] = []
   const inflatables: ItemLine[] = []
+  // Others carry their resolved display name on `category` for direct use
+  // as a Tier 2 pill label.
   const others:      ItemLine[] = []
 
   for (const i of lines) {
-    switch (bucketOf(i)) {
+    const display = resolveCategory(i.category, i.name)
+    switch (bucketOf(display)) {
       case 'tents':       tents.push(i); break
       case 'chairs':      chairs.push(i); break
       case 'tables':      tables.push(i); break
       case 'linens':      linens.push(i); break
       case 'inflatables': inflatables.push(i); break
-      default:            others.push(i); break
+      default:            others.push({ ...i, category: display }); break
     }
   }
 
@@ -111,9 +116,9 @@ export function buildEquipmentSummary(items: unknown): EquipmentSummary {
 
   const seen = new Set<string>()
   for (const o of others) {
-    const raw = (o.category ?? '').trim().toLowerCase()
-    if (!raw) continue
-    seen.add(raw)
+    const display = (o.category ?? '').trim()
+    if (!display) continue
+    seen.add(display)
   }
   const tier2 = Array.from(seen).sort()
 
