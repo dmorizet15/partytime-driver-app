@@ -33,6 +33,11 @@ const CATEGORY_MAP: Record<string, string> = {
   //   Venues & Outdoors  → PATIO HEATER                 → Heating & Cooling
   'catering & utility':  'Catering & Cooking',
   'venues & outdoors':   'Heating & Cooling',
+  // Flooring & Staging — TapGoods uses both spellings (and frequently
+  // emits no category at all for stage line items, which the empty-category
+  // STAGE/DANCE FLOOR fallback below catches by name).
+  'flooring and staging': 'Flooring and Staging',
+  'flooring & staging':   'Flooring and Staging',
 }
 
 // Returns the display-name bucket for a single items[] entry. Order of
@@ -54,6 +59,12 @@ export function resolveCategory(rawCategory: string | undefined | null, name: st
   const raw = (rawCategory ?? '').trim()
   if (raw === '') {
     if (upper.includes('TENT') || upper.includes('WALL')) return 'Tents'
+    // Empty-category stage / dance floor — TapGoods often emits no
+    // category for these (long-tail items). Catch by name so the pill
+    // survives instead of collapsing into Miscellaneous. Bound to empty
+    // category so legitimate cross-categorized items (e.g. "Stage Light"
+    // with category="Lighting") are not affected.
+    if (upper.includes('STAGE') || upper.includes('DANCE FLOOR')) return 'Flooring and Staging'
     return 'Miscellaneous'
   }
   return CATEGORY_MAP[raw.toLowerCase()] ?? raw
