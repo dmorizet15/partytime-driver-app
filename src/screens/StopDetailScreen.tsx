@@ -220,11 +220,17 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   const [etaCooldownMsg, setEtaCooldownMsg] = useState<string | null>(null)
 
   // Cash collection acknowledgment state — hydrated on mount via GET /api/cash-collections.
-  // null = loading (avoids button flash); false = not yet confirmed; true = confirmed.
+  // null = loading (avoids button flash); false = no row on file; true = a row exists
+  // (either collected or not_collected — both are terminal for the prompt).
   const [cashConfirmed,   setCashConfirmed]   = useState<boolean | null>(null)
   const [showCashModal,   setShowCashModal]   = useState(false)
   const [cashSubmitting,  setCashSubmitting]  = useState(false)
   const [cashError,       setCashError]       = useState<string | null>(null)
+  // Cash modal form state
+  const [cashAmountInput,   setCashAmountInput]   = useState<string>('')
+  const [cashReasonInput,   setCashReasonInput]   = useState<string>('')
+  const [cashReasonVisible, setCashReasonVisible] = useState<boolean>(false)
+  const [cashReasonError,   setCashReasonError]   = useState<string | null>(null)
 
   useEffect(() => {
     if (stop) logEvent('STOP_VIEWED', routeId, stopId, stop.order_id)
@@ -399,15 +405,13 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     } finally { setNavLoading(false) }
   }
 
-  async function handleConfirmComplete() {
-    if (!stop || !route) return
-    setCompleteLoading(true)
+  // Shared completion path — POST /api/complete-stop, update local state,
+  // log + refetch, navigate to next stop. Returns true on success.
+  // Used by handleConfirmComplete (non-COD modal) and by both cash-modal
+  // paths (collected / not_collected) after the cash POST resolves.
+  async function runStopComplete(closeModal: () => void, setLoading: (b: boolean) => void): Promise<boolean> {
+    if (!stop || !route) return false
     const completedAt = new Date().toISOString()
-
-    // Persist to Supabase first so the dashboard's realtime cascade fires
-    // and downstream stop ETAs recompute. On any failure (network, 404, 500),
-    // surface the error and stay put — don't silently swallow the failure
-    // and don't navigate away from a stop that's still pending in the DB.
     try {
       const r = await fetch('/api/complete-stop', {
         method:  'POST',
@@ -417,70 +421,148 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
       const j = await r.json().catch(() => null)
       if (!r.ok || !j?.success) {
         setNavMessage(j?.error ?? 'Could not mark stop complete — try again')
-        setShowCompleteModal(false)
-        setCompleteLoading(false)
-        return
+        closeModal()
+        setLoading(false)
+        return false
       }
     } catch (err) {
-      console.error('[handleConfirmComplete] network error:', err)
+      console.error('[runStopComplete] network error:', err)
       setNavMessage('Could not mark stop complete — check your connection')
-      setShowCompleteModal(false)
-      setCompleteLoading(false)
-      return
+      closeModal()
+      setLoading(false)
+      return false
     }
 
-    // Server write succeeded — proceed with local state + navigation.
     markComplete(stop.stop_id, completedAt)
     logEvent('STOP_COMPLETED', routeId, stopId, stop.order_id, { completed_at: completedAt })
 
-    // Force a fresh route-data fetch so downstream ETAs the dashboard cascade
-    // just recalculated land in the cache. The `force=true` second arg
-    // bypasses loadDay's same-date early-return without nuking the existing
-    // cache (LOAD_START preserves routes/stops), so there's no "stop not
-    // found" flash on the next-stop render. Fire-and-forget — navigation
+    // 5-second delay: dashboard cascade (realtime → recalculate →
+    // writeCalculatedETAs → Supabase write) takes ~3–5s. Refetching sooner
+    // reads stale calculated_eta values. Fire-and-forget — navigation
     // happens immediately; LOAD_SUCCESS lands later with the new ETAs.
-    //
-    // 5-second delay: the dashboard cascade (realtime → recalculate →
-    // writeCalculatedETAs → Supabase write) takes ~3–5s end-to-end after
-    // /api/complete-stop fires. Refetching sooner reads stale calculated_eta
-    // values. The timeout's closure captures route.operating_date by value;
-    // even if the screen unmounts before it fires (likely — router.replace
-    // is queued immediately below), the callback still runs against the
-    // still-mounted AppStateProvider and updates state for whatever screen
-    // the driver landed on.
     setTimeout(() => loadDay(route.operating_date, true), 5000)
 
-    setShowCompleteModal(false); setCompleteLoading(false)
+    closeModal()
+    setLoading(false)
     if (nextStop) { router.replace(`/route/${routeId}/stop/${nextStop.stop_id}`) } else { router.replace(`/route/${routeId}`) }
+    return true
   }
 
-  async function handleConfirmCashCollection() {
+  // Mark-Complete tap — for COD delivery stops with no cash record yet,
+  // open the cash modal (which IS the confirmation). For every other case
+  // (non-COD, pickup, warehouse, or COD where a row already exists), open
+  // the standard yes/no confirmation modal.
+  function handleMarkCompleteTap() {
     if (!stop) return
-    setCashSubmitting(true)
+    const isCodDelivery = stop.payment_state === 'cod' && stop.stop_type === 'delivery'
+    if (isCodDelivery && cashConfirmed === false) {
+      // Reset modal form state on open so a previously aborted attempt
+      // doesn't leak stale input.
+      const prefill = typeof stop.balance_due_amount === 'number' && stop.balance_due_amount > 0
+        ? stop.balance_due_amount.toFixed(2)
+        : ''
+      setCashAmountInput(prefill)
+      setCashReasonInput('')
+      setCashReasonVisible(false)
+      setCashReasonError(null)
+      setCashError(null)
+      setShowCashModal(true)
+      return
+    }
+    setShowCompleteModal(true)
+  }
+
+  async function handleConfirmComplete() {
+    setCompleteLoading(true)
+    await runStopComplete(() => setShowCompleteModal(false), setCompleteLoading)
+  }
+
+  // Cash modal — "Collected" path. Driver-editable amount (partial payments
+  // happen in the field). POST first; only complete the stop if the cash row
+  // landed.
+  async function handleCashCollected() {
+    if (!stop) return
     setCashError(null)
+
+    let amount: number | null = null
+    const trimmed = cashAmountInput.trim()
+    if (trimmed.length > 0) {
+      const n = Number(trimmed)
+      if (!Number.isFinite(n) || n < 0) {
+        setCashError('Enter a valid amount.')
+        return
+      }
+      amount = n
+    }
+
+    setCashSubmitting(true)
     try {
-      // Auto-fill collected amount from balance_due_amount when known; null when not on file.
-      // (Driver cannot edit the amount in this MVP — flagged for future iteration.)
-      const amount = typeof stop.balance_due_amount === 'number' && stop.balance_due_amount > 0
-        ? stop.balance_due_amount
-        : null
       const r = await fetch('/api/cash-collections', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ stop_id: stop.stop_id, amount_collected: amount }),
+        body:    JSON.stringify({
+          stop_id:          stop.stop_id,
+          status:           'collected',
+          amount_collected: amount,
+        }),
       })
       const j = await r.json().catch(() => null)
       if (!r.ok || !j?.success) {
         setCashError(j?.error ?? 'Failed to confirm — try again')
+        setCashSubmitting(false)
         return
       }
       setCashConfirmed(true)
-      setShowCashModal(false)
     } catch (err) {
       setCashError(err instanceof Error ? err.message : 'Network error')
-    } finally {
       setCashSubmitting(false)
+      return
     }
+    await runStopComplete(() => setShowCashModal(false), setCashSubmitting)
+  }
+
+  // Cash modal — "Could Not Collect" path. First tap expands the reason
+  // textarea; second tap (with a non-empty reason) posts + completes.
+  async function handleCashNotCollected() {
+    if (!stop) return
+    setCashError(null)
+
+    if (!cashReasonVisible) {
+      setCashReasonVisible(true)
+      return
+    }
+
+    const reason = cashReasonInput.trim()
+    if (reason.length === 0) {
+      setCashReasonError('A reason is required to skip cash collection.')
+      return
+    }
+    setCashReasonError(null)
+
+    setCashSubmitting(true)
+    try {
+      const r = await fetch('/api/cash-collections', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          stop_id:              stop.stop_id,
+          status:               'not_collected',
+          not_collected_reason: reason,
+        }),
+      })
+      const j = await r.json().catch(() => null)
+      if (!r.ok || !j?.success) {
+        setCashError(j?.error ?? 'Failed to record — try again')
+        setCashSubmitting(false)
+        return
+      }
+      setCashConfirmed(true)
+    } catch (err) {
+      setCashError(err instanceof Error ? err.message : 'Network error')
+      setCashSubmitting(false)
+      return
+    }
+    await runStopComplete(() => setShowCashModal(false), setCashSubmitting)
   }
 
   async function handleOpenTapGoods() {
@@ -1002,40 +1084,9 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
                 </div>
               </div>
             </div>
-
-            {/* Cash collection acknowledgment — gold = action needed, green = confirmed */}
-            {cashConfirmed === true ? (
-              <button
-                disabled
-                style={{
-                  marginTop: 12, width: '100%',
-                  background: C.green, color: '#fff',
-                  fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 15,
-                  padding: '14px 16px',
-                  border: 'none', borderRadius: 14,
-                  cursor: 'default',
-                  letterSpacing: '-0.01em',
-                }}
-              >
-                Cash Collected ✓
-              </button>
-            ) : cashConfirmed === false ? (
-              <button
-                onClick={() => setShowCashModal(true)}
-                style={{
-                  marginTop: 12, width: '100%',
-                  background: C.gold, color: C.ink,
-                  fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 15,
-                  padding: '14px 16px',
-                  border: 'none', borderRadius: 14,
-                  cursor: 'pointer',
-                  letterSpacing: '-0.01em',
-                  boxShadow: '0 14px 28px -16px rgba(255,184,0,0.55)',
-                }}
-              >
-                Confirm Cash Collected →
-              </button>
-            ) : null /* hydrating — render nothing to avoid State A flash */}
+            {/* No standalone "Confirm Cash" button — cash confirmation is
+                gated through Mark Stop Complete (the cash modal IS the
+                completion confirmation for COD delivery stops). */}
           </div>
         )}
 
@@ -1408,7 +1459,7 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
                 <>
                 {/* Mark Arrived — gold (pending) or green (otw_sent) */}
                 <button
-                  onClick={() => setShowCompleteModal(true)}
+                  onClick={handleMarkCompleteTap}
                   style={{
                     width: '100%', height: 60, borderRadius: 999,
                     background: isOtwSent ? C.green : C.gold,
@@ -1593,23 +1644,123 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
             <h2
               id="cash-modal-title"
               style={{
-                fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 20,
-                color: C.ink, margin: 0, marginBottom: 8,
+                fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 20,
+                color: C.ink, margin: 0, marginBottom: 4,
                 letterSpacing: '-0.01em',
               }}
             >
-              Confirm Cash Collection
+              Cash Collection
             </h2>
             <p
               style={{
-                fontFamily: FONT_BODY, fontSize: 14, color: C.muted,
-                lineHeight: 1.5, margin: 0, marginBottom: 20,
+                fontFamily: FONT_BODY, fontSize: 13.5, color: C.muted,
+                lineHeight: 1.5, margin: 0, marginBottom: 16,
               }}
             >
-              {typeof stop.balance_due_amount === 'number' && stop.balance_due_amount > 0
-                ? `You are confirming collection of ${formatUSD(stop.balance_due_amount)} from ${stop.customer_name}.`
-                : `You are confirming cash collection for ${stop.customer_name}. No amount on file.`}
+              Confirm cash collected from {stop.customer_name} before completing this stop.
             </p>
+
+            {/* Amount input — editable; pre-filled from balance_due_amount */}
+            <label
+              htmlFor="cash-amount-input"
+              style={{
+                display: 'block',
+                fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 11,
+                letterSpacing: '0.18em', textTransform: 'uppercase',
+                color: C.muted, marginBottom: 6,
+              }}
+            >
+              Amount Collected
+            </label>
+            <div
+              style={{
+                display: 'flex', alignItems: 'center',
+                border: `1.5px solid ${C.ink}`, borderRadius: 12,
+                padding: '0 14px', marginBottom: 16,
+                background: '#fff',
+              }}
+            >
+              <span style={{
+                fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 18,
+                color: C.muted, marginRight: 6,
+              }}>
+                $
+              </span>
+              <input
+                id="cash-amount-input"
+                type="text"
+                inputMode="decimal"
+                value={cashAmountInput}
+                onChange={(e) => {
+                  // Permissive: allow digits + one dot. Validation runs on submit.
+                  const v = e.target.value.replace(/[^0-9.]/g, '')
+                  setCashAmountInput(v)
+                  setCashError(null)
+                }}
+                disabled={cashSubmitting}
+                placeholder="0.00"
+                style={{
+                  flex: 1,
+                  padding: '14px 0',
+                  border: 'none',
+                  outline: 'none',
+                  fontFamily: FONT_DISPLAY,
+                  fontSize: 18, fontWeight: 800, color: C.ink,
+                  letterSpacing: '-0.01em',
+                  background: 'transparent',
+                  fontVariantNumeric: 'tabular-nums',
+                  minWidth: 0,
+                }}
+              />
+            </div>
+
+            {/* Reason textarea — collapsed by default; expands on first
+                "Could Not Collect" tap. Required to submit the uncollected path. */}
+            {cashReasonVisible && (
+              <div style={{ marginBottom: 16 }}>
+                <label
+                  htmlFor="cash-reason-input"
+                  style={{
+                    display: 'block',
+                    fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 11,
+                    letterSpacing: '0.18em', textTransform: 'uppercase',
+                    color: C.muted, marginBottom: 6,
+                  }}
+                >
+                  Reason — Required
+                </label>
+                <textarea
+                  id="cash-reason-input"
+                  value={cashReasonInput}
+                  onChange={(e) => {
+                    setCashReasonInput(e.target.value)
+                    if (cashReasonError) setCashReasonError(null)
+                  }}
+                  disabled={cashSubmitting}
+                  placeholder="e.g. Customer not on site — promised to call dispatch"
+                  rows={3}
+                  style={{
+                    width: '100%', boxSizing: 'border-box',
+                    padding: '12px 14px',
+                    border: `1.5px solid ${cashReasonError ? C.coral : C.ink}`,
+                    borderRadius: 12,
+                    fontFamily: FONT_BODY, fontSize: 14, color: C.ink,
+                    lineHeight: 1.45,
+                    resize: 'vertical',
+                    outline: 'none',
+                    background: '#fff',
+                  }}
+                />
+                {cashReasonError && (
+                  <div style={{
+                    marginTop: 6,
+                    fontFamily: FONT_BODY, fontSize: 12.5, color: C.coral,
+                  }}>
+                    {cashReasonError}
+                  </div>
+                )}
+              </div>
+            )}
 
             {cashError && (
               <div
@@ -1623,28 +1774,52 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
               </div>
             )}
 
+            {/* Primary action — Collected (gold) */}
             <button
-              onClick={handleConfirmCashCollection}
+              onClick={handleCashCollected}
               disabled={cashSubmitting}
               style={{
                 width: '100%', padding: '14px 16px',
                 background: C.gold, border: 'none', borderRadius: 14,
-                fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 15,
+                fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 15,
                 color: C.ink,
                 cursor: cashSubmitting ? 'default' : 'pointer',
                 opacity: cashSubmitting ? 0.7 : 1,
                 letterSpacing: '-0.01em',
+                boxShadow: '0 14px 28px -16px rgba(255,184,0,0.55)',
               }}
             >
-              {cashSubmitting ? 'Confirming…' : 'Confirm Collection'}
+              {cashSubmitting ? 'Working…' : 'Collected · Complete Stop'}
             </button>
+
+            {/* Secondary action — Could Not Collect (outline). First tap
+                expands the reason field; second tap (with a reason) submits. */}
+            <button
+              onClick={handleCashNotCollected}
+              disabled={cashSubmitting}
+              style={{
+                marginTop: 10, width: '100%', padding: '13px 16px',
+                background: '#fff',
+                border: `1.5px solid ${C.ink}`, borderRadius: 14,
+                fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 14.5,
+                color: C.ink,
+                cursor: cashSubmitting ? 'default' : 'pointer',
+                opacity: cashSubmitting ? 0.5 : 1,
+                letterSpacing: '-0.01em',
+              }}
+            >
+              {cashReasonVisible
+                ? (cashSubmitting ? 'Working…' : 'Submit · Could Not Collect')
+                : 'Could Not Collect'}
+            </button>
+
             <button
               onClick={() => setShowCashModal(false)}
               disabled={cashSubmitting}
               style={{
                 marginTop: 10, width: '100%', padding: '12px 16px',
                 background: 'transparent', border: 'none',
-                fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14,
+                fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13.5,
                 color: C.muted,
                 cursor: cashSubmitting ? 'default' : 'pointer',
                 opacity: cashSubmitting ? 0.5 : 1,
