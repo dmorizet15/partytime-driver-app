@@ -4,6 +4,39 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-05-14 — Driver scope + completion persistence + migration 051 apply
+
+**Scope:** Four bug reports, all rooted in the data layer rather than UI logic. `/api/routes` returned every route on the day with no driver scope; the cold-load auto-redirect from May 10 picked the wrong route as a result; stop-completion state was written to the server but never re-read, so the post-complete force-reload silently clobbered it. One pass fixed Bugs 1+2+3 with a session-aware `/api/routes` and the removal of the auto-redirect; a second pass fixed Bug 4 by reading `stop_status, completed_at` end-to-end. Migration 051 (Cash Collection v2) applied to partytime-east during the session via the newly-discovered Management API path.
+
+### What shipped
+- **`/api/routes` is session-aware and driver-scoped** (`ff006c6`). Reads the auth cookie, joins `route_assignments` for the requested date, narrows the response to only the caller's assignments. Falls back to all routes when no assignment exists (preserves dispatcher tooling). Cache-Control flipped from `public, max-age=30, stale-while-revalidate=15` to `private, no-store`.
+- **Cold sign-in auto-redirect removed** (`ff006c6`). `useAssignedRoute` hook deleted, `/api/routes/assigned` endpoint deleted as orphan, `showAssignmentLoader` branch torn out of `DayRouteSelectorScreen`. Cold sign-in lands on Home, every time, for every role.
+- **Stop completion read end-to-end** (`4788034`). `/api/routes` now selects `stop_status, completed_at`; `supabaseTransform.toRealStop` maps `stop_status='completed'` to `current_status: 'completed'` and carries `completed_at`; `AppStateContext.loadDay` short-circuits the OTW/localStorage merge for server-completed stops so completion is terminal. No JSX changes — the StopDetailScreen ternary was always correct; the data feeding it was wrong.
+- **Supabase types regenerated** post-migration-051 (`c308c81`). Two stray CLI stderr lines stripped from the redirected file output (header + footer).
+
+### Migrations applied
+- **Migration 051** (`20260513_010_cash_collections_status.sql`) → applied via `supabase db query --linked --file <path>` (Management API path). Tracking row added via `supabase migration repair --status applied 20260513`. Schema verified: `cash_collections.status`, `not_collected_reason`, both CHECK constraints, partial index — all live.
+
+### Verification
+- `npx next build` clean three times — once per push.
+- Schema probes on `route_assignments` (Darren has exactly one row today, Route 2), `dispatch_stops.stop_status` (existing rows have real completion data), and `cash_collections.status` (pre-apply: column missing; post-apply: present with default `'collected'`).
+
+### Commits
+- `ff006c6` fix(routes): scope /api/routes to assigned driver; remove cold-load auto-redirect
+- `c308c81` chore(types): regen Supabase types post-migration-051
+- `4788034` fix(stops): persist completion across refetches — stop_status read end-to-end
+
+### For chat-Claude / Notion
+- **Driver Auto-Load Route (May 10) is REVERSED.** Move the Build Progress Dashboard line to superseded; the Master Build Checklist entry should reflect that this is no longer a shipped feature.
+- **`/api/routes` is now per-user** with `private, no-store` caching. Any Notion API surface docs that mention shared-cache behavior or generic "all routes for the day" semantics are stale.
+- **`/api/routes/assigned` endpoint is removed.** Drop from any API inventory.
+- **`dispatch_stops.stop_status` is the canonical completion signal** for the driver app. Update any design doc that talks about completion as in-memory or localStorage-only.
+- **Migration 051 is APPLIED** (Cash Collection v2). The "blocked on Darren to apply" status moves to "applied 2026-05-14"; both repos' COD code is now functional in production.
+- **Tech debt added:** dashboard repo Supabase types need regenerating to remove the `as any` casts in `boardClient.ts:fetchUncollectedCodRows`. Driver-app types are already current. Unused `AppStateContext.clearCache` can be deleted next time AppStateContext is touched.
+- **Lessons added** (`tasks/lessons.md`): (a) `supabase db query --linked --file` is the working migration apply path when `db push` is blocked by two-repo coordination; (b) `supabase gen types typescript --linked > file` leaks CLI stderr into the redirected file — strip header/footer; (c) a UI bug presenting as a JSX gating problem is often a data-layer problem — trace the value before editing the ternary.
+
+---
+
 ## 2026-05-13 evening — Cash Collection v2 (walk-away)
 
 **Scope:** Complete the COD cash-collection loop. The driver-app COD card and Mark Complete were independent — drivers could complete a stop without acknowledging cash, and there was no path to record "could not collect." This session wires Mark Complete to gate cash acknowledgment, adds a two-path modal (Collected with editable amount / Could Not Collect with required reason), reconstructs the missing `cash_collections` migration, and surfaces the uncollected state on the dashboard board with auto-resolution via TapGoods sync. Two repos shipped together.

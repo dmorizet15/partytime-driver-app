@@ -1,9 +1,14 @@
 # Open Tasks — partytime-driver-app
 
-## Cash Collection v2 — follow-ups (added 2026-05-13 evening)
+## May 14, 2026 — bug-fix session follow-ups
 
-- [ ] **BLOCKING: apply migration 051 to partytime-east.** Same two-repo coordination block as migration 009. Step-by-step in `tasks/open-questions.md` (Migration 051 section). Until applied, the "Could Not Collect" path returns 500 and the dashboard flag stays hidden. The "Collected" path is unaffected (API is backward-compatible).
-- [ ] **Regen supabase types post-migration in BOTH repos.** Once migration 051 is applied: `supabase gen types typescript --linked > src/types/supabase.ts`. Remove the `as any` casts in `partytime-dashboard/src/lib/boardClient.ts` (`fetchUncollectedCodRows`) and `partytime-driver-app/src/app/api/cash-collections/route.ts` (`insert` cast). Both have inline comments flagging the cleanup.
+- [ ] **Smoke-test on production** after the May-14 Vercel deploys clear. Coverage list lives in `CLAUDE.md` → "Driver scope + completion persistence" → NEXT. Three loops: driver-scope (Home + Routes tab), completion persistence (mark-complete → return-nav), Cash Collection v2 (Collected / Could Not Collect paths now that migration 051 is live).
+- [ ] **Regen dashboard repo Supabase types** so the `as any` casts in `partytime-dashboard/src/lib/boardClient.ts` (`fetchUncollectedCodRows`) come out. Driver-app types are already current (commit `c308c81`). One-line: `cd ~/Projects/partytime-dashboard && supabase gen types typescript --linked > src/types/supabase.ts` — but strip the stderr lines that the CLI bleeds into the redirected file ("Initialising login role…" header, "A new version…" footer); see lessons.md.
+- [ ] **Delete unused `AppStateContext.clearCache`.** Orphaned since the cold-load auto-redirect was removed (no caller). Comment block references stale "assigned-route check" infra. One-line removal; bundle with the next AppStateContext touch.
+
+## Cash Collection v2 — surviving follow-ups (from 2026-05-13)
+
+- [x] ~~**BLOCKING: apply migration 051 to partytime-east.**~~ APPLIED 2026-05-14 via `supabase db query --linked --file`. Tracking repaired. Driver-app types regen'd.
 - [ ] **Drop the orphan `dispatch_stops.cod_acknowledged_at` and `dispatch_stops.cod_acknowledged_by` columns.** Audit done 2026-05-13 — zero readers, zero writers. Cash Collection v2 uses payment_state-based auto-resolution instead. Wait until schema confidence is high; bundle with the next housekeeping migration.
 - [ ] **Phase 2 — Real-time COD-uncollected push to dispatch.** Today Melissa learns about the flag via the board's visible realtime update (~1s after the driver submits). A push/SMS notification would help if she's heads-down on something else when it lands. Same channel as the planned pre-trip OOS auto-notify (currently Phase 2 stub copy on Screen 7).
 - [ ] **Add an FK from `cash_collections.stop_id` to `dispatch_stops.id`** so PostgREST can embed cash_collections in a stops fetch (one query instead of two). Low priority — current pattern (separate query, deduped by tanstack-query) works fine for the dashboard's volume. Bundle with the schema cleanup migration above.

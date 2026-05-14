@@ -68,7 +68,7 @@ Follow the Darren AI Protocol in Notion before doing anything.
 
 ---
 
-## Current Build State (as of May 14, 2026)
+## Current Build State (as of May 14, 2026 evening)
 
 ### v1.1 COMPLETE ✅ — April 27, 2026
 All phases shipped to production.
@@ -166,20 +166,14 @@ Optional end-of-day defect surface on Home. Symmetric to pre-trip (which is a ha
 - **The 12-category list is duplicated locally in `src/components/PostTripDefectCard.tsx`** with a `// TODO: extract to src/lib/defect-categories.ts when pre-trip stabilizes` marker. Do NOT extract pre-trip's category list as part of any post-trip touch — that's a separate cleanup. Same TODO marker in `src/app/api/defects/post-trip/route.ts`.
 - **Out of scope this session:** real-time push/SMS notification on post-trip submit (the row writes to `vehicle_defects`; dispatch surfacing is whatever the dashboard's existing defect view does). Phase 2 if a notification channel is wanted.
 
-### Driver Auto-Load Route SHIPPED ✅ — May 10, 2026 evening
-On cold sign-in, the app fetches the current driver's assignment for today and redirects them straight to `/route/<id>` (RouteListScreen) — no manual picking required. Manual flow preserved as fallback when there's no assignment, the fetch fails, or the session has already auto-jumped once.
+### Driver Auto-Load Route — May 10, 2026 evening → REVERSED May 14, 2026 (commit `ff006c6`)
+**This feature was removed.** Cold sign-in no longer redirects to `/route/<id>`. The driver lands on Home (`DayRouteSelectorScreen`) and reaches their route via the explicit gold **Inspect & Start Route** / **Start Route** CTA. The auto-load shipped May 10 (`/api/routes/assigned` endpoint + `useAssignedRoute` hook + sessionStorage guard) was deleted entirely.
 
-**Architecture — read this before touching auto-load code:**
+Reason for the reversal: the auto-redirect skipped Home — but Home is where the driver gets day context (greeting, truck pill, day-stop preview, pre-trip card, post-trip card, COD rollup, Ask Ava chip, the gold CTA). The "save one tap" win of auto-jumping was outweighed by losing that orientation surface. The new doctrine matches the May 8 invariant: **landing screens and execution screens are separate; navigation between them is always driver-initiated.**
 
-- **`/api/routes/assigned` GET is the only new endpoint.** Auth-gated via session cookie (`user.id` cannot be spoofed). Inner-joins `route_assignments` to `routes` on `route_date = today`, ordered `assigned_at DESC`. Returns `{ route_id: string | null }`. Multi-match edge case: logs a warning identifying the driver + count, returns the freshest assignment. Service-role client for the read — matches the `/api/inspection/status` and `/api/defects/post-trip` pattern (sidesteps RLS verification on dashboard-side `route_assignments` policies). No changes to `/api/routes/route.ts`.
+The auto-load also masked Bug 1+2 from this session — when `/api/routes` returned all routes for the day (no driver scope) and the auto-redirect picked the wrong one, the bug surfaced as "Route page defaults to Route 1 instead of assigned Route 2." See the May 14 section below.
 
-- **`useAssignedRoute()` is the single hook for the redirect.** Lives at `src/hooks/useAssignedRoute.ts`. Fires once per browser session, guarded by `sessionStorage['ptd_autoload_attempted']`. On match → `router.replace('/route/<id>')`. On no match → `'no_assignment'`. On fetch error → `'failed'` + console warn. The caller (DayRouteSelectorScreen) shows a "Finding your route…" spinner while `status === 'checking' || 'navigating'` and falls through to the existing day overview in every other case.
-
-- **Why session-scoped and not every-mount?** The May 8 home rewrite locks an invariant: BottomNav's Home tab must remain reachable. The earlier blanket `/` → `/route/<id>` auto-redirect (commit `938f4b0`) was reverted because tapping the Home tab would bounce the driver right back out of Home. The session guard re-enables auto-navigation without reintroducing that bug — cold sign-in jumps, but BottomNav-driven returns to Home stay on Home. If the driver is reassigned mid-session, they will NOT be auto-redirected to the new route; that's intentional (no yanking them out of an active stop). A forced re-route is a Phase 2 concern.
-
-- **`AppStateContext.clearCache` is unused for now.** Its comment references "the assigned-route check resolves to 'no-assignment'" — that was forward-leaning infra from a prior session. The current redirect-on-match design doesn't need it (Home unmounts cleanly on match; on no-match the day overview is what we want anyway). Kept in the context as future-proofing.
-
-**Out of scope this session:** server-pushed re-route signal, dashboard-side surfacing of the "multi-assignment" warning, clearing the session guard from the dashboard side.
+`AppStateContext.clearCache` is still unused. The comment that referenced "the assigned-route check resolves to 'no-assignment'" is now stale — clearCache was forward-leaning infra for that flow and never had a real consumer. Safe to delete in a future cleanup; left in for now because the cost is one unused export.
 
 ### Phase 2.5a cleanup SHIPPED ✅ — May 10, 2026 (commit `15d3476`)
 Dead TapGoods direct-call cluster removed. The driver app has read routes/stops exclusively from Supabase via `/api/routes` for weeks; the four-file GraphQL path was orphaned but still checked in. Deleted: `src/app/api/tapgoods/routes/route.ts`, `src/lib/tapgoodsClient.ts`, `src/lib/tapgoodsQueries.ts`, `src/lib/tapgoodsTransform.ts`, plus the now-empty `src/app/api/tapgoods/` directory. 270 lines gone. Phase A of Phase 2.5 (Source of Truth Migration) is now fully complete — not just "replaced" but "removed."
@@ -221,7 +215,7 @@ End-to-end COD collection loop, both repos. Driver-app commits `150c277` → `13
 
 **Architecture — read this before touching COD code:**
 
-- **Migration 051 (`20260513_010_cash_collections_status.sql`) reconstructs the cash_collections table** (the production table existed but no migration file ever shipped) and adds `status text DEFAULT 'collected'` + `not_collected_reason text` with two CHECK constraints: status enum (`collected`/`not_collected`) and reason-required-when-not-collected (non-empty trim). Idempotent: `CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, DO-block-wrapped constraints. Plus a partial index on stop_id WHERE status='not_collected' for the dashboard flag query. **NOT yet applied to partytime-east** — same two-repo coordination block as migration 009. Apply via Supabase Studio SQL Editor (Darren); see `tasks/open-questions.md` for the exact path.
+- **Migration 051 (`20260513_010_cash_collections_status.sql`) reconstructs the cash_collections table** (the production table existed but no migration file ever shipped) and adds `status text DEFAULT 'collected'` + `not_collected_reason text` with two CHECK constraints: status enum (`collected`/`not_collected`) and reason-required-when-not-collected (non-empty trim). Idempotent: `CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, DO-block-wrapped constraints. Plus a partial index on stop_id WHERE status='not_collected' for the dashboard flag query. **APPLIED 2026-05-14** via `supabase db query --linked --file <path>` (Management API path — bypasses the two-repo `db push` history block; see lessons.md).
 
 - **The POST /api/cash-collections endpoint is backward-compatible with the pre-migration-051 schema.** The `collected` path omits `status` and `not_collected_reason` from the INSERT so it works against both legacy and new schemas; the new column defaults (DEFAULT 'collected', NULL reason) handle the new schema cleanly. The `not_collected` path REQUIRES migration 051 by definition — that flow doesn't exist pre-migration anyway. Pre-migration the GET also avoids selecting the new columns so it keeps working.
 
@@ -235,25 +229,53 @@ End-to-end COD collection loop, both repos. Driver-app commits `150c277` → `13
 
 - **`cod_acknowledged_at` and `cod_acknowledged_by` on `dispatch_stops` are CONFIRMED ORPHAN columns.** Audited 2026-05-13 — zero readers, zero writers across both repos (`src/types/supabase.ts` is the only place they appear, autogenerated). The Cash Collection v2 design uses payment_state-based auto-resolution instead. Don't add new code that writes them; safe to drop in a future cleanup migration once schema confidence is high.
 
-**Apply migration 051 path (Darren, manual):**
-1. Open Supabase Studio → partytime-east → SQL Editor
-2. Paste the contents of `supabase/migrations/20260513_010_cash_collections_status.sql`
-3. Run
-4. From the driver-app repo: `supabase migration repair --status applied 20260513010` to keep CLI history honest
-5. `supabase gen types typescript --linked > src/types/supabase.ts` in BOTH repos to regen types post-apply
+**Migration 051 was applied 2026-05-14** via `supabase db query --linked --file supabase/migrations/20260513_010_cash_collections_status.sql`. Repaired tracking via `supabase migration repair --status applied 20260513`. Driver-app types regen'd in commit `c308c81`. **Dashboard repo still needs its types regenerated** (`cd ~/Projects/partytime-dashboard && supabase gen types typescript --linked > src/types/supabase.ts`) so the `as any` casts in `boardClient.ts:fetchUncollectedCodRows` can come out — that's a Phase-2 cleanup, not blocking.
 
 **Out of scope this session:** real-time push/SMS to dispatch when a driver taps "Could Not Collect" (the cash_collections INSERT triggers the dashboard's realtime channel — Melissa sees the flag inside ~1s — but no push notification fires). Phase 2 if/when an audible signal is wanted. Also: the migration 051 file does NOT re-declare the existing RLS policies on `cash_collections` (already created out of band with the table; re-declaring would error). If RLS is ever rebuilt from scratch, those policies must be re-authored.
 
+### Driver scope + completion persistence + auto-redirect removal — May 14, 2026 (commits `ff006c6`, `c308c81`, `4788034`)
+
+Three bug reports addressed across one session, plus migration 051 unblocked. All four shipped to main.
+
+**Bug 1+2 — `/api/routes` is now session-aware and driver-scoped.** Endpoint reads the auth cookie, joins `route_assignments` for the requested date, narrows the response to only the caller's assigned routes. With no assignment (or unauthenticated) it falls back to the full day's routes — preserves dispatcher tooling that hits the endpoint without cookies. Cache-Control flipped from `public, max-age=30, stale-while-revalidate=15` to `private, no-store` because responses now vary per user. Super_admin gets the same scoping as driver — the driver app is the driver's tool; the dashboard is the god view.
+
+Before this fix: `getRoutesForDate(today)` returned every route on the calendar day, `dayStops = routes.flatMap(...)` flattened across all of them, and `BottomNav`'s `routes[0]?.route_id` picked the first route by Postgres's default ordering. So Darren (assigned to Route 2) saw a Route-1 stop bleed into Home's "THE DAY, IN 3" preview, and tapping the Routes tab landed on Route 1. The data layer never knew it was supposed to scope to him.
+
+**Bug 3 — cold sign-in auto-redirect deleted.** `useAssignedRoute` hook + `/api/routes/assigned` endpoint + the `showAssignmentLoader` branch in DayRouteSelectorScreen are gone. See the May-10 section above for the reversal context. Net effect: cold sign-in lands on Home, every time, for every role.
+
+**Bug 4 — completion state is now read end-to-end.** Three changes:
+1. `/api/routes` selects `stop_status, completed_at` from `dispatch_stops` (previously omitted — server wrote completion but client never re-read it).
+2. `supabaseTransform.toRealStop` maps `stop_status === 'completed'` → `current_status: 'completed'` and carries `completed_at`. Default `'pending'` otherwise.
+3. `AppStateContext.loadDay` merge short-circuits on server-completed stops: `if (s.current_status === 'completed') return s` before the OTW / localStorage lookups. **Completion is terminal; OTW state from `StopStateService.readOtwStatus` can no longer clobber it.**
+
+Repro before the fix: complete a stop with OTW already sent → auto-advance to next stop → the 5s `setTimeout(loadDay(date, true))` in `runStopComplete` fires → `LOAD_SUCCESS` replaces `state.stops` with a freshly-transformed array (all `current_status='pending'`) → OTW merge resets the just-completed stop to `'on_the_way_sent'` → return navigation re-renders Mark Stop Complete on a completed stop, re-pressable.
+
+No `StopDetailScreen` JSX edits — the `{isCompleted ? <Delivered> : <ETA + Action card>}` ternary at line 1163 was already correct; `isCompleted` just couldn't ever evaluate true on return because the data was wrong. The 5s setTimeout is untouched (it still exists so the dashboard ETA cascade has time to write back fresh `calculated_eta` values).
+
+**Architecture notes for future work:**
+
+- **`/api/routes` is now per-user. Cache-Control: `private, no-store`.** Don't restore a shared-cache header — responses are no longer cacheable across users. If you need a shared-cache surface for admin tooling, build a separate endpoint (e.g. `/api/routes/all`).
+- **The driver-scope fallback** (return all routes when the caller has no assignment) intentionally keeps the endpoint usable for dispatcher/admin tooling that hits without cookies. Removing the fallback would break those callers; if you want a hard-scope rule, add a 401 instead.
+- **`/api/routes/assigned` endpoint is gone** — don't restore it for new features. The driver-scope filter on `/api/routes` already exposes the assignment-aware route list; an `assigned`-flavored endpoint would be redundant.
+- **`dispatch_stops.stop_status` is the canonical completion signal** for the driver app. The transform maps it to `current_status`. Don't introduce a parallel "completed" check that reads from a different column or from local state — the merge in `loadDay` is the single point where server / OTW / localStorage are reconciled.
+- **`StopStateService` still owns OTW.** Its `readOtwStatus` shape is unchanged. The merge guard in `loadDay` is what makes completion terminal; if OTW ever grows new state types, mirror the same "terminal wins" pattern at the merge layer rather than inside `readOtwStatus`.
+
+**Migration 051 apply mechanics discovery (worth its own lesson):** `supabase db query --linked --file <path>` runs SQL via the Management API. Unlike `supabase db push --linked`, it does NOT check the local-vs-remote migration history — so it's not blocked by the two-repo coordination problem documented in `tasks/lessons.md`. After running it, mark the migration as applied with `supabase migration repair --status applied <version>` to keep the tracking honest. This is now the recommended path for any future cross-repo migration push from this repo. The lessons.md file has been updated.
+
 ### NEXT
-- **Apply migration 051 to partytime-east** (Darren, manual via Supabase Studio SQL Editor — instructions in `tasks/open-questions.md`). Until applied: the driver-app "Could Not Collect" path returns 500, and the dashboard's COD-UNRESOLVED flag stays hidden (silent empty-map fallback). The "Collected" path keeps working against the legacy schema.
-- **Smoke-test Cash Collection v2 on production** after applying migration 051: open a COD delivery stop → tap Mark Complete → confirm cash modal fires before the standard confirmation → test Collected path (amount editable, defaults to balance_due_amount, submits and completes) → test Could Not Collect path (first tap expands reason field, second tap with empty reason shows inline error, second tap with reason submits + completes) → verify the dashboard board shows red COD UNRESOLVED pill + reason within ~1s of submission → enter payment in TapGoods → wait for sync → confirm flag clears automatically.
-- **Smoke-test driver auto-load on production** post-Vercel deploy: sign in as darren@partytime-rentals.com (assigned today) → confirm direct jump to `/route/<id>`. Sign in as an unassigned driver → confirm day overview renders. Tap Home in BottomNav after the initial jump → confirm Home is reachable (sessionStorage guard works).
-- **Apply migration 009 to partytime-east** (Darren, manual via Supabase Studio SQL Editor — instructions in `tasks/open-questions.md`). Until applied, the post-trip card and API return 500.
+- **Smoke-test on production** after Vercel deploy (covers all three bug fixes from May 14):
+  - Sign in as darren@partytime-rentals.com → confirm lands on Home (not `/route/<id>`).
+  - Home's "THE DAY, IN 3" → confirm shows only Route 2's stops, no Route 1 bleed.
+  - BottomNav Routes tab → confirm lands on Darren's Route 2, not Route 1.
+  - Complete a delivery stop (with OTW sent), wait ≥6s, return to Home, tap back into the stop → confirm Delivered card with `completed_at` timestamp, no Mark Stop Complete button, manifest/address/customer info still visible. Bonus: sign out and back in on another device → completion still shown.
+- **Smoke-test Cash Collection v2 on production**: open a COD delivery stop → tap Mark Complete → confirm cash modal fires before the standard confirmation → test Collected path (amount editable, defaults to balance_due_amount, submits and completes) → test Could Not Collect path (first tap expands reason field, second tap with empty reason shows inline error, second tap with reason submits + completes) → verify the dashboard board shows red COD UNRESOLVED pill + reason within ~1s of submission → enter payment in TapGoods → wait for sync → confirm flag clears automatically.
+- **Regen dashboard types** so the `as any` casts in `partytime-dashboard/src/lib/boardClient.ts` (`fetchUncollectedCodRows`) and the dashboard's `cash-collections` insert path can come out. Driver-app types are already current (`c308c81`).
 - Pre-trip Phase 2 polish: transactional submit RPC, real OOS auto-notify (SMS/email), `'never'`-truck trailer-row hide
 - Driver Profile / Compliance — doc upload, expiry tracking, 30-day reminders
 - Tools Hub content authoring (calculators, fire code checklist, equipment KB)
 - Training Module content authoring
 - Phase 2C wind-aware anchoring guidance (content layer + flag flip)
+- **Cleanup** (low priority): delete unused `AppStateContext.clearCache` (orphan since the auto-load reversal). Drop the orphan `dispatch_stops.cod_acknowledged_at` / `cod_acknowledged_by` columns. Both safe; both bundleable with the next housekeeping migration.
 
 ---
 

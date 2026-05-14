@@ -1,75 +1,24 @@
 # Open Questions
 
-## BLOCKER (2026-05-13): apply migration 051 to partytime-east
+## RESOLVED 2026-05-14 — Migration 051 applied; migration 009 also confirmed applied
 
-Migration 051 (`supabase/migrations/20260513_010_cash_collections_status.sql`)
-adds `status` + `not_collected_reason` columns to `cash_collections` plus
-two CHECK constraints and a partial index. Same two-repo migration
-coordination block as migration 009 — `supabase db push --linked` from
-this repo refuses to proceed because the dashboard has pushed dozens of
-migrations since the driver-app's last push.
+Both BLOCKER sections that used to sit at the top of this file are gone:
 
-The migration file IS shipped and the code that depends on it IS deployed
-(driver-app commit `13f50f0`, dashboard commit `ea9d84e`). Until the SQL
-applies:
+- **Migration 051** (`20260513_010_cash_collections_status.sql`) was applied to partytime-east on 2026-05-14 via `supabase db query --linked --file <path>` (the Management API path — see `tasks/lessons.md` for why this is the working workaround when `supabase db push --linked` is blocked by two-repo coordination). Tracking row added via `supabase migration repair --status applied 20260513`. Driver-app types regen'd in commit `c308c81`. `cash_collections.status` + `not_collected_reason` columns + both CHECK constraints + the partial index are all live.
 
-- The driver-app **"Could Not Collect"** path returns 500 at runtime
-  (column does not exist). The collected path is backward-compatible
-  and keeps working — the legacy COD flow is unaffected.
-- The dashboard's **COD UNRESOLVED** flag stays silently hidden
-  (boardClient catches the 42703 column-doesn't-exist error and returns
-  an empty map; one console.warn per browser session, then quiet).
+- **Migration 009** (`20260510_009_post_trip_reported_context.sql`) is also applied — schema probe on 2026-05-14 confirmed `vehicle_defects.reported_context` column exists and carries data (`'post_trip'` and `'pre_trip'` values seen). It was presumably applied earlier via the same SQL-Editor / `db query --linked --file` path; the BLOCKER section that used to live here was stale.
 
-**Apply path (Darren, ~2 minutes):**
+**RLS policies on `cash_collections`** were NOT re-declared by the migration (they exist in production from out-of-band creation; re-declaring would error). If RLS is ever rebuilt from scratch, the existing INSERT/SELECT policies allow `driver_id = auth.uid()` — re-author those bodies.
 
-1. Open Supabase Studio → partytime-east → SQL Editor.
-2. Paste the contents of
-   `partytime-driver-app/supabase/migrations/20260513_010_cash_collections_status.sql`
-   into the editor.
-3. Run. Expected: NOTICE messages from the DO blocks if constraints
-   were created; no rows returned for the index create.
-4. Verify with:
-   ```sql
-   SELECT column_name, data_type, column_default, is_nullable
-   FROM information_schema.columns
-   WHERE table_name = 'cash_collections'
-     AND column_name IN ('status', 'not_collected_reason');
-   ```
-   Expected:
-   - `status` text, default `'collected'::text`, NOT NULL
-   - `not_collected_reason` text, default NULL, nullable YES
-5. Run the constraint check:
-   ```sql
-   SELECT conname, pg_get_constraintdef(oid)
-   FROM pg_constraint
-   WHERE conrelid = 'public.cash_collections'::regclass
-     AND contype = 'c';
-   ```
-   Expected to find both `cash_collections_status_check` and
-   `cash_collections_reason_when_not_collected`.
-6. From the driver-app repo:
-   ```bash
-   supabase migration repair --status applied 20260513010
-   ```
-   to keep the local CLI tracking honest.
-7. Regen types in BOTH repos so the `as any` casts can be removed in a
-   follow-up:
-   ```bash
-   cd ~/Projects/partytime-driver-app && supabase gen types typescript --linked > src/types/supabase.ts
-   cd ~/Projects/partytime-dashboard   && supabase gen types typescript --linked > src/types/supabase.ts
-   ```
-
-**RLS policies on `cash_collections`:** the migration does NOT re-declare
-them. They exist in production already (created out of band with the
-table). If they're ever rebuilt from scratch the policy bodies need to be
-re-authored — the existing INSERT/SELECT policies allow `driver_id =
-auth.uid()`.
+**Dashboard repo follow-up still open:** regen its Supabase types so the `as any` casts in `boardClient.ts:fetchUncollectedCodRows` can come out. See `tasks/todo.md`.
 
 ---
 
-# Open Questions — Post-trip defect report build (2026-05-10)
+# Historical context — Post-trip defect report build (2026-05-10)
 
-## BLOCKER: `supabase db push --linked` cannot apply migration 009 from this repo
+The original BLOCKER section below predates both migration applies. It's kept for the architecture context (the schema field-name divergence section is still useful as a lesson about reading the live schema before writing code). The actual apply blocker is resolved.
+
+## (RESOLVED) Previously: `supabase db push --linked` cannot apply migration 009 from this repo
 
 `supabase migration list --linked` shows 27 dashboard-side migrations in the
 remote `_supabase_migrations` table that are not present as files in this

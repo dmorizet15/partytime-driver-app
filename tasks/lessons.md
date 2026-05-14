@@ -109,3 +109,35 @@ The cheap forcing function: when writing the migration's CHANGELOG entry, list t
 **How to apply:** The pre-push rule from CLAUDE.md is **build-then-push as one indivisible sequence**, not "build, then maybe push later." After every `npx next build` that goes green on `main`, the very next command is `git push origin main`. No interleaved work, no "I'll push at the end of the pass." If a build is green and you're not pushing, name out loud why (e.g., "still mid-pass, will push after the bundle is done") so the deferred push doesn't get lost across the next hour of context. When in doubt, push. Vercel auto-deploys, the build is fast, there's no penalty for an extra push but a real cost for a stale deploy that misleads the smoke test.
 
 **Forcing function:** at the start of any session, treat `git status` showing "Your branch is ahead of origin/main by N commits" as a red flag, not a routine note. Either push immediately or write down explicitly why you're holding (which should be rare).
+
+---
+
+## When `supabase db push` is blocked by two-repo coordination, use `supabase db query --linked --file`.
+
+**Why:** Both repos write migrations to the same Supabase project, so the remote `_supabase_migrations` table accumulates rows that neither repo has local migration files for. `supabase db push --linked` refuses to proceed when remote rows aren't present locally — and the CLI's "fix" (`migration repair --status reverted <list>`) would force the OTHER repo to think those migrations need re-running, which fails non-idempotently. The prior doctrine (see lesson above) was "apply via Supabase Studio SQL Editor, then `migration repair --status applied <version>` to record it." That works, but it requires a browser and a paste. 2026-05-14 surfaced a cleaner option: **`supabase db query --linked --file <path>` runs SQL via the Management API and skips the local-vs-remote migration history check entirely.** Same auth (Management API token), same target (the linked project), no history validation. Migration 051 was applied this way in one CLI command, then tracked via the same `migration repair`.
+
+**How to apply:** When `supabase db push --linked` complains about missing migrations (or when you've planned for the two-repo block at the start of a session): run `supabase db query --linked --file supabase/migrations/<your_file>.sql`. Verify the schema landed (REST probe or a follow-up `supabase db query --linked "<verify SQL>"`). Then `supabase migration repair --status applied <version>` to insert the tracking row. Regen types with `supabase gen types typescript --linked > src/types/supabase.ts` (see the next lesson — the CLI bleeds stderr into the file when redirected). Don't try `db push` first as a probe; if you've already identified the block, jump straight to `db query`.
+
+**Caveat:** `db query` doesn't validate idempotency or check for syntactic issues against the local migration files — it just runs your SQL. So the migration file should still be written idempotently (`CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, DO-block-wrapped constraint creates) so a re-run is a no-op.
+
+---
+
+## `supabase gen types typescript --linked > file.ts` writes stderr into the file. Strip the header and footer before committing.
+
+**Why:** The Supabase CLI prints `Initialising login role...` to stderr at the start of `gen types` and a multi-line "A new version of Supabase CLI is available…" to stderr at the end. Shell redirection `>` only captures stdout, BUT the CLI appears to print at least the first line to stdout in some setups — on 2026-05-14 the regen step produced a TypeScript file whose first line was `Initialising login role...` and whose last three lines were the upgrade nag. `npx next build` failed with `Parsing error: Unexpected keyword or identifier` on `src/types/supabase.ts`. Took two extra edit passes (one to strip the header, one to strip the footer) before the build went green.
+
+**How to apply:** After `supabase gen types typescript --linked > src/types/supabase.ts`, ALWAYS verify the first and last lines of the file:
+- First line MUST be `export type Json =` (or similar valid TS).
+- Last line MUST be `} as const` (or similar valid TS).
+
+If either line is the CLI's narration, strip it before committing. Or pipe through a filter: `supabase gen types typescript --linked 2>/dev/null | grep -v "^A new version\|^We recommend\|^Initialising" > src/types/supabase.ts`. Or run the command, then run a quick `npx next build` to catch the regression immediately. The point is that **the redirect doesn't isolate stdout cleanly** — treat the output as semi-trusted, not as final.
+
+---
+
+## A UI bug presenting as a JSX gating problem is often a data-layer problem. Trace the value before editing the ternary.
+
+**Why:** 2026-05-14 — Bug report: "Stop detail screen shows Mark Stop Complete button on an already-completed stop." Natural first instinct: check the JSX ternary that gates the button. Easy fix, right? Wrong. `StopDetailScreen.tsx:1163` already had `{isCompleted ? <Delivered card> : <ETA + Action card>}`. The gating logic was correct. The button only renders when `isCompleted === false`. So either `isCompleted` was being computed wrong, or `stop.current_status` wasn't `'completed'` when the screen re-rendered. **It was the second one.** The completion state was being written to the server (`/api/complete-stop` → `dispatch_stops.stop_status='completed'`) but never read back (`/api/routes` didn't `select('stop_status')`, `supabaseTransform.toRealStop` hardcoded `current_status: 'pending'`). The 5s post-complete `loadDay(date, true)` then replaced the in-memory completion mark with a freshly-transformed 'pending' value, and the OTW merge in `AppStateContext.loadDay` (when OTW had been sent earlier) clobbered any localStorage rescue. Three-line fix in three files — none of them in StopDetailScreen.
+
+**How to apply:** When a UI bug looks like a gating/visibility/conditional problem, the first thing to verify is **the value being gated on**, not the gate. Concretely: `console.log` (or stop in the inspector) on the boolean expression's inputs at the moment of render. If the inputs look wrong, walk backwards: where does `stop.current_status` come from? Is it being written somewhere? Is it being read back? Is something else writing to the same slot and overwriting? Don't reach for the ternary edit until you've confirmed the data path. The ternary is usually correct — it's the value flowing into it that's broken. **Symptom in the JSX, root cause in the data layer** is a recurring shape.
+
+**Related — when in doubt, check what columns the SELECT actually pulls.** `/api/routes` listing every column it selects (rather than `select('*')`) is a positive — it makes "what got read" auditable — but the cost is that adding a write without adding the matching read silently breaks the read-back. If a feature writes a column and the client cares about it, the SELECT statement is the second file to touch in the same commit.
