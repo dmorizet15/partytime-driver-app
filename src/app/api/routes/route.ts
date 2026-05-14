@@ -144,7 +144,7 @@ export async function GET(req: NextRequest) {
         customer_name, customer_phone, customer_cell,
         company_name, client_company,
         address, address_lat, address_lng,
-        items, notes, stop_type, payment_state, balance_due_amount,
+        items, notes, dispatcher_notes, stop_type, payment_state, balance_due_amount,
         calculated_eta,
         stop_status, completed_at,
         tapgoods_order_token

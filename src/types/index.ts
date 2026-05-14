@@ -52,7 +52,10 @@ export interface Stop {
   longitude?: number
   customer_phone: string     // legacy: whatever phoneNumbers[0].cell returned (often landline)
   customer_cell?: string     // explicit Mobile-typed phone — preferred for SMS
-  notes?: string
+  notes?: string             // TapGoods-owned customer-facing notes (read-only here)
+  dispatcher_notes?: string  // dashboard-owned internal dispatch note; surfaces as a
+                             //   "Note from dispatch" modal on stop open + persistent
+                             //   re-open card. Distinct from TapGoods notes above.
   equipment: EquipmentSummary
   items?: Array<{ category?: string | null; name?: string | null; qty?: number | null }>
   payment_state?: PaymentState

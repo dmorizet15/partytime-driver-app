@@ -57,6 +57,7 @@ export interface SupabaseStopRow {
   address_lng:           number | null
   items:                 unknown | null
   notes:                 string | null
+  dispatcher_notes:      string | null
   stop_type:             string
   payment_state:         string | null
   balance_due_amount:    number | null
@@ -113,6 +114,7 @@ function toRealStop(s: SupabaseStopRow, routeId: string, seq: number): Stop {
     customer_phone: s.customer_phone ?? '',
     customer_cell:  s.customer_cell  ?? undefined,
     notes:          s.notes ?? undefined,
+    dispatcher_notes: s.dispatcher_notes?.trim() ? s.dispatcher_notes : undefined,
     equipment:      buildEquipmentSummary(s.items),
     items:          Array.isArray(s.items) ? (s.items as RawItem[]) : undefined,
     payment_state:  mapPaymentState(s.payment_state),

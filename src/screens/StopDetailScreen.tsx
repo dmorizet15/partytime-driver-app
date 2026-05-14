@@ -232,10 +232,32 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   const [cashReasonVisible, setCashReasonVisible] = useState<boolean>(false)
   const [cashReasonError,   setCashReasonError]   = useState<string | null>(null)
 
+  // Dispatcher note (NEW-D) — read-only modal that pops on stop open when
+  // the dashboard has saved a dispatcher_notes value. "Got it" dismisses
+  // it for this screen lifetime; the persistent "View note" link below
+  // the header can re-open it any time. New mounts (driver navigates
+  // back into this stop later) re-pop the modal — intentional, so a
+  // dispatch update mid-day isn't missed.
+  const [showDispatcherNoteModal, setShowDispatcherNoteModal] = useState(false)
+  const dispatcherNoteAutoShownRef = useRef(false)
+
   useEffect(() => {
     if (stop) logEvent('STOP_VIEWED', routeId, stopId, stop.order_id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stopId])
+
+  // Auto-open dispatcher-note modal once per stop mount when the note
+  // exists. Stop hydration is async via context, so this fires after
+  // the stop loads. The ref guards against re-opening after the driver
+  // dismisses within the same screen lifetime.
+  useEffect(() => {
+    if (!stop) return
+    if (dispatcherNoteAutoShownRef.current) return
+    if (stop.dispatcher_notes && stop.dispatcher_notes.trim().length > 0) {
+      setShowDispatcherNoteModal(true)
+      dispatcherNoteAutoShownRef.current = true
+    }
+  }, [stop])
 
   useEffect(() => {
     if (!navMessage) return
@@ -1288,6 +1310,52 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
             </div>
             )}
 
+            {/* Note from dispatch — persistent "View note" link card. Always
+                visible when dispatcher_notes exists; auto-opens once on stop
+                mount (see useEffect above) and stays here so the driver can
+                re-open the modal any time. Solid blue border distinguishes
+                it from the dashed gold TapGoods notes card below. */}
+            {stop.dispatcher_notes && stop.dispatcher_notes.trim().length > 0 && (
+              <div style={{ padding: '14px 18px 0' }}>
+                <button
+                  onClick={() => setShowDispatcherNoteModal(true)}
+                  style={{
+                    width: '100%',
+                    background: C.paper,
+                    border: `1.5px solid ${C.blue}`,
+                    borderRadius: 14,
+                    padding: '12px 14px',
+                    display: 'flex', gap: 10, alignItems: 'center',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                  }}
+                  aria-label="View note from dispatch"
+                >
+                  <div style={{
+                    width: 24, height: 24, flexShrink: 0,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }} aria-hidden="true">
+                    <NoteIcon size={18} color={C.blue}/>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontSize: 10.5, fontWeight: 900, letterSpacing: '0.18em',
+                      color: C.blue, textTransform: 'uppercase',
+                    }}>
+                      Note from dispatch
+                    </div>
+                    <div style={{
+                      marginTop: 4, fontSize: 13, color: C.ink, lineHeight: 1.4,
+                      fontWeight: 600,
+                    }}>
+                      Tap to view
+                    </div>
+                  </div>
+                  <ArrowIcon size={16} color={C.blue}/>
+                </button>
+              </div>
+            )}
+
             {/* Notes — dashed-border card, only when notes exist */}
             {stop.notes && stop.notes.trim().length > 0 && (
               <div style={{ padding: '14px 18px 0' }}>
@@ -1826,6 +1894,71 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
               }}
             >
               Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Dispatcher note (NEW-D) — read-only modal. Auto-pops once per stop
+          mount when dispatcher_notes exists; "Got it" dismisses, the
+          persistent card above re-opens. Tap-outside also dismisses. */}
+      {showDispatcherNoteModal && stop && stop.dispatcher_notes && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, zIndex: 50,
+            background: 'rgba(10,11,20,0.80)',
+            display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+            padding: 16,
+          }}
+          onClick={() => setShowDispatcherNoteModal(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="dispatcher-note-modal-title"
+        >
+          <div
+            style={{
+              width: '100%', maxWidth: 384,
+              background: '#fff', borderRadius: 16, padding: 24,
+              boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)',
+              border: `1.5px solid ${C.blue}`,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{
+              fontSize: 10.5, fontWeight: 900, letterSpacing: '0.18em',
+              color: C.blue, textTransform: 'uppercase', marginBottom: 8,
+            }}>
+              Note from dispatch
+            </div>
+            <h2
+              id="dispatcher-note-modal-title"
+              style={{
+                fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 20,
+                color: C.ink, margin: 0, marginBottom: 14,
+                letterSpacing: '-0.01em',
+              }}
+            >
+              {stop.customer_name}
+            </h2>
+            <div style={{
+              fontFamily: FONT_BODY, fontSize: 15, color: C.ink,
+              lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+              marginBottom: 20,
+            }}>
+              {stop.dispatcher_notes}
+            </div>
+            <button
+              onClick={() => setShowDispatcherNoteModal(false)}
+              style={{
+                width: '100%', padding: '13px 16px',
+                background: C.blue, border: 'none', borderRadius: 14,
+                fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 14.5,
+                color: '#fff',
+                cursor: 'pointer',
+                letterSpacing: '-0.01em',
+              }}
+            >
+              Got it
             </button>
           </div>
         </div>
