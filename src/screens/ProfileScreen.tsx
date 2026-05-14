@@ -1,9 +1,10 @@
 'use client'
 
-import { ReactNode } from 'react'
+import { ReactNode, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { signOut } from '@/lib/auth'
+import { supabase } from '@/lib/supabase'
 import type { Role } from '@/types/auth'
 import Image from 'next/image'
 import BottomNav from '@/components/BottomNav'
@@ -69,6 +70,15 @@ function SignOutIcon({ size = 14, color = C.muted }: { size?: number; color?: st
       <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
       <polyline points="16 17 21 12 16 7"/>
       <line x1="21" y1="12" x2="9" y2="12"/>
+    </svg>
+  )
+}
+function LockIcon({ size = 14, color = C.ink }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+         strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="4" y="11" width="16" height="10" rx="2"/>
+      <path d="M8 11V7a4 4 0 0 1 8 0v4"/>
     </svg>
   )
 }
@@ -246,6 +256,52 @@ function AccountRow({ label, value }: { label: string; value: string }) {
   )
 }
 
+// ─── Password input row ──────────────────────────────────────────────────────
+function PwdField({
+  label, value, onChange, autoComplete, error, hint,
+}: {
+  label: string
+  value: string
+  onChange: (v: string) => void
+  autoComplete: 'current-password' | 'new-password'
+  error?: string | null
+  hint?: string
+}) {
+  const borderColor = error ? '#DC2626' : '#D9DBE3'
+  return (
+    <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <span style={{
+        fontFamily: FONT_DISPLAY,
+        fontSize: 11, fontWeight: 800, letterSpacing: '0.16em',
+        textTransform: 'uppercase', color: C.muted,
+      }}>
+        {label}
+      </span>
+      <input
+        type="password"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        autoComplete={autoComplete}
+        spellCheck={false}
+        autoCapitalize="off"
+        autoCorrect="off"
+        style={{
+          background: '#FAFBFD',
+          border: `1.5px solid ${borderColor}`,
+          borderRadius: 10,
+          padding: '12px 12px',
+          fontFamily: 'inherit',
+          fontSize: 15, fontWeight: 600, color: C.ink,
+          outline: 'none',
+        }}
+      />
+      {error
+        ? <span style={{ fontSize: 12, fontWeight: 700, color: '#B91C1C' }}>{error}</span>
+        : hint ? <span style={{ fontSize: 12, color: C.muted }}>{hint}</span> : null}
+    </label>
+  )
+}
+
 // ─── Screen ───────────────────────────────────────────────────────────────────
 export default function ProfileScreen() {
   const router = useRouter()
@@ -254,6 +310,64 @@ export default function ProfileScreen() {
   const displayName = profile?.display_name?.trim() || 'Driver'
   const roleLabel   = formatRole(profile?.roles)
   const email       = user?.email ?? '—'
+
+  // ── Change-password form ────────────────────────────────────────────────────
+  const [pwdOpen,        setPwdOpen]        = useState(false)
+  const [currentPwd,     setCurrentPwd]     = useState('')
+  const [newPwd,         setNewPwd]         = useState('')
+  const [confirmPwd,     setConfirmPwd]     = useState('')
+  const [newPwdError,    setNewPwdError]    = useState<string | null>(null)
+  const [confirmError,   setConfirmError]   = useState<string | null>(null)
+  const [formError,      setFormError]      = useState<string | null>(null)
+  const [submitting,     setSubmitting]     = useState(false)
+  const [showSuccess,    setShowSuccess]    = useState(false)
+
+  useEffect(() => {
+    if (!showSuccess) return
+    const t = setTimeout(() => setShowSuccess(false), 3000)
+    return () => clearTimeout(t)
+  }, [showSuccess])
+
+  function resetPwdForm() {
+    setCurrentPwd(''); setNewPwd(''); setConfirmPwd('')
+    setNewPwdError(null); setConfirmError(null); setFormError(null)
+  }
+
+  function cancelPwdForm() {
+    resetPwdForm()
+    setPwdOpen(false)
+  }
+
+  async function handleChangePassword(e: React.FormEvent) {
+    e.preventDefault()
+    if (submitting) return
+
+    setNewPwdError(null); setConfirmError(null); setFormError(null)
+
+    let bad = false
+    if (newPwd.length < 8) {
+      setNewPwdError('Must be at least 8 characters.')
+      bad = true
+    }
+    if (newPwd !== confirmPwd) {
+      setConfirmError('Passwords don’t match.')
+      bad = true
+    }
+    if (bad) return
+
+    setSubmitting(true)
+    const { error } = await supabase.auth.updateUser({ password: newPwd })
+    setSubmitting(false)
+
+    if (error) {
+      setFormError(error.message || 'Couldn’t update password. Try again.')
+      return
+    }
+
+    resetPwdForm()
+    setPwdOpen(false)
+    setShowSuccess(true)
+  }
 
   async function handleSignOut() {
     await signOut()
@@ -355,6 +469,143 @@ export default function ProfileScreen() {
             <AccountRow label="Role"  value={roleLabel}/>
             <AccountRow label="Email" value={email}/>
           </div>
+        </div>
+
+        {/* Security */}
+        <SectionEyebrow>Security</SectionEyebrow>
+        <div style={{ padding: '0 18px' }}>
+          {showSuccess && (
+            <div
+              role="status"
+              style={{
+                marginBottom: 12,
+                background: C.greenSoft,
+                border: `1.5px solid ${C.greenDeep}`,
+                borderLeft: `5px solid ${C.green}`,
+                borderRadius: 14,
+                padding: '12px 14px',
+                display: 'flex', alignItems: 'center', gap: 10,
+                color: C.greenDeep,
+                fontWeight: 700, fontSize: 14,
+              }}
+            >
+              <CheckIcon size={14} color={C.greenDeep}/>
+              Password updated.
+            </div>
+          )}
+
+          {!pwdOpen ? (
+            <button
+              type="button"
+              onClick={() => setPwdOpen(true)}
+              style={{
+                width: '100%',
+                background: C.paper,
+                border: `1.5px solid ${C.ink}`,
+                borderRadius: 16,
+                padding: '14px 16px',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                fontSize: 14, fontWeight: 700, color: C.ink,
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+              }}
+            >
+              <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <LockIcon size={14} color={C.ink}/>
+                Change password
+              </span>
+              <span aria-hidden="true" style={{ color: C.muted, fontSize: 18, lineHeight: 1 }}>›</span>
+            </button>
+          ) : (
+            <form
+              onSubmit={handleChangePassword}
+              style={{
+                background: C.paper,
+                border: `1.5px solid ${C.ink}`,
+                borderRadius: 16,
+                padding: 16,
+                display: 'flex', flexDirection: 'column', gap: 14,
+              }}
+            >
+              {formError && (
+                <div
+                  role="alert"
+                  style={{
+                    background: '#FEECEC',
+                    border: `1.5px solid #B91C1C`,
+                    borderLeft: `5px solid #DC2626`,
+                    borderRadius: 12,
+                    padding: '10px 12px',
+                    color: '#7F1D1D',
+                    fontWeight: 700, fontSize: 13, lineHeight: 1.4,
+                  }}
+                >
+                  {formError}
+                </div>
+              )}
+
+              <PwdField
+                label="Current password"
+                value={currentPwd}
+                onChange={setCurrentPwd}
+                autoComplete="current-password"
+                hint="Shown for your reference — not verified."
+              />
+              <PwdField
+                label="New password"
+                value={newPwd}
+                onChange={(v) => { setNewPwd(v); if (newPwdError) setNewPwdError(null) }}
+                autoComplete="new-password"
+                error={newPwdError}
+                hint={newPwdError ? undefined : 'At least 8 characters.'}
+              />
+              <PwdField
+                label="Confirm new password"
+                value={confirmPwd}
+                onChange={(v) => { setConfirmPwd(v); if (confirmError) setConfirmError(null) }}
+                autoComplete="new-password"
+                error={confirmError}
+              />
+
+              <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+                <button
+                  type="button"
+                  onClick={cancelPwdForm}
+                  disabled={submitting}
+                  style={{
+                    flex: 1,
+                    background: 'transparent',
+                    border: `1.5px solid ${C.ink}`,
+                    borderRadius: 12,
+                    padding: '12px 14px',
+                    cursor: submitting ? 'not-allowed' : 'pointer',
+                    fontFamily: 'inherit',
+                    fontSize: 14, fontWeight: 700, color: C.ink,
+                    opacity: submitting ? 0.5 : 1,
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  style={{
+                    flex: 1,
+                    background: C.blue,
+                    border: 0,
+                    borderRadius: 12,
+                    padding: '12px 14px',
+                    cursor: submitting ? 'not-allowed' : 'pointer',
+                    fontFamily: 'inherit',
+                    fontSize: 14, fontWeight: 800, color: '#fff',
+                    opacity: submitting ? 0.7 : 1,
+                  }}
+                >
+                  {submitting ? 'Updating…' : 'Update password'}
+                </button>
+              </div>
+            </form>
+          )}
 
           <button
             onClick={handleSignOut}
