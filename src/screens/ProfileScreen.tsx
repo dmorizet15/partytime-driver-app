@@ -316,6 +316,7 @@ export default function ProfileScreen() {
   const [currentPwd,     setCurrentPwd]     = useState('')
   const [newPwd,         setNewPwd]         = useState('')
   const [confirmPwd,     setConfirmPwd]     = useState('')
+  const [currentPwdError, setCurrentPwdError] = useState<string | null>(null)
   const [newPwdError,    setNewPwdError]    = useState<string | null>(null)
   const [confirmError,   setConfirmError]   = useState<string | null>(null)
   const [formError,      setFormError]      = useState<string | null>(null)
@@ -330,7 +331,7 @@ export default function ProfileScreen() {
 
   function resetPwdForm() {
     setCurrentPwd(''); setNewPwd(''); setConfirmPwd('')
-    setNewPwdError(null); setConfirmError(null); setFormError(null)
+    setCurrentPwdError(null); setNewPwdError(null); setConfirmError(null); setFormError(null)
   }
 
   function cancelPwdForm() {
@@ -342,7 +343,7 @@ export default function ProfileScreen() {
     e.preventDefault()
     if (submitting) return
 
-    setNewPwdError(null); setConfirmError(null); setFormError(null)
+    setCurrentPwdError(null); setNewPwdError(null); setConfirmError(null); setFormError(null)
 
     let bad = false
     if (newPwd.length < 8) {
@@ -355,7 +356,23 @@ export default function ProfileScreen() {
     }
     if (bad) return
 
+    if (!user?.email) {
+      setFormError('Couldn’t verify session. Sign out and back in, then try again.')
+      return
+    }
+
     setSubmitting(true)
+
+    const { error: reauthError } = await supabase.auth.signInWithPassword({
+      email: user.email,
+      password: currentPwd,
+    })
+    if (reauthError) {
+      setSubmitting(false)
+      setCurrentPwdError('Current password is incorrect')
+      return
+    }
+
     const { error } = await supabase.auth.updateUser({ password: newPwd })
     setSubmitting(false)
 
@@ -547,9 +564,9 @@ export default function ProfileScreen() {
               <PwdField
                 label="Current password"
                 value={currentPwd}
-                onChange={setCurrentPwd}
+                onChange={(v) => { setCurrentPwd(v); if (currentPwdError) setCurrentPwdError(null) }}
                 autoComplete="current-password"
-                hint="Shown for your reference — not verified."
+                error={currentPwdError}
               />
               <PwdField
                 label="New password"
