@@ -4,6 +4,46 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-05-13 evening — Cash Collection v2 (walk-away)
+
+**Scope:** Complete the COD cash-collection loop. The driver-app COD card and Mark Complete were independent — drivers could complete a stop without acknowledging cash, and there was no path to record "could not collect." This session wires Mark Complete to gate cash acknowledgment, adds a two-path modal (Collected with editable amount / Could Not Collect with required reason), reconstructs the missing `cash_collections` migration, and surfaces the uncollected state on the dashboard board with auto-resolution via TapGoods sync. Two repos shipped together.
+
+### What shipped — driver app
+- **Migration 051 (`20260513_010_cash_collections_status.sql`)** — reconstructs the production `cash_collections` table (no prior migration file existed) and adds `status text DEFAULT 'collected'` + `not_collected_reason text` with two CHECK constraints (status enum + reason-required-when-not-collected) and a partial index on stop_id WHERE status='not_collected'. Idempotent end-to-end. **NOT yet applied to partytime-east — same two-repo coordination block as migration 009.**
+- **`/api/cash-collections` POST extended** — accepts `{stop_id, status, amount_collected?, not_collected_reason?}`. Reason required when status='not_collected'. Collected path omits `status` from the INSERT so the legacy schema still works; not_collected path requires migration 051.
+- **`/api/cash-collections` GET unchanged contract** — still returns `{exists, collection|null}`, selects only legacy columns for pre-migration safety.
+- **`StopDetailScreen.tsx`** — Mark Stop Complete on a COD delivery stop intercepts and fires the new cash modal first. Cash modal has two paths: Collected (editable amount, primary gold button) and Could Not Collect (first tap expands required reason textarea, second tap submits). Inline error if reason missing. Stop completion runs AFTER cash POST succeeds. The standalone "Confirm Cash Collected →" button is gone — Mark Complete is now the only trigger. Extracted shared `runStopComplete()` helper.
+
+### What shipped — dashboard
+- **`fetchUncollectedCodRows()` + `buildUncollectedCodMap()`** in `src/lib/boardClient.ts` — returns Map<stop_id, reason> of all status='not_collected' rows. Tolerant of pre-migration-051 schema (PG 42703 → empty map + one warn).
+- **`useUncollectedCodMap()`** hook (new file `src/hooks/useUncollectedCod.ts`) — keyed `['cod-uncollected']`, deduped by tanstack-query so the whole board shares one fetch.
+- **`useRealtime` adds `cash_collections_changes` channel** that invalidates `['cod-uncollected']` on any event. Driver-app INSERTs propagate to the dashboard inside ~1s.
+- **`StopCard.tsx`** — renders red "COD UNRESOLVED" pill in the top-right badge cluster + a red reason block above the footer when the map has the stop AND `payment_state !== 'paid_in_full'`. Auto-clears via the existing realtime cascade when TapGoods sync flips payment_state.
+
+### Migrations applied
+- None this session. Migration 051 file committed but NOT yet applied to remote — Darren applies via Supabase Studio SQL Editor (instructions in `tasks/open-questions.md`).
+
+### Verification
+- `npx next build` clean — driver app.
+- `npx next build` clean — dashboard.
+- Pre-migration smoke check: collected path POST works against legacy schema (verified by code review of conditional INSERT shape).
+
+### Commits — driver app
+- `150c277` docs: session close — equipment summary + week view enhancements (prior session's deferred close artifacts)
+- `13f50f0` feat(cod): cash modal replaces Mark Complete on COD delivery stops
+
+### Commits — dashboard
+- `ea9d84e` feat(board): unresolved-COD flag on stop card
+
+### For chat-Claude / Notion
+- New shipped feature: COD acknowledgment is now gated through Mark Stop Complete. Drivers can no longer skip the cash modal on COD delivery stops.
+- Two paths: Collected (editable amount, partial payments supported) or Could Not Collect (required reason note). Both record to `cash_collections`.
+- Dashboard surfaces unresolved-COD inline on each stop card — red pill + reason block, visible without hover. Auto-clears when Melissa records the payment in TapGoods and the next sync flips `payment_state` to `paid_in_full`. No manual ack button — fully automatic.
+- Migration 051 awaits Darren's manual apply to partytime-east. Until applied, the "Could Not Collect" path returns 500 and the dashboard flag stays hidden. The Collected path is backward-compatible and unaffected.
+- Tech debt added: regen supabase types in both repos post-migration to remove `as any` casts. Orphan `dispatch_stops.cod_acknowledged_at/by` columns confirmed unused; flag for cleanup migration.
+
+---
+
 ## 2026-05-13 — Two-tier equipment summary + week view enhancements
 
 **Scope:** Replace per-surface ad-hoc item formatters with a single shared helper returning a structured two-tier summary. Wire the previously-stubbed Town/Equip filter pills and prev/next week nav. Add a "View in TapGoods" link per stop. Multiple smoke-test fixes after each pass. Paired with eight commits in `partytime-dashboard` covering the same arc — the two repos ship together because the helpers are byte-for-byte mirrors and the `/api/schedule/week` response shape is locked across them.

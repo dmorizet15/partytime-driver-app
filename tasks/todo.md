@@ -1,5 +1,13 @@
 # Open Tasks — partytime-driver-app
 
+## Cash Collection v2 — follow-ups (added 2026-05-13 evening)
+
+- [ ] **BLOCKING: apply migration 051 to partytime-east.** Same two-repo coordination block as migration 009. Step-by-step in `tasks/open-questions.md` (Migration 051 section). Until applied, the "Could Not Collect" path returns 500 and the dashboard flag stays hidden. The "Collected" path is unaffected (API is backward-compatible).
+- [ ] **Regen supabase types post-migration in BOTH repos.** Once migration 051 is applied: `supabase gen types typescript --linked > src/types/supabase.ts`. Remove the `as any` casts in `partytime-dashboard/src/lib/boardClient.ts` (`fetchUncollectedCodRows`) and `partytime-driver-app/src/app/api/cash-collections/route.ts` (`insert` cast). Both have inline comments flagging the cleanup.
+- [ ] **Drop the orphan `dispatch_stops.cod_acknowledged_at` and `dispatch_stops.cod_acknowledged_by` columns.** Audit done 2026-05-13 — zero readers, zero writers. Cash Collection v2 uses payment_state-based auto-resolution instead. Wait until schema confidence is high; bundle with the next housekeeping migration.
+- [ ] **Phase 2 — Real-time COD-uncollected push to dispatch.** Today Melissa learns about the flag via the board's visible realtime update (~1s after the driver submits). A push/SMS notification would help if she's heads-down on something else when it lands. Same channel as the planned pre-trip OOS auto-notify (currently Phase 2 stub copy on Screen 7).
+- [ ] **Add an FK from `cash_collections.stop_id` to `dispatch_stops.id`** so PostgREST can embed cash_collections in a stops fetch (one query instead of two). Low priority — current pattern (separate query, deduped by tanstack-query) works fine for the dashboard's volume. Bundle with the schema cleanup migration above.
+
 ## Cross-repo: Mirrored helpers (added 2026-05-13)
 
 Three helpers are now byte-for-byte mirrored between `partytime-driver-app/src/lib/` and `partytime-dashboard/src/lib/`:
