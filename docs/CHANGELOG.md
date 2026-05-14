@@ -4,6 +4,53 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-05-14 evening — Phase 2.5C: GPS Auto-Arrival (end-to-end, both repos)
+
+**Scope:** Driver opens a delivery / pickup / service stop → app arms a 150m geofence around its coordinates → driver crosses into the bubble → app POSTs once to a new `/api/stops/arrived` endpoint → server stamps `dispatch_stops.arrived_at` idempotently → dashboard's existing `dispatch_stops` realtime channel fans it out → Melissa sees a teal pin below the stop number on the board within ~1s. Migration applied via the Management API path discovered earlier today (`supabase db query --linked --file`); both repos' Supabase types regenerated. No standalone notification or polling layer — leverages infra that's been in place since Migration 034 (geocoding pipeline) and the original realtime subscriptions.
+
+### What shipped
+
+Driver-app (`73b7509`):
+- Migration `20260514_011_arrival_geofence.sql` — `ADD COLUMN IF NOT EXISTS arrived_at timestamptz` on `dispatch_stops`. Applied to `partytime-east` via `supabase db query --linked --file`; tracking repaired via `supabase migration repair --status applied 20260514`. Verification probe: column exists as `timestamp with time zone`, nullable, no constraints.
+- `POST /api/stops/arrived` (NEW) — session-cookie auth, RLS-gated UPDATE (`WHERE arrived_at IS NULL`), returns canonical server timestamp. Idempotent: re-POSTs against an already-arrived stop return success with the existing value.
+- `useArrivalGeofence` hook (NEW) — `watchPosition` + haversine distance + one-shot POST. Clears watch on success/unmount. Surfaces `denied / unavailable / error` states (currently unused by UI).
+- `AppStateContext.markArrived` — terminal-value guard in reducer (won't overwrite existing `arrived_at`).
+- `Stop.arrived_at` plumbed through `supabaseTransform.toRealStop` and `/api/routes` select list.
+- `StopDetailScreen` mounts the hook with `enabled = delivery|pickup|service AND coords present AND !arrived_at AND !completed`; renders green "Arrived · HH:MM" pill in the eyebrow row.
+- `src/types/supabase.ts` regenerated post-migration apply.
+
+Dashboard (`03dd102`):
+- `DispatchStop.arrived_at` added to the hand-maintained `src/types/board.ts`.
+- `StopCard.tsx` — teal pin badge (22x22 filled circle, location-pin glyph) below the stop number per spec; mirrors the green-check completion pattern. Footer time strip surfaces "Arrived HH:MM" alongside ETA / Completed. Removed the pre-existing Phase 2.5C TODO comment.
+- `fetchStops` already uses `.select('*')` — no query edit needed.
+- Realtime channel already listens with `event: '*'` — no subscription edit needed.
+
+### Migrations applied
+- **Migration 052** (driver-app file `20260514_011_arrival_geofence.sql`, cross-repo number 052) → applied via `supabase db query --linked --file` (Management API path). Tracking row added via `supabase migration repair --status applied 20260514`. Schema probe confirmed `dispatch_stops.arrived_at` exists as `timestamp with time zone NULL`.
+
+### Verification
+- `npx next build` clean in both repos before push.
+- Migration tracking probe (`supabase migration list --linked`) shows `20260514` in both Local and Remote post-repair.
+- Type regen produced clean files (1584 → 1587 lines driver-app — exactly the 3 `arrived_at` Row/Insert/Update lines, no stderr leakage).
+
+### Commits
+- driver-app `73b7509` feat(arrival): Phase 2.5C — GPS auto-arrival geofence (driver app)
+- dashboard `03dd102` feat(board): Phase 2.5C — Arrived badge on StopCard (driver geofence)
+
+### For chat-Claude / Notion
+- **Phase 2.5C — GPS Auto-Arrival is SHIPPED end-to-end.** Master Build Checklist line should move to ✅. Build Progress Dashboard entry should reflect "GPS auto-arrival foreground geofence — driver app + dashboard badge, both deployed 2026-05-14 evening."
+- **Doctrine update — `dispatch_stops.arrived_at` is the canonical arrival signal.** Driver app's `useArrivalGeofence` hook is the sole writer (via `/api/stops/arrived`); dashboard reads. Any future arrival-related work goes through this column.
+- **Doctrine update — landing screens stay separate from execution screens (Phase 2.5C variant).** The geofence is mount-scoped to `StopDetailScreen` deliberately. No global active-stop tracker exists; if a future feature needs background arming, it requires a native shell, not new global state in the PWA.
+- **Spec lock — 150m radius, foreground only, just-in-time permission, per-stop arming.** These are not configuration; they're encoded in the hook. Notion spec page should be marked LOCKED.
+- **Tech debt added:**
+  - Phase 2 push/SMS to dispatch on arrival (pairs with the existing COD-uncollected push backlog item — same channel).
+  - Phase 2 background geofencing requires native shell — out of scope for the PWA.
+  - Driver-side "location off" warning surface (hook already exposes the state; UI currently ignores).
+  - Arrival → completion delta analytics is a future dashboard surface; data is now in the columns.
+- **Two-repo helper-mirroring rule did NOT apply this session.** No mirrored helpers (equipmentSummary / inflatable / itemCategories) were touched. The boardClient `select('*')` pattern and the realtime `event: '*'` subscription mean the dashboard automatically picks up new dispatch_stops columns — only the TypeScript type and the visible JSX needed changes.
+
+---
+
 ## 2026-05-14 — Driver scope + completion persistence + migration 051 apply
 
 **Scope:** Four bug reports, all rooted in the data layer rather than UI logic. `/api/routes` returned every route on the day with no driver scope; the cold-load auto-redirect from May 10 picked the wrong route as a result; stop-completion state was written to the server but never re-read, so the post-complete force-reload silently clobbered it. One pass fixed Bugs 1+2+3 with a session-aware `/api/routes` and the removal of the auto-redirect; a second pass fixed Bug 4 by reading `stop_status, completed_at` end-to-end. Migration 051 (Cash Collection v2) applied to partytime-east during the session via the newly-discovered Management API path.

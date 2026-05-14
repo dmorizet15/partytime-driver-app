@@ -1,5 +1,13 @@
 # Open Tasks — partytime-driver-app
 
+## May 14, 2026 — Phase 2.5C session follow-ups (GPS Auto-Arrival)
+
+- [ ] **Smoke-test arrival on production** — driver `73b7509`, dashboard `03dd102` both deployed. Test plan in `CLAUDE.md` → "Phase 2.5C — GPS Auto-Arrival" → NEXT block. Loops: permission prompt on first watch, mid-route entry into the 150m bubble, dashboard teal pin within ~1s, badge coexistence with the green completion check, persistence across refetch.
+- [ ] **Phase 2 — Real-time push to dispatch on arrival.** Today Melissa sees the teal pin update visually via realtime; no audible signal. Pair with the existing "real-time COD-uncollected push to dispatch" Phase 2 item — same channel.
+- [ ] **Phase 2 — Background geofencing (native shell).** Current implementation is foreground-only (`navigator.geolocation.watchPosition` requires the document visible on mobile browsers). For autonomous arrival when the driver locks the phone or backgrounds the PWA, need Capacitor or a native shell with the Android Geofence API. Out of scope for v1 PWA.
+- [ ] **Phase 2 — Driver-side "location off" warning.** `useArrivalGeofence` already surfaces `denied` / `unavailable` / `error` states; the UI currently ignores them. A small inline hint on StopDetailScreen ("Location off — arrival won't auto-detect") would help when permissions are denied. Low priority because Mark Stop Complete still works.
+- [ ] **Phase 2 — Arrival → completion delta analytics surface.** The data now flows into `arrived_at` and `completed_at`. A simple report (avg on-site time, outliers) would be useful for ops. Dashboard-side; out of scope this session.
+
 ## May 14, 2026 — bug-fix session follow-ups
 
 - [ ] **Smoke-test on production** after the May-14 Vercel deploys clear. Coverage list lives in `CLAUDE.md` → "Driver scope + completion persistence" → NEXT. Three loops: driver-scope (Home + Routes tab), completion persistence (mark-complete → return-nav), Cash Collection v2 (Collected / Could Not Collect paths now that migration 051 is live).

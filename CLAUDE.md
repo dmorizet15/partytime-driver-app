@@ -262,7 +262,58 @@ No `StopDetailScreen` JSX edits — the `{isCompleted ? <Delivered> : <ETA + Act
 
 **Migration 051 apply mechanics discovery (worth its own lesson):** `supabase db query --linked --file <path>` runs SQL via the Management API. Unlike `supabase db push --linked`, it does NOT check the local-vs-remote migration history — so it's not blocked by the two-repo coordination problem documented in `tasks/lessons.md`. After running it, mark the migration as applied with `supabase migration repair --status applied <version>` to keep the tracking honest. This is now the recommended path for any future cross-repo migration push from this repo. The lessons.md file has been updated.
 
+### Phase 2.5C — GPS Auto-Arrival SHIPPED ✅ — May 14, 2026 (driver `73b7509` / dashboard `03dd102`)
+
+End-to-end GPS auto-arrival loop, both repos, in one session. When a driver opens a delivery / pickup / service stop, a 150m geofence is armed around the stop's coordinates. Crossing the threshold POSTs once to `/api/stops/arrived`, which idempotently stamps `dispatch_stops.arrived_at`. The dashboard's existing `dispatch_stops` realtime channel fans the update to the board — Melissa sees a teal pin badge below the stop number within ~1s, no polling. Migration 052 (driver-app file `20260514_011_arrival_geofence.sql`) added the column; applied via Management API path, types regen'd both sides post-apply.
+
+**Architecture — read this before touching any arrival / geofence code:**
+
+- **`dispatch_stops.arrived_at` is server-authoritative and terminal.** The `/api/stops/arrived` endpoint stamps via `UPDATE … WHERE arrived_at IS NULL`. Subsequent POSTs against an already-arrived stop are no-ops at the column level and return the existing canonical timestamp. The reducer guard (`MARK_ARRIVED` action in `AppStateContext`) also refuses to overwrite an existing local value. Server time wins — driver phone clocks drift; one canonical column read by both repos.
+- **The geofence is mount-scoped to `StopDetailScreen`.** No global active-stop tracker exists; "active stop" is implicit via the `/route/<id>/stop/<id>` URL. The `useArrivalGeofence` hook arms `watchPosition` when the screen mounts with a watchable stop and clears the watch on unmount OR on successful arrival POST. The hook is called unconditionally on every render (hook order stability); the `enabled` flag gates whether `watchPosition` runs.
+- **Watchable stop = delivery / pickup / service with both coords AND not already arrived AND not completed.** Warehouse stops (synthetic, no coords) are skipped at the `enabled` flag. Once `arrived_at` is set, the hook re-evaluates `enabled = false` and tears down the watch — no re-firing.
+- **Permission UX is just-in-time.** First `watchPosition` call (driver's first stop-detail open) fires the browser's native location-permission prompt. Grant persists at the site level (`work.partytime-rentals.com`) — subsequent stops mount without UI. No proactive permission card; per spec.
+- **Foreground only.** `navigator.geolocation.watchPosition` requires the document visible on mobile browsers. Acceptable for v1 — PTR-owned Android devices stay on the active stop with the screen on during arrival. Background geofencing requires native (Capacitor / Geofence API) — out of scope.
+- **Coordinates flow:** `dispatch_stops.address_lat / address_lng` (populated by dashboard Migration 034 geocoding pipeline) → `/api/routes` select → `supabaseTransform.toRealStop` → `Stop.latitude / longitude` → `useArrivalGeofence` consumes directly. Same pipeline that already feeds the StopWeatherModule — no separate fetch.
+- **Arrival timestamp surfaces as:**
+  - Driver app: green "Arrived · HH:MM" pill in `StopDetailScreen`'s eyebrow row (next to the stop-type pill).
+  - Dashboard `StopCard`: teal pin badge (22x22 filled circle with location-pin glyph) positioned BELOW the stop number per spec — mirrors the green-check completion-circle visual pattern. Coexists with the completion check (driver may arrive 10 min before tapping Mark Complete; both badges render). Footer time strip shows "Arrived HH:MM" alongside ETA when arrived but not yet completed; "Completed HH:MM" takes precedence once that lands.
+- **Lifecycle color stack on the dashboard StopCard top-right:** blue "En route" pill (above stop number) → teal Arrived pin (below stop number) → green completion check (top, above en route when both apply). The colors mirror the driver workflow: pending → en route → arrived → completed.
+- **The hook also surfaces diagnostic states** (`denied`, `unavailable`, `error`) but the current UI ignores them — driver gets the OS permission UI directly; if denied, arrival just won't auto-detect and the driver still has Mark Stop Complete. Not wiring a "location-off" warning surface in v1 because it adds noise for an edge case.
+
+**Files touched this session:**
+
+Driver-app (commit `73b7509`):
+- `supabase/migrations/20260514_011_arrival_geofence.sql` (NEW) — `ADD COLUMN IF NOT EXISTS arrived_at timestamptz`
+- `src/types/index.ts` — `Stop.arrived_at?: string`
+- `src/lib/supabaseTransform.ts` — read + map column
+- `src/app/api/routes/route.ts` — added to select list
+- `src/app/api/stops/arrived/route.ts` (NEW) — session-cookie auth, idempotent stamp, returns canonical server timestamp
+- `src/hooks/useArrivalGeofence.ts` (NEW) — `watchPosition` + haversine + one-shot POST
+- `src/context/AppStateContext.tsx` — `MARK_ARRIVED` action + reducer (terminal-value guard) + `markArrived` callable
+- `src/screens/StopDetailScreen.tsx` — mounts hook + renders eyebrow pill
+- `src/types/supabase.ts` — regenerated post-migration apply
+
+Dashboard (commit `03dd102`):
+- `src/types/board.ts` — `DispatchStop.arrived_at: string | null`
+- `src/components/board/StopCard.tsx` — teal pin badge below stop number + footer timestamp + removed the pre-existing Phase-2.5C TODO comment
+
+**Out of scope this session:**
+- Real-time push / SMS to dispatch on arrival (the realtime channel already fans the timestamp; Melissa learns within ~1s visually). Phase 2 if/when an audible signal is wanted.
+- Background geofencing (requires native shell — Capacitor / Android Geofence API).
+- Multi-stop simultaneous arming (intentional — spec says "current active stop only").
+- A "location off" warning surface for the driver if permission is denied (current UI silently degrades; Mark Stop Complete still works).
+- Dashboard-side audit / analytics surface for arrival → completion deltas (the data is now in the column; building reports is a separate Phase 2 thread).
+
 ### NEXT
+- **Smoke-test Phase 2.5C arrival on production** (deploys: driver `73b7509`, dashboard `03dd102`):
+  - Sign in as driver; open a delivery stop on today's route while away from the customer site (anywhere outside the 150m bubble). Confirm browser prompts for location permission on first watch.
+  - Grant permission; verify console / DevTools shows watchPosition ticks with descending `lastDistanceMeters`.
+  - Drive into the geofence (or simulate via DevTools sensors → Location). Within a few ticks of crossing the 150m boundary: confirm the green "Arrived · HH:MM" pill appears in the driver's StopDetailScreen eyebrow.
+  - On the dashboard board: confirm the teal pin badge appears below the stop number within ~1s of the arrival POST (realtime channel fan-out). Confirm the footer time strip shows "Arrived HH:MM" (or "ETA: 4:30 · Arrived 4:35" if ETA is also present).
+  - Tap Mark Stop Complete on the driver app → confirm both badges coexist on the dashboard (green check + teal pin), and the footer flips from "Arrived" to "Completed HH:MM".
+  - Refresh both apps; confirm arrived_at persists.
+  - Edge: open a warehouse stop on the driver — confirm no geofence arms (no permission prompt, no POST).
+  - Edge: open an already-arrived stop — confirm no re-fire (pill renders from existing value, hook stays at `enabled = false`).
 - **Smoke-test on production** after Vercel deploy (covers all three bug fixes from May 14):
   - Sign in as darren@partytime-rentals.com → confirm lands on Home (not `/route/<id>`).
   - Home's "THE DAY, IN 3" → confirm shows only Route 2's stops, no Route 1 bleed.
