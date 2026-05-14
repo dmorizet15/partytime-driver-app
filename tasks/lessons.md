@@ -86,6 +86,22 @@ The cheap forcing function: when writing the migration's CHANGELOG entry, list t
 
 ---
 
+## A "stub" UI control reported as "broken after my change" is usually pre-existing dead wiring, not a regression.
+
+**Why:** During the 2026-05-13 week view session Darren reported the Town/Equip filter pills and prev/next nav buttons "stopped working after the equipment shape change" and asked for the regression to be fixed. The actual code state: the dashboard's WeekScheduleView has explicit comments (lines 148–150) saying "Filter pills — stubbed wiring per spec; logic deferred. TODO: implement actual filtering when a filter spec lands. For now the pill states are persisted but don't transform the rendered data." The driver-app variant inherited the same stub. The nav buttons were `disabled` with `title="Week navigation lands in a follow-up"`. Both surfaces had been visually present but functionally inert since the May 11 `c839588` initial week-view ship. The user's mental model ("they used to work") was off; they had never worked. If I'd taken the framing at face value and gone hunting for the regression caused by the equipment shape change, I'd have spent the session looking in the wrong place.
+
+**How to apply:** When a user reports "X broke after Y change," before fixing the assumed regression, verify the current code state — and the prior code state if there's a recent diff. Specifically: search the file for `disabled`, `TODO`, `stubbed`, `// FIXME`, and any persistence-without-consumption pattern (state set in localStorage but never read by the render path). If the control was never wired, the answer isn't "restore," it's "wire it now." Be transparent with the user about that — say "this was actually never wired, here's what it would do if I wire it" — so the work matches reality. Don't silently restore something that never existed.
+
+---
+
+## When two repos share a helper file, treat the pair as a single artifact: change both in the same commit-pass, or don't change either.
+
+**Why:** Three helpers — `equipmentSummary.ts`, `inflatable.ts`, `itemCategories.ts` — now exist as byte-for-byte mirrors in `partytime-driver-app/src/lib/` and `partytime-dashboard/src/lib/`. There is no shared package, no symlink, no monorepo, no build-time validation. The driver-app's copies were ported from the dashboard during the 2026-05-13 session because the helpers were small (50–140 lines each), the inputs are identical (TapGoods JSONB items shape), and the outputs are consumed by independent UI in each repo. The cost of mirroring is one extra `Edit` call per change. The cost of drift is silent semantic differences — a category mapping fix on one side that doesn't propagate, an inflatable keyword added to the dashboard but not the driver app, a regex tightened in one repo and loosened in the other. Drift surfaces as "but the dashboard shows it correctly!" bug reports days or weeks later when the data shape varies enough to expose the difference.
+
+**How to apply:** When editing any of the three mirrored helpers, the workflow is: (1) Edit dashboard file. (2) Edit driver-app file with identical content. (3) Build BOTH repos. (4) Commit both with matching commit messages (modulo "Mirror of dashboard fix" preamble on the driver-app side). (5) Push both. Do NOT split this across sessions or commit one without the other "to verify it works first" — the inconsistent intermediate state is a footgun. If the change feels too large to mirror, that's the signal to extract into a shared package (currently a `tasks/todo.md` long-term item). Until that lands, the mirroring discipline is the only thing keeping the two repos rendering items the same way.
+
+---
+
 ## `npx next build` green ≠ deployed. The push is the deployment trigger.
 
 **Why:** 2026-05-09 evening, ten commits piled up on local `main` over a multi-hour inspection-flow build session. Each pass ran `npx next build` after editing — green every time — and I conflated "build succeeded" with "this is in production." It wasn't. `git push` was never run between the morning's `c5aa4c5` and the end of the session. Smoke testing against the Vercel deploy showed the old pre-inspection app for 2+ hours because nothing new was deployed. Discovered when Darren said "nothing has appeared in Vercel for 2+ hours" and asked for git status. Recovery was clean (one push of all 10 commits, single Vercel build), but the wasted smoke-test cycles were avoidable.

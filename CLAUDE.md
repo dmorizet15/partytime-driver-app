@@ -68,7 +68,7 @@ Follow the Darren AI Protocol in Notion before doing anything.
 
 ---
 
-## Current Build State (as of May 6, 2026)
+## Current Build State (as of May 13, 2026)
 
 ### v1.1 COMPLETE ✅ — April 27, 2026
 All phases shipped to production.
@@ -194,6 +194,27 @@ New `/schedule` route renders `WeekScheduleView` for driver / tools_only / super
 Reason for the reversal: the original /tools-redirect was a placeholder while the Home variant was being designed. With Session C the variant exists, so `tools_only` users get their proper landing surface and the schedule view is exposed cleanly. The redirect-bounce is also gone — fewer hops to the user's actual workspace.
 
 Surviving `tapgoods_*` references are all legitimate Supabase column names (`tapgoods_order_token`, `tapgoods_stop_id`, etc., written by the dashboard's sync layer) plus the View Order URL template in `src/config/externalApps.ts`. Do NOT delete these.
+
+### Two-Tier Equipment Summary + Week View Enhancements — May 13, 2026
+Driver-app commits `24d5dc7` → `bf06342` (six commits, paired with eight dashboard commits across the same arc). Condensed surfaces — driver-app week view, driver-app condensed route list, dashboard condensed board — all moved off ad-hoc per-surface item formatters and now consume a single shared helper that returns a structured two-tier summary. Plus three previously-stubbed week view UI controls got real wiring.
+
+**Architecture — read this before touching equipment summary, week view, or category resolution:**
+
+- **`src/lib/equipmentSummary.ts` is the single source of truth for condensed-surface item rendering.** Returns `EquipmentSummary { tier1: string[]; tier2: string[] }`. Tier 1 is the headline text line, in fixed order: Tents (consolidated by parsed size, sorted by `sqft × qty` descending — same priority weighting as the dashboard's full StopCard / WarehouseStopCard via `parseTentSqft`) → `N chairs` → `N tables` → `N linens` → one inflatable token per line item with qty prefix (no name-dedup, original order). Tier 2 is the "everything else" pill set — deduped, alphabetically sorted, no quantities. The helper is byte-for-byte mirrored in the dashboard at `partytime-dashboard/src/lib/equipmentSummary.ts`. Same shape, same behavior, same comment text. **Any change to one MUST be applied to the other in the same session.** No shared package; no build-time validation that they match.
+
+- **`src/lib/inflatable.ts` and `src/lib/itemCategories.ts` follow the same mirroring rule.** Both ported from the dashboard during this session. `inflatable.ts` exposes `isInflatableCategory()` (keyword match for inflat/bounce/combo/slide/venture/extreme/tap) which `equipmentSummary` uses for Tier 1 inflatables bucket and the dashboard's `INFLATABLE` badge uses for the warning pill. `itemCategories.ts` exposes `resolveCategory(rawCategory, name)` which returns the canonical display name for any TapGoods item. **CATEGORY_MAP keys are intentionally lowercased** — TapGoods returns mixed casing across accounts (`'Tents'` and `'tents'` both seen). Map values stay canonical case so exact-match consumers (`StopCard` filters by `i.display === 'Tents'`, `equipmentSummary.bucketOf` checks `=== 'Tents'`) keep working.
+
+- **`Stop.equipment: EquipmentSummary` is required, not optional.** `src/types/index.ts`. The old `Stop.items_text` field is gone — all consumers must read `stop.equipment.tier1` / `stop.equipment.tier2` directly. `supabaseTransform.ts` populates the field at the data-mapping layer; warehouse-block synthetic stops carry an empty `{ tier1: [], tier2: [] }`. Mock data (`src/data/mockData.ts`) was updated for the same shape — it's currently unused but must compile.
+
+- **`/api/schedule/week` response shape** carries `equipment: { tier1, tier2 }` per stop AND `tapgoods_order_token: string | null` (the latter added during this session for the View in TapGoods feature). The dashboard's identically-named endpoint returns the same shape — they're independent code but the response contract is locked together. Don't drift.
+
+- **WeekScheduleView previously-stubbed controls are now wired.** The Town/Equip filter pills are visibility toggles: each pill HIDES its own field when active (Town pill on → town field hidden; Equip pill on → equipment row hidden). Default state (neither pill active) shows both fields. Both pills active also shows both. Prev/next week nav: `startDate` is now internal state initialized from the prop, mutated by ±days on click; a `useEffect` re-initializes when the prop changes so external navigations still take effect. View in TapGoods link sits in its own row below each stop's equipment, launches via `externalAppService.openTapGoodsOrder()` (existing pattern from StopDetailScreen — `business.tapgoods.com/orders/rentals/{token}/pickList`).
+
+- **`resolveCategory` name overrides fire in this priority order** (top of function wins): name contains CHAIR → Chairs · empty category + name has TENT/WALL → Tents · empty category + name has STAGE/DANCE FLOOR → Flooring and Staging · empty category default → Miscellaneous · raw category `'Misc'` + name has STAGE/SKIRT → Flooring and Staging · raw category `'Misc'` + name has RAMP/DECK → Flooring and Staging · CATEGORY_MAP lookup · passthrough. The Misc-category rescue for staging hardware is a workaround for TapGoods miscategorization; long-term fix is recategorize the source items in TapGoods.
+
+- **Dashboard condensed route sub-header (`partytime-dashboard/src/components/board/CondensedBoard.tsx`) is `flex flex-wrap min-[900px]:flex-nowrap`.** Above 900px viewport, the metadata + controls strip stays on a single row at iMac / Mac Mini / Tab-9-landscape widths and tolerates ~half-window resize. Below 900px, default flex-wrap moves the controls strip to its own row instead of clipping. Driver-app surfaces don't have this constraint — different layout.
+
+**Out of scope this session:** extracting the three mirrored helpers into a shared npm package, broader recategorization of TapGoods source data (Darren owns), name override tightening if false positives appear (e.g., "Stage Light" with category `'Misc'` would currently rescue to Flooring and Staging — bound to Misc but still possible).
 
 ### NEXT
 - **Smoke-test driver auto-load on production** post-Vercel deploy: sign in as darren@partytime-rentals.com (assigned today) → confirm direct jump to `/route/<id>`. Sign in as an unassigned driver → confirm day overview renders. Tap Home in BottomNav after the initial jump → confirm Home is reachable (sessionStorage guard works).

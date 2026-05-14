@@ -1,5 +1,18 @@
 # Open Tasks — partytime-driver-app
 
+## Cross-repo: Mirrored helpers (added 2026-05-13)
+
+Three helpers are now byte-for-byte mirrored between `partytime-driver-app/src/lib/` and `partytime-dashboard/src/lib/`:
+- `equipmentSummary.ts` — two-tier `{ tier1, tier2 }` shape consumed by all condensed surfaces
+- `inflatable.ts` — `isInflatableCategory()` + `hasInflatableItem()` keyword detection
+- `itemCategories.ts` — `resolveCategory()` + `CATEGORY_MAP` (lowercased keys, canonical-cased values)
+
+There is **no shared package and no build-time validation that the copies match.** Drift is silent until a user-visible bug surfaces.
+
+- [ ] **Long-term:** extract these three files into a shared workspace package (e.g. `@partytime/items`) so a single change updates both consumers. Requires monorepo or git-submodule setup; currently both repos are independent.
+- [ ] **Short-term discipline:** any change to one of these files MUST be applied to the other in the same session, with matching commit messages. Document in CLAUDE.md (already done in the equipment-summary architecture section).
+- [ ] **`resolveCategory` name overrides are workarounds.** The CHAIR / STAGE / SKIRT / RAMP / DECK / TENT / WALL / DANCE FLOOR name detection rescues TapGoods miscategorizations. The principled long-term fix is to recategorize source items in TapGoods so the API category matches. Audit + clean up the override list when TapGoods data hygiene reaches a steady state.
+
 ## Cross-repo: Dashboard data hygiene to simplify driver-app filter (discovered 2026-05-08)
 
 The driver app's `/api/routes` endpoint currently filters stops by `calculated_eta IS NOT NULL` to drop ghost assignments (stops dragged onto a route weeks ago and never optimized or unassigned). This is a workaround. The principled fix lives in the **dashboard repo**:

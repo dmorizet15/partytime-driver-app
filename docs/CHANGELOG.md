@@ -4,6 +4,60 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-05-13 — Two-tier equipment summary + week view enhancements
+
+**Scope:** Replace per-surface ad-hoc item formatters with a single shared helper returning a structured two-tier summary. Wire the previously-stubbed Town/Equip filter pills and prev/next week nav. Add a "View in TapGoods" link per stop. Multiple smoke-test fixes after each pass. Paired with eight commits in `partytime-dashboard` covering the same arc — the two repos ship together because the helpers are byte-for-byte mirrors and the `/api/schedule/week` response shape is locked across them.
+
+### What shipped
+- **`src/lib/equipmentSummary.ts`** — rewritten to return `EquipmentSummary { tier1: string[]; tier2: string[] }`. Tier 1 = headline text, fixed order (Tents consolidated by parsed size sorted by sqft × qty descending → N chairs → N tables → N linens → inflatables one-per-line by qty + name). Tier 2 = pills, deduped + alphabetized, no quantities. Inflatable detection via `inflatable.ts`. Tent dimension regex matches dashboard's `parseTentSqft` (handles foot/inch marks).
+- **`src/lib/inflatable.ts`** — new file, ported byte-for-byte from dashboard. Exposes `isInflatableCategory()` keyword detector.
+- **`src/lib/itemCategories.ts`** — new file, ported from dashboard. Case-insensitive `CATEGORY_MAP` lookup. Empty-category name fallbacks: TENT/WALL → Tents, STAGE/DANCE FLOOR → Flooring and Staging, otherwise → Miscellaneous. Misc-category rescue: STAGE/SKIRT/RAMP/DECK names route to Flooring and Staging.
+- **`src/lib/supabaseTransform.ts`** — `formatItemsText()` deleted; calls `buildEquipmentSummary()` and populates new `Stop.equipment` field. Warehouse synthetic stops carry empty `{ tier1: [], tier2: [] }`.
+- **`src/types/index.ts`** — `Stop.items_text` removed; `Stop.equipment: EquipmentSummary` added (required).
+- **`src/app/api/schedule/week/route.ts`** — response shape now `{ equipment: { tier1, tier2 }, tapgoods_order_token, ... }`. SELECT extended to include `tapgoods_order_token`.
+- **`src/components/WeekScheduleView.tsx`** — new render path for Tier 1 text + Tier 2 pills row. Town/Equip filter pills wired as visibility toggles (each pill hides its own field; default = both shown). Prev/next nav wired via internal state. "View in TapGoods ↗" link below each stop's equipment row, launches via `externalAppService.openTapGoodsOrder()`.
+- **`src/screens/RouteListScreen.tsx`** — drops `items_text` rendering for the same Tier 1 + Tier 2 pill row.
+- **`src/data/mockData.ts`** — added empty `equipment` field to each mock stop so the file compiles (mock data is exported but unused).
+
+### Files changed
+- Added: `src/lib/inflatable.ts`, `src/lib/itemCategories.ts`
+- Modified: `src/lib/equipmentSummary.ts`, `src/lib/supabaseTransform.ts`, `src/types/index.ts`, `src/app/api/schedule/week/route.ts`, `src/components/WeekScheduleView.tsx`, `src/screens/RouteListScreen.tsx`, `src/data/mockData.ts`
+- Updated: `CLAUDE.md` (new architecture section + bumped "as of" date), `tasks/todo.md` (cross-repo mirroring discipline + name-override audit), `tasks/lessons.md` (stub-control framing + two-repo helper sync)
+- Added: `tasks/session-summary-2026-05-13-equipment-summary.md`
+
+### Migrations applied
+- None.
+
+### Verification
+- `npx next build` clean across all six commits (per-pass).
+- Dashboard `npx next build` clean across all eight paired commits.
+
+### Commits — driver app (in order)
+- `24d5dc7` fix(schedule): two-tier equipment summary on condensed surfaces
+- `99eefb3` fix(schedule): week view filters, week nav, TapGoods link, category normalization
+- `94bf52a` fix(schedule): week view smoke-test fixes
+- `8b70f76` fix(schedule): sort Tier 1 tents by sqft × qty descending
+- `acf97b9` fix(items): preserve Flooring and Staging identity, don't fold into Misc
+- `bf06342` fix(items): rescue Misc-categorized staging hardware by name
+
+### Commits — dashboard (paired, in order)
+- `d50a024` fix(schedule): two-tier equipment summary across condensed surfaces
+- `75dfbe9` fix(schedule): route Tier 2 pill labels through resolveCategory
+- `7c02182` fix(board): condensed view smoke-test fixes
+- `0a12da7` fix(schedule): sort Tier 1 tents by sqft × qty descending
+- `f630d23` fix(board): anchor condensed route controls with flex-shrink-0
+- `1e591c4` fix(board): keep condensed route sub-header on one row down to 900px
+- `f436863` fix(items): preserve Flooring and Staging identity, don't fold into Misc
+- `5039280` fix(items): rescue Misc-categorized staging hardware by name
+
+### For chat-Claude / Notion
+- New shipped feature: condensed-surface equipment summary parity across dashboard and driver app. Drivers now see consistent item summaries on the week view and condensed route list; dispatch sees the same on the condensed board.
+- Driver-app week view now has working filter pills (Town / Equip visibility toggles), working prev/next week nav, and a per-stop "View in TapGoods ↗" link.
+- New cross-repo mirroring discipline: three helpers (`equipmentSummary.ts`, `inflatable.ts`, `itemCategories.ts`) are byte-for-byte copies between the two repos and must be edited in lockstep. No shared package — long-term todo.
+- Tech debt added: `resolveCategory` name overrides (CHAIR / STAGE / SKIRT / RAMP / DECK / TENT / WALL / DANCE FLOOR) are workarounds for TapGoods miscategorization. The principled fix is to recategorize source items in TapGoods.
+
+---
+
 ## 2026-05-10 — Driver auto-load route — feature build
 
 **Scope:** When a driver opens the app, if they have a `route_assignments` row for today, redirect them straight to `/route/<id>` (RouteListScreen) instead of showing the Home day overview. Manual day-overview fallback preserved for unassigned drivers, fetch failures, and post-redirect Home-tab returns.
