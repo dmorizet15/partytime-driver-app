@@ -4,7 +4,6 @@ import { useState, useEffect, useMemo } from 'react'
 import { useRouter }                    from 'next/navigation'
 import { useAppState }                  from '@/context/AppStateContext'
 import { useAuth }                      from '@/hooks/useAuth'
-import { useAssignedRoute }             from '@/hooks/useAssignedRoute'
 import { useInspectionStatus }          from '@/hooks/useInspectionStatus'
 import type { Stop }                    from '@/types'
 import BottomNav                        from '@/components/BottomNav'
@@ -208,13 +207,6 @@ export default function DayRouteSelectorScreen() {
   const router = useRouter()
   const { profile } = useAuth()
   const { getRoutesForDate, getStopsForRoute, isLoading, error, loadDay } = useAppState()
-
-  // Driver auto-load — fires once per session on cold load. If the driver has
-  // a route_assignments row for today, redirects to `/route/<id>` and Home
-  // unmounts. On `no_assignment` / `failed`, falls through to render the
-  // existing day overview (manual fallback preserved).
-  const { status: assignmentStatus } = useAssignedRoute()
-  const showAssignmentLoader = assignmentStatus === 'checking' || assignmentStatus === 'navigating'
 
   const today = todayStr()
   const [now, setNow]         = useState<Date>(() => new Date())
@@ -471,31 +463,8 @@ export default function DayRouteSelectorScreen() {
       {/* ── SCROLL BODY ──────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto">
 
-        {/* Assignment check — runs once per session via useAssignedRoute. While
-            the lookup is in flight (or the redirect is mid-flight), the rest
-            of Home is suppressed so the driver doesn't see a flash of the day
-            overview before being whisked to their route. On resolve to
-            `no_assignment`/`failed`, this branch goes away and the normal
-            isLoading/error/empty/populated branches below take over. */}
-        {showAssignmentLoader && (
-          <div style={{
-            padding: '40px 24px',
-            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
-          }}>
-            <div style={{
-              width: 28, height: 28,
-              border: '2px solid rgba(10,11,20,0.15)',
-              borderTopColor: C.ink,
-              borderRadius: '50%',
-              animation: 'ptw-spin 0.9s linear infinite',
-            }}/>
-            <span style={{ fontSize: 13, color: C.muted }}>Finding your route…</span>
-            <style>{`@keyframes ptw-spin { to { transform: rotate(360deg); } }`}</style>
-          </div>
-        )}
-
         {/* Loading state */}
-        {!showAssignmentLoader && isLoading && (
+        {isLoading && (
           <div style={{
             padding: '40px 24px',
             display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
@@ -513,7 +482,7 @@ export default function DayRouteSelectorScreen() {
         )}
 
         {/* Error state */}
-        {!showAssignmentLoader && !isLoading && error && (
+        {!isLoading && error && (
           <div style={{ padding: '14px 18px 0' }}>
             <div style={{
               background: C.paper,
@@ -559,7 +528,7 @@ export default function DayRouteSelectorScreen() {
         )}
 
         {/* Empty state — single quiet card. Hides truck pill, pre-trip, list, CTA. */}
-        {!showAssignmentLoader && isEmpty && (
+        {isEmpty && (
           <div style={{ padding: '32px 22px 0' }}>
             <div style={{
               background: C.paper,
@@ -590,7 +559,7 @@ export default function DayRouteSelectorScreen() {
         )}
 
         {/* Populated body — pre-trip + COD cards + day list + Ava + CTA */}
-        {!showAssignmentLoader && !isLoading && !error && totalStopCount > 0 && (
+        {!isLoading && !error && totalStopCount > 0 && (
           <>
             {/* Pre-trip inspection card — two states locked May 9, 2026:
                 State A (no inspection): tappable CTA, launches /inspection

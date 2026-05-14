@@ -2,8 +2,23 @@
 // Server-side route handler. Reads routes + dispatch_stops from Supabase
 // (partytime-east) — the same source of truth Melissa writes to from the
 // dashboard. Service-role key never reaches the browser.
+//
+// Driver-scope: if the caller is authenticated and has at least one
+// `route_assignments` row for the requested date, the response is narrowed
+// to those routes only (Bugs 1+2 — May 14, 2026). Without an assignment,
+// or for unauthenticated callers, the endpoint returns every route on the
+// day so dispatcher tooling / unassigned super_admins can still load the
+// full board. Super_admin gets the same driver-style narrowing per spec —
+// the driver app is the driver's tool, the dashboard is the god view.
+//
+// Auth: session cookie identifies the caller (`user.id` can't be spoofed).
+// The actual reads run through a service-role client to sidestep RLS
+// verification on the dashboard-side route_assignments policies (matches
+// /api/inspection/status and /api/defects/post-trip).
 
 import { NextRequest, NextResponse } from 'next/server'
+import { cookies }                   from 'next/headers'
+import { createServerClient }        from '@supabase/ssr'
 import { createClient }              from '@supabase/supabase-js'
 import {
   transformSupabase,
@@ -13,6 +28,28 @@ import {
 } from '@/lib/supabaseTransform'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+
+function getSessionClient() {
+  const cookieStore = cookies()
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() { return cookieStore.getAll() },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            )
+          } catch {
+            // Route-handler context — cookie writes silently no-op.
+          }
+        },
+      },
+    }
+  )
+}
 
 export async function GET(req: NextRequest) {
   const date = req.nextUrl.searchParams.get('date')
@@ -34,10 +71,35 @@ export async function GET(req: NextRequest) {
     auth: { autoRefreshToken: false, persistSession: false },
   })
 
+  // ── Driver scope lookup ─────────────────────────────────────────────────
+  // Identify caller via session cookie. If they have a route_assignments row
+  // for this date, narrow routeIds to those. Service-role reads do the actual
+  // join (RLS-bypass).
+  const session = getSessionClient()
+  const { data: { user } } = await session.auth.getUser()
+
+  let assignedRouteIds: string[] | null = null
+  if (user) {
+    const assignRes = await supabase
+      .from('route_assignments')
+      .select('route_id, routes!inner(route_date)')
+      .eq('user_id', user.id)
+      .eq('routes.route_date', date)
+
+    if (assignRes.error) {
+      // Non-fatal: log and fall through to the unscoped path so the driver
+      // still sees something. Worst case is they see the full day's routes
+      // until the assignment lookup recovers.
+      console.warn('[/api/routes] assignment lookup failed (non-fatal):', assignRes.error.message)
+    } else if ((assignRes.data ?? []).length > 0) {
+      assignedRouteIds = (assignRes.data ?? []).map((r) => r.route_id as string)
+    }
+  }
+
   // Routes for the day, joined twice to trucks (primary + secondary). Aliases
   // mirror the dashboard's boardClient.ts so future dashboard ↔ driver schema
   // changes only need one search.
-  const routesRes = await supabase
+  let routesQuery = supabase
     .from('routes')
     .select(`
       id,
@@ -51,6 +113,12 @@ export async function GET(req: NextRequest) {
     `)
     .eq('route_date', date)
 
+  if (assignedRouteIds) {
+    routesQuery = routesQuery.in('id', assignedRouteIds)
+  }
+
+  const routesRes = await routesQuery
+
   if (routesRes.error) {
     console.error('[/api/routes] routes query failed:', routesRes.error.message)
     return NextResponse.json({ error: routesRes.error.message }, { status: 500 })
@@ -58,9 +126,10 @@ export async function GET(req: NextRequest) {
 
   const routeRows = (routesRes.data ?? []) as unknown as SupabaseRouteRow[]
   if (routeRows.length === 0) {
+    // Per-user response now varies; private cache only.
     return NextResponse.json(
       { routes: [], stops: [], date },
-      { status: 200, headers: { 'Cache-Control': 'public, max-age=30, stale-while-revalidate=15' } }
+      { status: 200, headers: { 'Cache-Control': 'private, no-store' } }
     )
   }
 
@@ -116,7 +185,9 @@ export async function GET(req: NextRequest) {
     { routes, stops, date },
     {
       status:  200,
-      headers: { 'Cache-Control': 'public, max-age=30, stale-while-revalidate=15' },
+      // Response is per-user — never shared-cache. Browsers can still hold
+      // it across in-session navigations; CDNs / proxies must not store.
+      headers: { 'Cache-Control': 'private, no-store' },
     }
   )
 }

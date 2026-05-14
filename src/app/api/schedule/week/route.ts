@@ -3,7 +3,7 @@
 // Driver-app copy of the dashboard endpoint. Returns a per-day schedule
 // view across the requested window. Equipment summary is precomputed per
 // stop. Auth: session cookie identifies the user; service-role client
-// bypasses RLS for the join (same pattern as /api/routes/assigned).
+// bypasses RLS for the join (same pattern as /api/inspection/status).
 
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
