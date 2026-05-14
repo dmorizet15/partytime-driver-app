@@ -61,6 +61,8 @@ export interface SupabaseStopRow {
   payment_state:         string | null
   balance_due_amount:    number | null
   calculated_eta:        string | null
+  stop_status:           string | null
+  completed_at:          string | null
   tapgoods_order_token:  string | null
 }
 
@@ -116,10 +118,12 @@ function toRealStop(s: SupabaseStopRow, routeId: string, seq: number): Stop {
     payment_state:  mapPaymentState(s.payment_state),
     balance_due_amount: s.balance_due_amount,
     calculated_eta: s.calculated_eta,
-    current_status: 'pending' as StopStatus,
+    current_status: s.stop_status === 'completed'
+      ? ('completed' as StopStatus)
+      : ('pending'   as StopStatus),
     on_the_way_sent:    false,
     on_the_way_sent_at: undefined,
-    completed_at:       undefined,
+    completed_at:       s.completed_at ?? undefined,
   }
 }
 

@@ -153,8 +153,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       // Read OTW status from Supabase for this batch of stops
       const supabaseOtw = await stopStateService.readOtwStatus(stopIds)
 
-      // Merge priority: Supabase OTW > localStorage > server default
+      // Merge priority: server-completed > Supabase OTW > localStorage > server default.
+      // Completion is terminal — once dispatch_stops.stop_status='completed',
+      // OTW state is stale and must not clobber the completed marker. (Before
+      // this guard, a stop that had OTW sent before being marked complete
+      // would re-surface the Mark Stop Complete button after the post-complete
+      // force-reload because the OTW row overrode the server's completion.)
       const mergedStops = supabaseStops.map((s) => {
+        if (s.current_status === 'completed') return s
         if (supabaseOtw.has(s.stop_id)) {
           return { ...s, ...supabaseOtw.get(s.stop_id) }
         }
