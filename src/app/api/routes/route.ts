@@ -147,6 +147,7 @@ export async function GET(req: NextRequest) {
         items, notes, dispatcher_notes, stop_type, payment_state, balance_due_amount,
         calculated_eta,
         stop_status, completed_at,
+        arrived_at,
         tapgoods_order_token
       `)
       .in('route_id', routeIds)

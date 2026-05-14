@@ -64,6 +64,7 @@ export interface SupabaseStopRow {
   calculated_eta:        string | null
   stop_status:           string | null
   completed_at:          string | null
+  arrived_at:            string | null
   tapgoods_order_token:  string | null
 }
 
@@ -126,6 +127,7 @@ function toRealStop(s: SupabaseStopRow, routeId: string, seq: number): Stop {
     on_the_way_sent:    false,
     on_the_way_sent_at: undefined,
     completed_at:       s.completed_at ?? undefined,
+    arrived_at:         s.arrived_at ?? undefined,
   }
 }
 

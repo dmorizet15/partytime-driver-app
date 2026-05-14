@@ -65,6 +65,8 @@ export interface Stop {
   on_the_way_sent: boolean
   on_the_way_sent_at?: string
   completed_at?: string
+  arrived_at?: string         // GPS auto-arrival timestamp; set once on first
+                              //   150m-geofence trigger and never overwritten.
 }
 
 // ─── Workflow event ───────────────────────────────────────────────────────────

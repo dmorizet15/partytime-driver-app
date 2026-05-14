@@ -35,6 +35,7 @@ type Action =
   | { type: 'LOAD_ERROR';   payload: { error: string } }
   | { type: 'MARK_OTW';     payload: { stop_id: string; sent_at: string } }
   | { type: 'MARK_COMPLETE'; payload: { stop_id: string; completed_at: string } }
+  | { type: 'MARK_ARRIVED'; payload: { stop_id: string; arrived_at: string } }
   | { type: 'CLEAR_CACHE' }
 
 // ─── Reducer ──────────────────────────────────────────────────────────────────
@@ -91,6 +92,20 @@ function appReducer(state: AppState, action: Action): AppState {
         ),
       }
 
+    case 'MARK_ARRIVED':
+      // arrived_at is terminal — once set, the geofence hook stops watching
+      // and won't re-fire. Skip the mutation if a value already exists so a
+      // late realtime / refetch with a slightly earlier server timestamp
+      // can't be clobbered by an optimistic local write.
+      return {
+        ...state,
+        stops: state.stops.map((s) =>
+          s.stop_id === action.payload.stop_id && !s.arrived_at
+            ? { ...s, arrived_at: action.payload.arrived_at }
+            : s
+        ),
+      }
+
     case 'CLEAR_CACHE':
       // Reset cached route/stop data without disturbing any in-flight load.
       // Used by the home screen when the assigned-route check resolves to
@@ -121,6 +136,7 @@ interface AppStateContextValue {
   loadDay:      (date: string, force?: boolean) => Promise<void>
   markOtw:      (stopId: string, sentAt: string)      => void
   markComplete: (stopId: string, completedAt: string) => void
+  markArrived:  (stopId: string, arrivedAt: string)   => void
   clearCache:   () => void
 }
 
@@ -213,6 +229,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     } catch {}
   }, [])
 
+  // arrived_at is server-authoritative — set once by /api/stops/arrived,
+  // never overwritten. Optimistic update only; no localStorage mirror,
+  // because the next /api/routes refetch carries the canonical value.
+  const markArrived = useCallback((stopId: string, arrivedAt: string) => {
+    dispatch({ type: 'MARK_ARRIVED', payload: { stop_id: stopId, arrived_at: arrivedAt } })
+  }, [])
+
   const clearCache = useCallback(() => {
     dispatch({ type: 'CLEAR_CACHE' })
   }, [])
@@ -232,6 +255,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         loadDay,
         markOtw,
         markComplete,
+        markArrived,
         clearCache,
       }}
     >

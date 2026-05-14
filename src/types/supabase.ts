@@ -167,6 +167,7 @@ export type Database = {
           address: string | null
           address_lat: number | null
           address_lng: number | null
+          arrived_at: string | null
           balance_due_amount: number | null
           calculated_eta: string | null
           client_company: string | null
@@ -217,6 +218,7 @@ export type Database = {
           address?: string | null
           address_lat?: number | null
           address_lng?: number | null
+          arrived_at?: string | null
           balance_due_amount?: number | null
           calculated_eta?: string | null
           client_company?: string | null
@@ -267,6 +269,7 @@ export type Database = {
           address?: string | null
           address_lat?: number | null
           address_lng?: number | null
+          arrived_at?: string | null
           balance_due_amount?: number | null
           calculated_eta?: string | null
           client_company?: string | null

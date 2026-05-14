@@ -14,6 +14,7 @@ import BottomNav from '@/components/BottomNav'
 import StopWeatherModule from '@/components/weather/StopWeatherModule'
 import { HAS_STOP_LEVEL_BADGES } from '@/lib/weather/thresholds'
 import { formatEta } from '@/lib/formatEta'
+import { useArrivalGeofence } from '@/hooks/useArrivalGeofence'
 
 interface StopDetailScreenProps { routeId: string; stopId: string }
 type PodStatus = 'idle' | 'uploading' | 'uploaded' | 'failed'
@@ -199,7 +200,7 @@ function BanIcon({ size = 14, color = C.muted }: IconProps) {
 // ─── Screen ───────────────────────────────────────────────────────────────────
 export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenProps) {
   const router = useRouter()
-  const { getRoute, getStop, getStopsForRoute, markOtw, markComplete, loadDay } = useAppState()
+  const { getRoute, getStop, getStopsForRoute, markOtw, markComplete, markArrived, loadDay } = useAppState()
   const route = getRoute(routeId)
   const stop = getStop(stopId)
   const allStops = getStopsForRoute(routeId)
@@ -317,6 +318,28 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     pollIntervalRef.current = setInterval(poll, 10_000)
     return () => { if (pollIntervalRef.current) { clearInterval(pollIntervalRef.current); pollIntervalRef.current = null } }
   }, [etaStatus, stopId])
+
+  // ── GPS Auto-Arrival (Phase 2.5C) ──────────────────────────────────────────
+  // Arms a 150m geofence around the stop's coordinates while this screen is
+  // mounted. Skipped for warehouse stops (no coords + no arrival semantics),
+  // already-arrived stops, and completed stops. The hook is called
+  // unconditionally on every render so hook order stays stable — `enabled`
+  // gates the actual watchPosition call.
+  const geofenceEnabled =
+    !!stop
+    && (stop.stop_type === 'delivery' || stop.stop_type === 'pickup' || stop.stop_type === 'service')
+    && stop.latitude  != null
+    && stop.longitude != null
+    && !stop.arrived_at
+    && stop.current_status !== 'completed'
+
+  useArrivalGeofence({
+    stopId,
+    latitude:  stop?.latitude,
+    longitude: stop?.longitude,
+    enabled:   geofenceEnabled,
+    onArrive:  (arrivedAt) => markArrived(stopId, arrivedAt),
+  })
 
   // ── Stop not found ──────────────────────────────────────────────────────────
   if (!stop || !route) {
@@ -975,6 +998,19 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
               }}>
                 {stop.stop_type}
               </span>
+              {stop.arrived_at && (
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  background: C.green, color: '#fff',
+                  fontSize: 9.5, fontWeight: 900, letterSpacing: '0.18em',
+                  textTransform: 'uppercase',
+                  padding: '3px 8px', borderRadius: 999,
+                  flexShrink: 0,
+                  fontVariantNumeric: 'tabular-nums',
+                }}>
+                  Arrived · {formatTime(stop.arrived_at)}
+                </span>
+              )}
             </div>
             <div style={{
               marginTop: 4,
