@@ -4,6 +4,19 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-05-16 — Party Kong v2 (sfx + level persistence + bonus lives)
+
+**Scope:** three additive changes inside `src/components/arcade/PartyKongGame.tsx` only. No migration, no other files.
+
+**Commits**
+- _pending_ — sfx + level-persistence-on-death + bonus-lives. Web Audio API procedural sound engine (no library), 11 named sfx, mute toggle. `playerHit()` clears tables + throw timer and keeps the player on the same level (was: implicit full restart). Bonus lives at 5,000 and 10,000 points capped at 5 lives, preserved across level transitions and respawns, reset only on full restart.
+
+**Build state.** `npx next build` clean. `/training/arcade/party-kong` route: 14.2 kB → 15.6 kB (+1.4 kB for the additions). No regressions.
+
+**Out of scope:** background music, anti-cheat, persisting mute preference across browser sessions.
+
+---
+
 ## 2026-05-16 — PartyTime Arcade · Party Kong (autonomous; driver-app slice)
 
 **Scope:** third arcade game. DK-style platformer. Closes out the PartyTime Arcade trio (Route Rush · Tent Tetris · Party Kong) reserved by the May 15 overnight bundle.

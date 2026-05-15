@@ -6,9 +6,112 @@ import { supabase } from '@/lib/supabase'
 import { useGameScore } from '@/hooks/arcade/useGameScore'
 import GameLeaderboard from './GameLeaderboard'
 
+// ─── Sound engine (Web Audio API, chiptune oscillators) ──────────────────────
+// Module-level so step()/updateTable()/playerHit() — which are pure functions —
+// can fire effects without threading a SoundEngine reference through everything.
+// AudioContext is lazily created inside the first user-gesture input handler so
+// the browser autoplay policy is satisfied.
+let _audioCtx: AudioContext | null = null
+let _muted = false
+
+function ensureAudio() {
+  if (typeof window === 'undefined') return
+  if (!_audioCtx) {
+    try {
+      const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+      _audioCtx = AC ? new AC() : null
+    } catch {
+      _audioCtx = null
+    }
+  }
+  if (_audioCtx && _audioCtx.state === 'suspended') {
+    _audioCtx.resume().catch(() => {})
+  }
+}
+
+function tone(f1: number, f2: number, ms: number, type: OscillatorType, vol: number) {
+  if (_muted || !_audioCtx) return
+  const ctx = _audioCtx
+  const osc = ctx.createOscillator()
+  const gain = ctx.createGain()
+  osc.connect(gain)
+  gain.connect(ctx.destination)
+  osc.type = type
+  const now = ctx.currentTime
+  const dur = ms / 1000
+  const safeF1 = Math.max(1, f1)
+  const safeF2 = Math.max(1, f2)
+  osc.frequency.setValueAtTime(safeF1, now)
+  if (safeF1 !== safeF2) osc.frequency.exponentialRampToValueAtTime(safeF2, now + dur)
+  gain.gain.setValueAtTime(vol, now)
+  gain.gain.exponentialRampToValueAtTime(0.001, now + dur)
+  osc.start(now)
+  osc.stop(now + dur + 0.02)
+}
+
+type NoteSpec = readonly [number, number, number, OscillatorType, number]
+function seq(notes: ReadonlyArray<NoteSpec>, gapMs = 20) {
+  if (_muted || !_audioCtx) return
+  const ctx = _audioCtx
+  let t = ctx.currentTime
+  for (const [f1, f2, ms, type, vol] of notes) {
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.type = type
+    const dur = ms / 1000
+    const safeF1 = Math.max(1, f1)
+    const safeF2 = Math.max(1, f2)
+    osc.frequency.setValueAtTime(safeF1, t)
+    if (safeF1 !== safeF2) osc.frequency.exponentialRampToValueAtTime(safeF2, t + dur)
+    gain.gain.setValueAtTime(vol, t)
+    gain.gain.exponentialRampToValueAtTime(0.001, t + dur)
+    osc.start(t)
+    osc.stop(t + dur + 0.02)
+    t += dur + gapMs / 1000
+  }
+}
+
+const sfxWalk         = () => tone(220, 110, 60, 'square', 0.12)
+const sfxJump         = () => tone(200, 600, 120, 'square', 0.25)
+const sfxLand         = () => tone(180, 80, 80, 'square', 0.2)
+const sfxClimb        = () => tone(320, 320, 40, 'triangle', 0.08)
+const sfxTableBounce  = () => tone(100, 60, 90, 'square', 0.15)
+const sfxTableFall    = () => tone(140, 70, 150, 'triangle', 0.1)
+const sfxKongThrow    = () => tone(80, 40, 100, 'square', 0.2)
+const sfxHit          = () => seq([
+  [400, 200, 80, 'square', 0.35],
+  [200, 100, 80, 'square', 0.35],
+  [100,  50, 120, 'square', 0.35],
+], 5)
+const sfxLevelComplete = () => seq([
+  [523,  523, 80,  'square', 0.3],
+  [659,  659, 80,  'square', 0.3],
+  [784,  784, 80,  'square', 0.3],
+  [1047, 1047, 200, 'square', 0.3],
+], 20)
+const sfxBonusLife = () => seq([
+  [880,  880,  100, 'triangle', 0.3],
+  [1760, 1760, 150, 'triangle', 0.3],
+], 10)
+const sfxGameOver = () => seq([
+  [400, 400, 80, 'square', 0.3],
+  [350, 350, 80, 'square', 0.3],
+  [300, 300, 80, 'square', 0.3],
+  [250, 250, 80, 'square', 0.3],
+  [200, 200, 80, 'square', 0.3],
+  [150, 150, 80, 'square', 0.3],
+], 5)
+
 // ─── Canvas ──────────────────────────────────────────────────────────────────
 const W = 390
 const H = 720
+
+const MAX_LIVES = 5
+const BONUS_LIFE_SCORE_1 = 5000
+const BONUS_LIFE_SCORE_2 = 10000
+const BONUS_FLASH_FRAMES = 90
 
 // ─── Physics constants ───────────────────────────────────────────────────────
 const GRAVITY = 0.38
@@ -153,6 +256,8 @@ type Popup = { x: number; y: number; t: number; text: string; color?: string }
 
 type Phase = 'start' | 'playing' | 'level_complete' | 'gameover' | 'won'
 
+type BonusLifeAwarded = { [k: number]: boolean }
+
 type GameState = {
   player:        Player
   tables:        RollingTable[]
@@ -170,6 +275,10 @@ type GameState = {
   bgFrame:       number
   input:         { left: boolean; right: boolean; up: boolean; down: boolean }
   jumpQueued:    boolean
+  walkSoundTimer:  number
+  climbSoundTimer: number
+  bonusLifeAwarded: BonusLifeAwarded
+  bonusFlashFrames: number
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -189,7 +298,16 @@ function makeFreshPlayer(): Player {
   }
 }
 
-function makeFreshState(level: Level = 1, score = 0, lives = 3): GameState {
+function freshBonusLifeAwarded(): BonusLifeAwarded {
+  return { [BONUS_LIFE_SCORE_1]: false, [BONUS_LIFE_SCORE_2]: false }
+}
+
+function makeFreshState(
+  level: Level = 1,
+  score = 0,
+  lives = 3,
+  bonusLifeAwarded: BonusLifeAwarded = freshBonusLifeAwarded(),
+): GameState {
   const cfg = levelCfg(level)
   return {
     player: makeFreshPlayer(),
@@ -211,6 +329,10 @@ function makeFreshState(level: Level = 1, score = 0, lives = 3): GameState {
     bgFrame: 0,
     input: { left: false, right: false, up: false, down: false },
     jumpQueued: false,
+    walkSoundTimer: 0,
+    climbSoundTimer: 0,
+    bonusLifeAwarded: { ...bonusLifeAwarded },
+    bonusFlashFrames: 0,
   }
 }
 
@@ -240,6 +362,15 @@ export default function PartyKongGame() {
   const [isNewBest, setIsNewBest] = useState<boolean>(false)
   const [userId, setUserId] = useState<string | null>(null)
   const [nearLadder, setNearLadder] = useState<boolean>(false)
+  const [muted, setMuted] = useState<boolean>(false)
+
+  // Sync mute state to the module-level flag the sfx functions read.
+  useEffect(() => { _muted = muted }, [muted])
+
+  const toggleMuted = useCallback(() => {
+    ensureAudio()
+    setMuted((m) => !m)
+  }, [])
 
   const { submitScore } = useGameScore()
 
@@ -336,6 +467,7 @@ export default function PartyKongGame() {
         if (s.lives <= 0) {
           phaseRef.current = 'gameover'
           setPhase('gameover')
+          sfxGameOver()
           const finalS = Math.floor(s.score)
           setFinalScore(finalS)
           if (finalS > best) { setIsNewBest(true); setBest(finalS) }
@@ -367,6 +499,7 @@ export default function PartyKongGame() {
       if (phaseRef.current !== 'playing') return
       if (s.player.onPlatform === 4 && s.player.x > WIN_X) {
         const isLast = s.level === 4
+        sfxLevelComplete()
         if (isLast) {
           phaseRef.current = 'won'
           setPhase('won')
@@ -386,6 +519,7 @@ export default function PartyKongGame() {
   // Keyboard input
   useEffect(() => {
     function onDown(e: KeyboardEvent) {
+      ensureAudio()
       const s = stateRef.current
       if (phaseRef.current === 'start' || phaseRef.current === 'gameover' || phaseRef.current === 'won') {
         if (e.key === ' ' || e.key === 'Enter') {
@@ -472,7 +606,7 @@ export default function PartyKongGame() {
   const advanceLevel = useCallback(() => {
     const cur = stateRef.current
     const nextLvl = Math.min(4, cur.level + 1) as Level
-    stateRef.current = makeFreshState(nextLvl, cur.score, cur.lives)
+    stateRef.current = makeFreshState(nextLvl, cur.score, cur.lives, cur.bonusLifeAwarded)
     setLevelDisplay(nextLvl)
     phaseRef.current = 'playing'
     setPhase('playing')
@@ -480,10 +614,12 @@ export default function PartyKongGame() {
 
   // Touch input handlers for D-pad + jump
   const press = useCallback((k: 'left' | 'right' | 'up' | 'down', v: boolean) => {
+    ensureAudio()
     if (phaseRef.current !== 'playing') return
     stateRef.current.input[k] = v
   }, [])
   const tapJump = useCallback(() => {
+    ensureAudio()
     if (phaseRef.current === 'start') return startGame()
     if (phaseRef.current === 'level_complete') return advanceLevel()
     if (phaseRef.current === 'gameover' || phaseRef.current === 'won') return startGame()
@@ -491,6 +627,7 @@ export default function PartyKongGame() {
   }, [startGame, advanceLevel])
 
   const tapCanvas = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    ensureAudio()
     if (phaseRef.current === 'start') return startGame()
     if (phaseRef.current === 'level_complete') return advanceLevel()
     if (phaseRef.current === 'gameover' || phaseRef.current === 'won') return startGame()
@@ -550,16 +687,41 @@ export default function PartyKongGame() {
         >
           ← Arcade
         </button>
-        <div
-          style={{
-            fontSize: 10.5,
-            fontWeight: 800,
-            letterSpacing: '0.28em',
-            color: '#FFB800',
-            textTransform: 'uppercase',
-          }}
-        >
-          Party Kong
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div
+            style={{
+              fontSize: 10.5,
+              fontWeight: 800,
+              letterSpacing: '0.28em',
+              color: '#FFB800',
+              textTransform: 'uppercase',
+            }}
+          >
+            Party Kong
+          </div>
+          <button
+            type="button"
+            onClick={toggleMuted}
+            aria-label={muted ? 'Unmute sound' : 'Mute sound'}
+            aria-pressed={muted}
+            style={{
+              background: 'rgba(255,255,255,0.06)',
+              border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: '50%',
+              cursor: 'pointer',
+              color: muted ? 'rgba(255,255,255,0.4)' : '#FFB800',
+              fontFamily: 'inherit',
+              width: 28,
+              height: 28,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 0,
+              flexShrink: 0,
+            }}
+          >
+            <SpeakerIcon muted={muted} />
+          </button>
         </div>
       </div>
 
@@ -679,6 +841,26 @@ export default function PartyKongGame() {
 }
 
 // ─── UI sub-components ───────────────────────────────────────────────────────
+function SpeakerIcon({ muted }: { muted: boolean }) {
+  // 16x16 viewBox, currentColor stroke. Speaker cone + sound waves (or X when muted).
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M7 4L4 6.5H2V9.5H4L7 12V4Z" fill="currentColor" stroke="currentColor" />
+      {muted ? (
+        <>
+          <path d="M10.5 6L13.5 10" />
+          <path d="M13.5 6L10.5 10" />
+        </>
+      ) : (
+        <>
+          <path d="M10 6.5C10.5 7 10.7 7.5 10.7 8C10.7 8.5 10.5 9 10 9.5" />
+          <path d="M12 5C13 5.8 13.5 6.8 13.5 8C13.5 9.2 13 10.2 12 11" />
+        </>
+      )}
+    </svg>
+  )
+}
+
 function DpadBtn({ label, onPress, onRelease, disabled }: {
   label: string
   onPress: () => void
@@ -774,35 +956,36 @@ function HudOverlay({ score, lives, level, levelName, ladderHint }: {
             background: 'rgba(8,8,18,0.78)',
             border: '1px solid rgba(255,184,0,0.3)',
             borderRadius: 999,
-            padding: '6px 12px',
+            padding: '6px 10px',
             display: 'flex',
-            gap: 5,
+            gap: 3,
             alignItems: 'center',
             backdropFilter: 'blur(8px)',
             WebkitBackdropFilter: 'blur(8px)',
           }}
         >
-          <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.18em', color: '#FFB800', textTransform: 'uppercase', marginRight: 2 }}>
+          <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.18em', color: '#FFB800', textTransform: 'uppercase', marginRight: 4 }}>
             Lives
           </div>
-          {Array.from({ length: 3 }).map((_, i) => {
+          {/* Always render 5 slots; lives can grow via bonus life thresholds. Dots shrink to 12px so the pill width stays close to the 3-life baseline. */}
+          {Array.from({ length: 5 }).map((_, i) => {
             const filled = i < lives
             return (
               <div
                 key={i}
                 style={{
-                  width: 16,
-                  height: 16,
+                  width: 12,
+                  height: 12,
                   borderRadius: '50%',
                   background: filled
                     ? 'radial-gradient(circle at 30% 30%, #FFE070, #FFB800 60%, #8a6000)'
-                    : 'rgba(255,255,255,0.08)',
+                    : 'rgba(255,255,255,0.07)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  fontSize: 9,
+                  fontSize: 7,
                   fontWeight: 900,
-                  color: filled ? '#1a0a00' : 'rgba(255,255,255,0.18)',
+                  color: filled ? '#1a0a00' : 'rgba(255,255,255,0.14)',
                 }}
               >
                 P
@@ -1156,6 +1339,7 @@ function step(s: GameState, u: number) {
       p.vx = s.input.left ? -WALK_SPEED : s.input.right ? WALK_SPEED : 0
       p.jumpCooldown = JUMP_COOLDOWN_FRAMES
       p.onPlatform = null
+      sfxJump()
     } else if (p.y <= topY) {
       // Exit at top
       p.y = topY
@@ -1189,6 +1373,7 @@ function step(s: GameState, u: number) {
         p.jumpCooldown = JUMP_COOLDOWN_FRAMES
         p.onPlatform = null
         s.score += 5
+        sfxJump()
       }
       // Score popup not visible for +5 jumps (too noisy); just accumulate.
       // Stay on platform: snap y
@@ -1232,11 +1417,33 @@ function step(s: GameState, u: number) {
           p.y = psy(landed, p.x)
           p.vy = 0
           p.vx = 0
+          sfxLand()
         }
       }
     }
 
     p.walkAnim += Math.abs(p.vx) * u * 0.18
+  }
+
+  // ── Walk / climb sound timers ────────────────────────────────────────────
+  if (p.walking) {
+    s.walkSoundTimer += u
+    if (s.walkSoundTimer >= 8) {
+      s.walkSoundTimer = 0
+      sfxWalk()
+    }
+  } else {
+    s.walkSoundTimer = 0
+  }
+  const climbing = p.onLadder && (s.input.up || s.input.down)
+  if (climbing) {
+    s.climbSoundTimer += u
+    if (s.climbSoundTimer >= 10) {
+      s.climbSoundTimer = 0
+      sfxClimb()
+    }
+  } else {
+    s.climbSoundTimer = 0
   }
 
   // Hit detection (player vs tables)
@@ -1304,6 +1511,21 @@ function step(s: GameState, u: number) {
   // ── Score: survival drip ─────────────────────────────────────────────────
   s.score += (3 / 55) * u  // +3 every 55 frames
 
+  // ── Bonus life thresholds ────────────────────────────────────────────────
+  if (!s.bonusLifeAwarded[BONUS_LIFE_SCORE_1] && s.score >= BONUS_LIFE_SCORE_1) {
+    s.bonusLifeAwarded[BONUS_LIFE_SCORE_1] = true
+    s.lives = Math.min(s.lives + 1, MAX_LIVES)
+    s.bonusFlashFrames = BONUS_FLASH_FRAMES
+    sfxBonusLife()
+  }
+  if (!s.bonusLifeAwarded[BONUS_LIFE_SCORE_2] && s.score >= BONUS_LIFE_SCORE_2) {
+    s.bonusLifeAwarded[BONUS_LIFE_SCORE_2] = true
+    s.lives = Math.min(s.lives + 1, MAX_LIVES)
+    s.bonusFlashFrames = BONUS_FLASH_FRAMES
+    sfxBonusLife()
+  }
+  if (s.bonusFlashFrames > 0) s.bonusFlashFrames = Math.max(0, s.bonusFlashFrames - u)
+
   // ── Popups ───────────────────────────────────────────────────────────────
   for (const pp of s.popups) pp.t += u
   s.popups = s.popups.filter((pp) => pp.t < 50)
@@ -1312,7 +1534,10 @@ function step(s: GameState, u: number) {
 function playerHit(s: GameState) {
   s.lives = Math.max(0, s.lives - 1)
   s.player.invincible = INVINCIBLE_FRAMES
+  sfxHit()
   if (s.lives > 0) {
+    // Stay on the current level — reset player position and clear active
+    // hazards so the respawn window is fair. Score is preserved.
     s.player.x = PLAYER_START_X
     s.player.y = PLAYER_START_Y
     s.player.vx = 0
@@ -1322,6 +1547,11 @@ function playerHit(s: GameState) {
     s.player.ladderIdx = null
     s.player.facing = 1
     s.player.walking = false
+    s.tables = []
+    s.throwTimer = 0
+    s.kongThrowFlash = 9999
+    s.walkSoundTimer = 0
+    s.climbSoundTimer = 0
   }
 }
 
@@ -1336,6 +1566,7 @@ function spawnTable(s: GameState) {
     rot: 0,
     onPlatform: 4,
   })
+  sfxKongThrow()
 }
 
 function updateTable(t: RollingTable, u: number, s: GameState) {
@@ -1362,6 +1593,7 @@ function updateTable(t: RollingTable, u: number, s: GameState) {
       t.onPlatform = null
       t.vy = 0
       t.vx = 0
+      sfxTableFall()
     } else {
       t.y = psy(pl, t.x) - TABLE_RADIUS
     }
@@ -1388,6 +1620,7 @@ function updateTable(t: RollingTable, u: number, s: GameState) {
       t.vy = 0
       const sd = slopeDir(landed)
       if (sd !== 0) t.vx = sd * TABLE_BASE_ROLL
+      sfxTableBounce()
       // Score for landing on a lower platform.
       if (landed.idx < 4) {
         s.score += 10
@@ -1415,6 +1648,23 @@ function drawScene(
   drawTables(ctx, s)
   drawPlayer(ctx, s, family)
   drawPopups(ctx, s, family)
+  drawBonusLifeFlash(ctx, s, family)
+}
+
+function drawBonusLifeFlash(ctx: CanvasRenderingContext2D, s: GameState, family: string) {
+  if (s.bonusFlashFrames <= 0) return
+  // Fade over the last 30 frames of the 90-frame flash.
+  const alpha = s.bonusFlashFrames < 30 ? s.bonusFlashFrames / 30 : 1
+  ctx.save()
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  // Soft amber glow backdrop
+  ctx.shadowColor = `rgba(255,184,0,${alpha * 0.85})`
+  ctx.shadowBlur = 16
+  ctx.fillStyle = `rgba(255,215,80,${alpha})`
+  ctx.font = `900 36px ${family}`
+  ctx.fillText('BONUS LIFE! ★', W / 2, H / 2)
+  ctx.restore()
 }
 
 // ─── Backgrounds ─────────────────────────────────────────────────────────────
