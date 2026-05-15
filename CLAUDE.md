@@ -396,6 +396,30 @@ Two fully playable arcade games + shared leaderboard infrastructure under a new 
   - Daily / weekly leaderboard resets, prize integrations, push-on-new-best
   - Personal high-score history per game beyond top-1
 
+### PartyTime Arcade — Party Kong v3 Session A (LevelConfig refactor) — May 16, 2026
+
+**Foundation-only refactor.** Zero visible gameplay change — L1 plays byte-identical to the v2 build. Sets up the architecture for Sessions B/C/D where each level gets its own platform/ladder layout, hazard set, and win condition.
+
+**Architecture — read this before touching Party Kong code:**
+
+- **`LEVEL_CONFIGS[level - 1]` drives all level geometry.** Module-level `PLATFORMS` / `LADDERS` / `WIN_X` / `PLAYER_START_X/Y` constants are gone. The single source of truth is now `LEVEL_CONFIGS: LevelConfig[]` (one entry per level). Look up via `levelCfg(s.level)` from any function holding a `GameState`.
+
+- **`LevelConfig` shape:** `{ num, name, platforms: Platform[], ladders: Ladder[], playerSpawn: { x, y }, kongSpawn: { bx, by }, winCondition: (pl: PlayerState) => boolean, throwDelayBase, throwDelayFloor, background: BackgroundKind, initialHazards: Hazard[] }`. `Platform` and `Ladder` are minimal shapes per spec (`Platform: { x1, y1, x2, y2 }`, `Ladder: { cx, bpi, tpi }`); platform/ladder identity is the array index, not a stored `.idx` field.
+
+- **`Hazard[]` discriminated union replaces the old `tables[]` + `dollies[]` split.** Single hazards array on `GameState` holds every dynamic obstacle. `HazardType` union: `'rolling_table' | 'dolly' | 'conveyor_pallet' | 'wind_gust' | 'falling_stake' | 'glass_shard'`. Today only `rolling_table` and `dolly` are populated and updated; the other four variants are typed stubs for Sessions B (`conveyor_pallet`), C (`wind_gust`, `falling_stake`), and D (`glass_shard`). The step-loop's hazard update is a `switch (h.type)` so a new variant adds a new case rather than a new array.
+
+- **`hazardHitsPlayer(h, p)` is the single per-frame collision dispatcher.** Replaces the previous two separate hit-detection loops (one for tables, one for dollies). Type-routed; future hazard types add their own collision case.
+
+- **`updateRollingTable` and `updateDolly` take `platforms: Platform[]` as an explicit parameter** rather than referencing a module global. Keeps the function signatures pure relative to the level data.
+
+- **L1 byte-identical guarantee.** `L1_PLATFORMS`, `L1_LADDERS`, `L1_PLAYER_SPAWN`, `L1_KONG_SPAWN`, `L1_WIN_CONDITION` capture the v2 values exactly. `LEVEL_CONFIGS[0]` references them. L2–L4 entries currently reuse the same L1 geometry + winCondition + Kong position; only their throw delays, background kind, and dolly seed differ. Sessions B–D will swap each L2–L4 entry to its own geometry.
+
+- **Background dispatcher keys changed.** `cfg.bg` → `cfg.background`. Spec keys: `'warehouse' | 'loading_dock' | 'outdoor_tent' | 'grand_ballroom'` (replaces `'dock'`, `'outdoor'`, `'ballroom'`). Drawing helpers (`drawWarehouseBg` etc.) unchanged — only the dispatch switch was rewired.
+
+- **`playerHit` now filters the hazards array** (keeping stationary dollies, dropping in-flight rolling tables) instead of replacing the whole `tables` field. Stage furniture survives death.
+
+**Status:** Session A complete. Sessions B (L2 conveyor) / C (L3 elevator) / D (L4 chain-pull finale) pending. Scope doc: `tasks/party-kong-v3-scope.md`.
+
 ### PartyTime Arcade — Party Kong v2 (sfx + level persistence + bonus lives) — May 16, 2026
 
 Three additive changes inside `PartyKongGame.tsx` only. No migration, no other files touched. Builds on the May-15 Party Kong base.

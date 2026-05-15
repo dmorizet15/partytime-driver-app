@@ -4,6 +4,24 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-05-16 — Party Kong v3 Session A (LevelConfig + Hazard refactor)
+
+**Scope:** foundation-only refactor inside `src/components/arcade/PartyKongGame.tsx`. Zero visible gameplay change — L1 plays byte-identical to the v2 build. Sets up the architecture for Sessions B/C/D.
+
+**What changed**
+- New types: `Platform`, `Ladder`, `HazardType`, `Hazard` (discriminated union with 6 variants — 2 implemented today, 4 stubbed for future sessions), `LevelConfig`, `BackgroundKind`.
+- New data: `LEVEL_CONFIGS: LevelConfig[]` is the single source of truth for per-level geometry, win condition, throw delays, Kong position, player spawn, background kind, and initial hazards. L1 entry mirrors the pre-v3 constants exactly.
+- Replaced state: `GameState.tables` + `GameState.dollies` → `GameState.hazards`. Per-frame update is a `switch (h.type)` over the array.
+- Replaced helpers: `spawnTable` → `spawnRollingTable`, `updateTable` → `updateRollingTable`, `drawTables` + `drawDollies` → `drawHazards` (two-pass dispatch). Functions now take `platforms: Platform[]` as an explicit param rather than referencing a module global. Module-level `PLATFORMS` / `LADDERS` / `WIN_X` / `PLAYER_START_X/Y` constants are gone.
+- Background dispatch keys changed: `'dock' | 'outdoor' | 'ballroom'` → `'loading_dock' | 'outdoor_tent' | 'grand_ballroom'`.
+- `playerHit` filters the hazards array (drops in-flight rolling tables, keeps stationary dollies and future stage fixtures) instead of clearing a separate tables field.
+
+**Scope doc:** `tasks/party-kong-v3-scope.md` (Status: Session A ✓, Sessions B/C/D pending).
+
+**Build state.** `npx next build` clean. `/training/arcade/party-kong` route 15.6 kB → 15.8 kB (+0.2 kB for type expansion).
+
+---
+
 ## 2026-05-16 — Party Kong v2 (sfx + level persistence + bonus lives)
 
 **Scope:** three additive changes inside `src/components/arcade/PartyKongGame.tsx` only. No migration, no other files.

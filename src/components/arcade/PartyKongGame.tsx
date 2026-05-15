@@ -122,11 +122,6 @@ const LADDER_GRAB_WIDTH = 15
 const JUMP_COOLDOWN_FRAMES = 18
 const INVINCIBLE_FRAMES = 110
 
-const PLAYER_START_X = 28
-const PLAYER_START_Y = 560
-const PLAYER_HALF_H = 30
-const PLAYER_HALF_W = 8
-
 const TABLE_BASE_ROLL = 1.7
 const TABLE_ACCEL = 0.05
 const TABLE_MAX_VX = 3.6
@@ -138,8 +133,6 @@ const TABLE_HIT_DY = 28
 const DOLLY_HIT_DX = 17
 const DOLLY_HIT_DY = 30
 const DOLLY_SPEED = 1.1
-
-const WIN_X = 265
 
 // ─── Color palette ───────────────────────────────────────────────────────────
 const C = {
@@ -164,66 +157,197 @@ const C = {
 } as const
 
 // ─── Platforms ───────────────────────────────────────────────────────────────
-type PlatformDef = {
-  idx: 0|1|2|3|4
-  y1: number; y2: number
-  x1: number; x2: number
-  flat: boolean
+interface Platform {
+  x1: number; y1: number
+  x2: number; y2: number
 }
 
-const PLATFORMS: PlatformDef[] = [
-  { idx: 0, y1: 560, y2: 560, x1: 0,  x2: 390, flat: true  },
-  { idx: 1, y1: 472, y2: 458, x1: 15, x2: 345, flat: false },
-  { idx: 2, y1: 362, y2: 376, x1: 15, x2: 345, flat: false },
-  { idx: 3, y1: 268, y2: 254, x1: 15, x2: 345, flat: false },
-  { idx: 4, y1: 168, y2: 168, x1: 35, x2: 325, flat: true  },
-]
-
-function psy(p: PlatformDef, x: number): number {
+function psy(p: Platform, x: number): number {
   const cx = Math.max(p.x1, Math.min(p.x2, x))
   return p.y1 + ((cx - p.x1) / (p.x2 - p.x1)) * (p.y2 - p.y1)
 }
 
-function slopeDir(p: PlatformDef): -1 | 0 | 1 {
+function slopeDir(p: Platform): -1 | 0 | 1 {
   if (p.y2 === p.y1) return 0
-  // Table rolls toward the LOWER end (higher y on screen).
+  // Hazard rolls toward the LOWER end (higher y on screen).
   // y2 > y1 → right end lower → rolls right (+1)
   // y2 < y1 → left  end lower → rolls left  (-1)
   return p.y2 > p.y1 ? 1 : -1
 }
 
 // ─── Ladders ─────────────────────────────────────────────────────────────────
-type LadderDef = {
-  idx: 0|1|2|3
-  cx: number
-  bottomP: 0|1|2|3
-  topP: 1|2|3|4
+interface Ladder {
+  cx:  number
+  bpi: number  // bottom platform index
+  tpi: number  // top    platform index
 }
 
-const LADDERS: LadderDef[] = [
-  { idx: 0, cx: 306, bottomP: 0, topP: 1 },
-  { idx: 1, cx: 52,  bottomP: 1, topP: 2 },
-  { idx: 2, cx: 306, bottomP: 2, topP: 3 },
-  { idx: 3, cx: 60,  bottomP: 3, topP: 4 },
-]
+// ─── Hazards (discriminated union) ───────────────────────────────────────────
+// HazardType lists every variant the engine knows about. Only the first two
+// are populated today; the rest are stubs for Sessions B/C/D so the type
+// surface is stable across the v3 build-out.
+type HazardType =
+  | 'rolling_table'
+  | 'dolly'
+  | 'conveyor_pallet'
+  | 'wind_gust'
+  | 'falling_stake'
+  | 'glass_shard'
+
+interface RollingTableHazard {
+  type:       'rolling_table'
+  x:          number
+  y:          number
+  vx:         number
+  vy:         number
+  rot:        number
+  onPlatform: number | null
+}
+
+interface DollyHazard {
+  type:       'dolly'
+  x:          number
+  y:          number
+  vx:         number
+  onPlatform: number
+}
+
+interface ConveyorPalletHazard {
+  type:       'conveyor_pallet'
+  x:          number
+  y:          number
+  vx:         number
+  onPlatform: number
+}
+
+interface WindGustHazard {
+  type: 'wind_gust'
+  t:    number  // frames remaining
+  vx:   number  // push velocity applied per frame
+}
+
+interface FallingStakeHazard {
+  type: 'falling_stake'
+  x:    number
+  y:    number
+  vy:   number
+}
+
+interface GlassShardHazard {
+  type: 'glass_shard'
+  x:    number
+  y:    number
+  vx:   number
+  vy:   number
+}
+
+type Hazard =
+  | RollingTableHazard
+  | DollyHazard
+  | ConveyorPalletHazard
+  | WindGustHazard
+  | FallingStakeHazard
+  | GlassShardHazard
 
 // ─── Levels ──────────────────────────────────────────────────────────────────
 type Level = 1|2|3|4
-type LevelConfig = {
-  num: Level
-  name: string
-  throwIntervalStart: number
-  throwIntervalMin: number
-  hasDollies: boolean
-  bg: 'warehouse' | 'dock' | 'outdoor' | 'ballroom'
+
+type BackgroundKind = 'warehouse' | 'loading_dock' | 'outdoor_tent' | 'grand_ballroom'
+
+interface LevelConfig {
+  num:             Level
+  name:            string
+  platforms:       Platform[]
+  ladders:         Ladder[]
+  playerSpawn:     { x: number; y: number }
+  kongSpawn:       { bx: number; by: number }
+  winCondition:    (pl: PlayerState) => boolean
+  throwDelayBase:  number
+  throwDelayFloor: number
+  background:      BackgroundKind
+  initialHazards:  Hazard[]
 }
-const LEVELS: LevelConfig[] = [
-  { num: 1, name: 'Warehouse Floor',    throwIntervalStart: 240, throwIntervalMin: 105, hasDollies: false, bg: 'warehouse' },
-  { num: 2, name: 'Loading Dock',       throwIntervalStart: 215, throwIntervalMin: 100, hasDollies: true,  bg: 'dock' },
-  { num: 3, name: 'Outdoor Tent Setup', throwIntervalStart: 195, throwIntervalMin: 95,  hasDollies: true,  bg: 'outdoor' },
-  { num: 4, name: 'Grand Ballroom',     throwIntervalStart: 175, throwIntervalMin: 85,  hasDollies: true,  bg: 'ballroom' },
+
+// L1 geometry — byte-identical to the pre-v3 PLATFORMS/LADDERS/WIN_X constants.
+// Sessions B/C/D will replace L2–L4 entries; until then they reuse L1 layout.
+const L1_PLATFORMS: Platform[] = [
+  { x1: 0,  y1: 560, x2: 390, y2: 560 },
+  { x1: 15, y1: 472, x2: 345, y2: 458 },
+  { x1: 15, y1: 362, x2: 345, y2: 376 },
+  { x1: 15, y1: 268, x2: 345, y2: 254 },
+  { x1: 35, y1: 168, x2: 325, y2: 168 },
 ]
-function levelCfg(l: Level): LevelConfig { return LEVELS[l - 1] }
+const L1_LADDERS: Ladder[] = [
+  { cx: 306, bpi: 0, tpi: 1 },
+  { cx: 52,  bpi: 1, tpi: 2 },
+  { cx: 306, bpi: 2, tpi: 3 },
+  { cx: 60,  bpi: 3, tpi: 4 },
+]
+const L1_PLAYER_SPAWN = { x: 28, y: 560 }
+const L1_KONG_SPAWN   = { bx: 70, by: 168 }
+const L1_WIN_CONDITION: (pl: PlayerState) => boolean =
+  (pl) => pl.onPlatform === 4 && pl.x > 265
+
+const DOLLY_SEED: Hazard[] = [
+  { type: 'dolly', x: 200, y: 0, vx:  DOLLY_SPEED, onPlatform: 1 },
+  { type: 'dolly', x: 150, y: 0, vx: -DOLLY_SPEED, onPlatform: 2 },
+]
+
+const LEVEL_CONFIGS: LevelConfig[] = [
+  {
+    num:             1,
+    name:            'Warehouse Floor',
+    platforms:       L1_PLATFORMS,
+    ladders:         L1_LADDERS,
+    playerSpawn:     L1_PLAYER_SPAWN,
+    kongSpawn:       L1_KONG_SPAWN,
+    winCondition:    L1_WIN_CONDITION,
+    throwDelayBase:  240,
+    throwDelayFloor: 105,
+    background:      'warehouse',
+    initialHazards:  [],
+  },
+  {
+    num:             2,
+    name:            'Loading Dock',
+    platforms:       L1_PLATFORMS,
+    ladders:         L1_LADDERS,
+    playerSpawn:     L1_PLAYER_SPAWN,
+    kongSpawn:       L1_KONG_SPAWN,
+    winCondition:    L1_WIN_CONDITION,
+    throwDelayBase:  215,
+    throwDelayFloor: 100,
+    background:      'loading_dock',
+    initialHazards:  DOLLY_SEED,
+  },
+  {
+    num:             3,
+    name:            'Outdoor Tent Setup',
+    platforms:       L1_PLATFORMS,
+    ladders:         L1_LADDERS,
+    playerSpawn:     L1_PLAYER_SPAWN,
+    kongSpawn:       L1_KONG_SPAWN,
+    winCondition:    L1_WIN_CONDITION,
+    throwDelayBase:  195,
+    throwDelayFloor: 95,
+    background:      'outdoor_tent',
+    initialHazards:  DOLLY_SEED,
+  },
+  {
+    num:             4,
+    name:            'Grand Ballroom',
+    platforms:       L1_PLATFORMS,
+    ladders:         L1_LADDERS,
+    playerSpawn:     L1_PLAYER_SPAWN,
+    kongSpawn:       L1_KONG_SPAWN,
+    winCondition:    L1_WIN_CONDITION,
+    throwDelayBase:  175,
+    throwDelayFloor: 85,
+    background:      'grand_ballroom',
+    initialHazards:  DOLLY_SEED,
+  },
+]
+function levelCfg(l: Level): LevelConfig { return LEVEL_CONFIGS[l - 1] }
 
 // ─── State types ─────────────────────────────────────────────────────────────
 type Player = {
@@ -239,18 +363,8 @@ type Player = {
   walkAnim: number
 }
 
-type RollingTable = {
-  x: number; y: number
-  vx: number; vy: number
-  rot: number
-  onPlatform: number | null
-}
-
-type ChairDolly = {
-  x: number; y: number
-  vx: number
-  onPlatform: number
-}
+// Spec alias used by LevelConfig.winCondition. Same shape as `Player`.
+type PlayerState = Player
 
 type Popup = { x: number; y: number; t: number; text: string; color?: string }
 
@@ -260,8 +374,7 @@ type BonusLifeAwarded = { [k: number]: boolean }
 
 type GameState = {
   player:        Player
-  tables:        RollingTable[]
-  dollies:       ChairDolly[]
+  hazards:       Hazard[]
   score:         number
   lives:         number
   level:         Level
@@ -282,10 +395,10 @@ type GameState = {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-function makeFreshPlayer(): Player {
+function makeFreshPlayer(cfg: LevelConfig): Player {
   return {
-    x: PLAYER_START_X,
-    y: PLAYER_START_Y,
+    x: cfg.playerSpawn.x,
+    y: cfg.playerSpawn.y,
     vx: 0, vy: 0,
     onPlatform: 0,
     onLadder: false,
@@ -302,6 +415,12 @@ function freshBonusLifeAwarded(): BonusLifeAwarded {
   return { [BONUS_LIFE_SCORE_1]: false, [BONUS_LIFE_SCORE_2]: false }
 }
 
+function cloneHazards(seed: Hazard[]): Hazard[] {
+  // Shallow clone each hazard so mutations on the live array can't bleed
+  // back into LEVEL_CONFIGS' initialHazards seed.
+  return seed.map((h) => ({ ...h }))
+}
+
 function makeFreshState(
   level: Level = 1,
   score = 0,
@@ -310,18 +429,14 @@ function makeFreshState(
 ): GameState {
   const cfg = levelCfg(level)
   return {
-    player: makeFreshPlayer(),
-    tables: [],
-    dollies: cfg.hasDollies ? [
-      { x: 200, y: 0, vx:  DOLLY_SPEED, onPlatform: 1 },
-      { x: 150, y: 0, vx: -DOLLY_SPEED, onPlatform: 2 },
-    ] : [],
+    player: makeFreshPlayer(cfg),
+    hazards: cloneHazards(cfg.initialHazards),
     score,
     lives,
     level,
     frameN: 0,
     throwTimer: 0,
-    nextThrowAt: cfg.throwIntervalStart,
+    nextThrowAt: cfg.throwDelayBase,
     popups: [],
     kongArm: 0,
     kongThrowFlash: 9999,
@@ -334,11 +449,6 @@ function makeFreshState(
     bonusLifeAwarded: { ...bonusLifeAwarded },
     bonusFlashFrames: 0,
   }
-}
-
-function platformAt(idx: number | null): PlatformDef | null {
-  if (idx == null) return null
-  return PLATFORMS[idx] ?? null
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -458,7 +568,7 @@ export default function PartyKongGame() {
           livesLastRef.current = s.lives
           setLivesDisplay(s.lives)
         }
-        const ladderHere = isNearLadderHint(s.player)
+        const ladderHere = isNearLadderHint(s.player, levelCfg(s.level))
         if (ladderHere !== nearLadderRef.current) {
           nearLadderRef.current = ladderHere
           setNearLadder(ladderHere)
@@ -497,7 +607,7 @@ export default function PartyKongGame() {
     const id = window.setInterval(() => {
       const s = stateRef.current
       if (phaseRef.current !== 'playing') return
-      if (s.player.onPlatform === 4 && s.player.x > WIN_X) {
+      if (levelCfg(s.level).winCondition(s.player)) {
         const isLast = s.level === 4
         sfxLevelComplete()
         if (isLast) {
@@ -1117,7 +1227,7 @@ function LevelCompleteOverlay({ level, score, onNext }: {
         Contract<br/><span style={{ color: '#FFB800' }}>Signed</span>
       </div>
       <div style={{ marginTop: 16, fontSize: 14, color: 'rgba(255,255,255,0.65)' }}>
-        Next up: <span style={{ color: '#fff', fontWeight: 700 }}>{LEVELS[level].name}</span>
+        Next up: <span style={{ color: '#fff', fontWeight: 700 }}>{LEVEL_CONFIGS[level].name}</span>
       </div>
       <div style={{ marginTop: 18, fontSize: 12, fontWeight: 700, letterSpacing: '0.14em', color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase' }}>
         Score · <span style={{ color: '#fff' }}>{score.toLocaleString()}</span>
@@ -1289,12 +1399,12 @@ function GameOverOverlay({
 }
 
 // ─── Game logic ──────────────────────────────────────────────────────────────
-function isNearLadderHint(p: Player): boolean {
+function isNearLadderHint(p: Player, cfg: LevelConfig): boolean {
   if (p.onLadder) return false
   if (p.onPlatform == null) return false
-  for (const l of LADDERS) {
+  for (const l of cfg.ladders) {
     if (Math.abs(p.x - l.cx) < LADDER_GRAB_WIDTH) {
-      if (p.onPlatform === l.bottomP || p.onPlatform === l.topP) return true
+      if (p.onPlatform === l.bpi || p.onPlatform === l.tpi) return true
     }
   }
   return false
@@ -1302,25 +1412,29 @@ function isNearLadderHint(p: Player): boolean {
 
 function step(s: GameState, u: number) {
   s.frameN += u
+  const cfg = levelCfg(s.level)
+  const platforms = cfg.platforms
+  const ladders = cfg.ladders
 
   // ── Player ───────────────────────────────────────────────────────────────
   const p = s.player
   if (p.invincible > 0) p.invincible = Math.max(0, p.invincible - u)
   if (p.jumpCooldown > 0) p.jumpCooldown = Math.max(0, p.jumpCooldown - u)
 
-  // Ladder grab attempts
+  // Ladder grab attempts. ladderIdx is the array index into cfg.ladders.
   if (!p.onLadder && p.onPlatform != null) {
-    for (const l of LADDERS) {
+    for (let li = 0; li < ladders.length; li++) {
+      const l = ladders[li]
       if (Math.abs(p.x - l.cx) >= LADDER_GRAB_WIDTH) continue
-      if (s.input.up   && p.onPlatform === l.bottomP) { p.onLadder = true; p.ladderIdx = l.idx; p.x = l.cx; p.vy = 0; p.vx = 0; break }
-      if (s.input.down && p.onPlatform === l.topP)    { p.onLadder = true; p.ladderIdx = l.idx; p.x = l.cx; p.vy = 0; p.vx = 0; break }
+      if (s.input.up   && p.onPlatform === l.bpi) { p.onLadder = true; p.ladderIdx = li; p.x = l.cx; p.vy = 0; p.vx = 0; break }
+      if (s.input.down && p.onPlatform === l.tpi) { p.onLadder = true; p.ladderIdx = li; p.x = l.cx; p.vy = 0; p.vx = 0; break }
     }
   }
 
   if (p.onLadder && p.ladderIdx != null) {
-    const lad = LADDERS[p.ladderIdx]
-    const top    = PLATFORMS[lad.topP]
-    const bottom = PLATFORMS[lad.bottomP]
+    const lad = ladders[p.ladderIdx]
+    const top    = platforms[lad.tpi]
+    const bottom = platforms[lad.bpi]
     const topY    = psy(top,    lad.cx)
     const bottomY = psy(bottom, lad.cx)
     // Vertical motion
@@ -1345,14 +1459,14 @@ function step(s: GameState, u: number) {
       p.y = topY
       p.onLadder = false
       p.ladderIdx = null
-      p.onPlatform = lad.topP
+      p.onPlatform = lad.tpi
       p.vy = 0
     } else if (p.y >= bottomY) {
       // Exit at bottom
       p.y = bottomY
       p.onLadder = false
       p.ladderIdx = null
-      p.onPlatform = lad.bottomP
+      p.onPlatform = lad.bpi
       p.vy = 0
     }
   } else {
@@ -1375,10 +1489,9 @@ function step(s: GameState, u: number) {
         s.score += 5
         sfxJump()
       }
-      // Score popup not visible for +5 jumps (too noisy); just accumulate.
       // Stay on platform: snap y
       if (p.onPlatform != null) {
-        const pp = PLATFORMS[p.onPlatform]
+        const pp = platforms[p.onPlatform]
         // walked off edge?
         if (p.x < pp.x1 || p.x > pp.x2) {
           p.onPlatform = null
@@ -1397,24 +1510,26 @@ function step(s: GameState, u: number) {
       // Clamp x to screen
       if (p.x < 6) p.x = 6
       if (p.x > W - 6) p.x = W - 6
-      // Land on highest platform that surface lies between oldY..p.y at p.x
+      // Land on highest platform that surface lies between oldY..p.y at p.x.
+      // Track index so we can store p.onPlatform without a .idx field.
       if (p.vy > 0) {
-        let landed: PlatformDef | null = null
-        for (const pl of PLATFORMS) {
+        let landedIdx: number = -1
+        let landedSurf = Infinity
+        for (let i = 0; i < platforms.length; i++) {
+          const pl = platforms[i]
           if (p.x < pl.x1 || p.x > pl.x2) continue
           const surf = psy(pl, p.x)
           if (oldY <= surf + 0.5 && p.y >= surf - 0.5) {
-            if (!landed || surf < psy(landed, p.x) /* higher */) {
-              // Actually we want the surface we crossed — prefer the smallest y (highest visually).
-              // But if multiple, we cross the topmost first. Take the one with smallest surf >= oldY.
-              if (!landed) landed = pl
-              else if (surf < psy(landed, p.x)) landed = pl
+            // Prefer the highest surface we crossed.
+            if (surf < landedSurf) {
+              landedSurf = surf
+              landedIdx  = i
             }
           }
         }
-        if (landed) {
-          p.onPlatform = landed.idx
-          p.y = psy(landed, p.x)
+        if (landedIdx >= 0) {
+          p.onPlatform = landedIdx
+          p.y = landedSurf
           p.vy = 0
           p.vx = 0
           sfxLand()
@@ -1446,38 +1561,29 @@ function step(s: GameState, u: number) {
     s.climbSoundTimer = 0
   }
 
-  // Hit detection (player vs tables)
+  // ── Hit detection (player vs hazards) ────────────────────────────────────
   if (p.invincible === 0) {
-    for (const t of s.tables) {
-      if (Math.abs(p.x - t.x) < TABLE_HIT_DX && Math.abs(p.y - t.y - 10) < TABLE_HIT_DY) {
-        playerHit(s)
-        break
-      }
-    }
-  }
-  if (p.invincible === 0) {
-    for (const d of s.dollies) {
-      if (Math.abs(p.x - d.x) < DOLLY_HIT_DX && Math.abs(p.y - d.y - 14) < DOLLY_HIT_DY) {
+    for (const h of s.hazards) {
+      if (hazardHitsPlayer(h, p)) {
         playerHit(s)
         break
       }
     }
   }
 
-  // ── Tables ───────────────────────────────────────────────────────────────
-  const cfg = levelCfg(s.level)
+  // ── Hazards: spawn + update ──────────────────────────────────────────────
   s.throwTimer += u
   s.kongThrowFlash += u
-  // Throw interval shrinks with score.
+  // Kong-throw cadence shrinks with score.
   const throwInterval = Math.max(
-    cfg.throwIntervalMin,
-    cfg.throwIntervalStart - Math.floor(s.score / 8),
+    cfg.throwDelayFloor,
+    cfg.throwDelayBase - Math.floor(s.score / 8),
   )
   s.nextThrowAt = throwInterval
 
   if (s.throwTimer >= s.nextThrowAt) {
     s.throwTimer = 0
-    spawnTable(s)
+    spawnRollingTable(s)
     s.kongThrowFlash = 0
   }
 
@@ -1493,20 +1599,25 @@ function step(s: GameState, u: number) {
     s.kongArm = 0
   }
 
-  for (const t of s.tables) {
-    updateTable(t, u, s)
+  // Update each hazard by type. Future hazard types (conveyor_pallet, wind_gust,
+  // falling_stake, glass_shard) get their update branches added in Sessions B–D.
+  for (const h of s.hazards) {
+    switch (h.type) {
+      case 'rolling_table': updateRollingTable(h, u, s, platforms); break
+      case 'dolly':         updateDolly(h, u, platforms);            break
+      case 'conveyor_pallet':
+      case 'wind_gust':
+      case 'falling_stake':
+      case 'glass_shard':
+        // Stub — implemented in later v3 sessions.
+        break
+    }
   }
-  // Cull tables off-screen.
-  s.tables = s.tables.filter((t) => t.y < H + 80 && t.x > -40 && t.x < W + 40)
-
-  // ── Dollies ──────────────────────────────────────────────────────────────
-  for (const d of s.dollies) {
-    const pl = PLATFORMS[d.onPlatform]
-    d.x += d.vx * u
-    if (d.x < pl.x1 + 12) { d.x = pl.x1 + 12; d.vx = Math.abs(d.vx) }
-    if (d.x > pl.x2 - 12) { d.x = pl.x2 - 12; d.vx = -Math.abs(d.vx) }
-    d.y = psy(pl, d.x)
-  }
+  // Cull off-screen rolling tables (other hazard types manage their own lifetimes).
+  s.hazards = s.hazards.filter((h) => {
+    if (h.type !== 'rolling_table') return true
+    return h.y < H + 80 && h.x > -40 && h.x < W + 40
+  })
 
   // ── Score: survival drip ─────────────────────────────────────────────────
   s.score += (3 / 55) * u  // +3 every 55 frames
@@ -1538,8 +1649,9 @@ function playerHit(s: GameState) {
   if (s.lives > 0) {
     // Stay on the current level — reset player position and clear active
     // hazards so the respawn window is fair. Score is preserved.
-    s.player.x = PLAYER_START_X
-    s.player.y = PLAYER_START_Y
+    const cfg = levelCfg(s.level)
+    s.player.x = cfg.playerSpawn.x
+    s.player.y = cfg.playerSpawn.y
     s.player.vx = 0
     s.player.vy = 0
     s.player.onPlatform = 0
@@ -1547,7 +1659,9 @@ function playerHit(s: GameState) {
     s.player.ladderIdx = null
     s.player.facing = 1
     s.player.walking = false
-    s.tables = []
+    // Clear in-flight rolling tables; keep stationary stage furniture
+    // (dollies, future per-level fixtures) so the stage stays itself.
+    s.hazards = s.hazards.filter((h) => h.type !== 'rolling_table')
     s.throwTimer = 0
     s.kongThrowFlash = 9999
     s.walkSoundTimer = 0
@@ -1555,28 +1669,47 @@ function playerHit(s: GameState) {
   }
 }
 
-function spawnTable(s: GameState) {
-  // Spawn near Tent Kong on P4 left side.
+function hazardHitsPlayer(h: Hazard, p: Player): boolean {
+  switch (h.type) {
+    case 'rolling_table':
+      return Math.abs(p.x - h.x) < TABLE_HIT_DX && Math.abs(p.y - h.y - 10) < TABLE_HIT_DY
+    case 'dolly':
+      return Math.abs(p.x - h.x) < DOLLY_HIT_DX && Math.abs(p.y - h.y - 14) < DOLLY_HIT_DY
+    case 'conveyor_pallet':
+    case 'falling_stake':
+    case 'glass_shard':
+      // Implemented in later v3 sessions.
+      return false
+    case 'wind_gust':
+      // Not a hit hazard; affects player velocity instead.
+      return false
+  }
+}
+
+function spawnRollingTable(s: GameState) {
+  // Spawn near Tent Kong on the top platform's left side.
+  const cfg = levelCfg(s.level)
+  const topIdx = cfg.platforms.length - 1
+  const topP = cfg.platforms[topIdx]
   const x = 95
-  const y = psy(PLATFORMS[4], x) - TABLE_RADIUS
-  s.tables.push({
+  const y = psy(topP, x) - TABLE_RADIUS
+  s.hazards.push({
+    type:       'rolling_table',
     x, y,
-    vx: TABLE_INITIAL_VX,
-    vy: 0,
-    rot: 0,
-    onPlatform: 4,
+    vx:         TABLE_INITIAL_VX,
+    vy:         0,
+    rot:        0,
+    onPlatform: topIdx,
   })
   sfxKongThrow()
 }
 
-function updateTable(t: RollingTable, u: number, s: GameState) {
+function updateRollingTable(t: RollingTableHazard, u: number, s: GameState, platforms: Platform[]) {
+  const topIdx = platforms.length - 1
   if (t.onPlatform != null) {
-    const pl = PLATFORMS[t.onPlatform]
+    const pl = platforms[t.onPlatform]
     const sd = slopeDir(pl)
-    if (sd === 0) {
-      // Flat: keep momentum, slight friction-less.
-      t.vx += 0  // unchanged
-    } else {
+    if (sd !== 0) {
       // Accelerate toward slope direction, clamped.
       t.vx += sd * TABLE_ACCEL * u
       const cap = sd * TABLE_MAX_VX
@@ -1604,30 +1737,43 @@ function updateTable(t: RollingTable, u: number, s: GameState) {
     t.x += t.vx * u
     t.y += t.vy * u
     t.rot += t.vx * 0.08 * u
-    // Landing detection
-    let landed: PlatformDef | null = null
-    for (const pl of PLATFORMS) {
+    // Landing detection — track index so we can score by platform position.
+    let landedIdx = -1
+    let landedSurf = Infinity
+    for (let i = 0; i < platforms.length; i++) {
+      const pl = platforms[i]
       if (t.x < pl.x1 || t.x > pl.x2) continue
       const surf = psy(pl, t.x) - TABLE_RADIUS
       if (oldY <= surf + 0.5 && t.y >= surf - 0.5) {
-        if (!landed) landed = pl
-        else if (psy(pl, t.x) < psy(landed, t.x)) landed = pl
+        if (surf < landedSurf) {
+          landedSurf = surf
+          landedIdx  = i
+        }
       }
     }
-    if (landed) {
-      t.onPlatform = landed.idx
-      t.y = psy(landed, t.x) - TABLE_RADIUS
+    if (landedIdx >= 0) {
+      const landed = platforms[landedIdx]
+      t.onPlatform = landedIdx
+      t.y = landedSurf
       t.vy = 0
       const sd = slopeDir(landed)
       if (sd !== 0) t.vx = sd * TABLE_BASE_ROLL
       sfxTableBounce()
-      // Score for landing on a lower platform.
-      if (landed.idx < 4) {
+      // Score for landing on any platform below the spawn (top) platform.
+      if (landedIdx < topIdx) {
         s.score += 10
         s.popups.push({ x: t.x, y: t.y - 14, t: 0, text: '+10', color: 'rgba(255,184,0,0.95)' })
       }
     }
   }
+}
+
+function updateDolly(d: DollyHazard, u: number, platforms: Platform[]) {
+  const pl = platforms[d.onPlatform]
+  d.x += d.vx * u
+  if (d.x < pl.x1 + 12) { d.x = pl.x1 + 12; d.vx = Math.abs(d.vx) }
+  if (d.x > pl.x2 - 12) { d.x = pl.x2 - 12; d.vx = -Math.abs(d.vx) }
+  d.y = psy(pl, d.x)
 }
 
 // ─── Drawing ─────────────────────────────────────────────────────────────────
@@ -1639,13 +1785,12 @@ function drawScene(
   logoLoaded: boolean,
 ) {
   const cfg = levelCfg(s.level)
-  drawBackground(ctx, s, cfg.bg, family, logo, logoLoaded)
-  drawPlatforms(ctx)
-  drawLadders(ctx)
-  drawGoal(ctx, s, family)
-  drawTentKong(ctx, s, family)
-  drawDollies(ctx, s)
-  drawTables(ctx, s)
+  drawBackground(ctx, s, cfg.background, family, logo, logoLoaded)
+  drawPlatforms(ctx, cfg.platforms)
+  drawLadders(ctx, cfg.platforms, cfg.ladders)
+  drawGoal(ctx, s, cfg.platforms, family)
+  drawTentKong(ctx, s, cfg, family)
+  drawHazards(ctx, s)
   drawPlayer(ctx, s, family)
   drawPopups(ctx, s, family)
   drawBonusLifeFlash(ctx, s, family)
@@ -1671,7 +1816,7 @@ function drawBonusLifeFlash(ctx: CanvasRenderingContext2D, s: GameState, family:
 function drawBackground(
   ctx: CanvasRenderingContext2D,
   s: GameState,
-  kind: LevelConfig['bg'],
+  kind: BackgroundKind,
   family: string,
   logo: HTMLImageElement | null,
   logoLoaded: boolean,
@@ -1681,10 +1826,10 @@ function drawBackground(
   ctx.fillRect(0, 0, W, H)
 
   switch (kind) {
-    case 'warehouse':  drawWarehouseBg(ctx, s, family, logo, logoLoaded); break
-    case 'dock':       drawDockBg(ctx, s, family, logo, logoLoaded);      break
-    case 'outdoor':    drawOutdoorBg(ctx, s, family);                     break
-    case 'ballroom':   drawBallroomBg(ctx, s, family);                    break
+    case 'warehouse':       drawWarehouseBg(ctx, s, family, logo, logoLoaded); break
+    case 'loading_dock':    drawDockBg(ctx, s, family, logo, logoLoaded);      break
+    case 'outdoor_tent':    drawOutdoorBg(ctx, s, family);                     break
+    case 'grand_ballroom':  drawBallroomBg(ctx, s, family);                    break
   }
 }
 
@@ -2070,13 +2215,13 @@ function drawChandelier(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
 }
 
 // ─── Platforms ───────────────────────────────────────────────────────────────
-function drawPlatforms(ctx: CanvasRenderingContext2D) {
-  for (const p of PLATFORMS) {
-    drawPlatformTile(ctx, p)
+function drawPlatforms(ctx: CanvasRenderingContext2D, platforms: Platform[]) {
+  for (let i = 0; i < platforms.length; i++) {
+    drawPlatformTile(ctx, platforms[i], i, platforms)
   }
 }
 
-function drawPlatformTile(ctx: CanvasRenderingContext2D, p: PlatformDef) {
+function drawPlatformTile(ctx: CanvasRenderingContext2D, p: Platform, idx: number, platforms: Platform[]) {
   const x1 = p.x1, x2 = p.x2
   const y1 = p.y1, y2 = p.y2
   const dx = x2 - x1
@@ -2143,9 +2288,9 @@ function drawPlatformTile(ctx: CanvasRenderingContext2D, p: PlatformDef) {
     drawRivet(ctx, x1 + dx * 0.66, y1 + dy * 0.66 + 5)
   }
 
-  // Stanchions for floating platforms (P1, P2, P3)
-  if (p.idx >= 1 && p.idx <= 3) {
-    const below = PLATFORMS[p.idx - 1]
+  // Stanchions for any floating (non-top, non-ground) platform.
+  if (idx >= 1 && idx < platforms.length - 1) {
+    const below = platforms[idx - 1]
     const cx = (x1 + x2) / 2
     const topY = (y1 + y2) / 2 + height
     const botY = psy(below, cx)
@@ -2178,10 +2323,10 @@ function drawRivet(ctx: CanvasRenderingContext2D, x: number, y: number) {
 }
 
 // ─── Ladders ─────────────────────────────────────────────────────────────────
-function drawLadders(ctx: CanvasRenderingContext2D) {
-  for (const l of LADDERS) {
-    const top = PLATFORMS[l.topP]
-    const bot = PLATFORMS[l.bottomP]
+function drawLadders(ctx: CanvasRenderingContext2D, platforms: Platform[], ladders: Ladder[]) {
+  for (const l of ladders) {
+    const top = platforms[l.tpi]
+    const bot = platforms[l.bpi]
     const yTop = psy(top, l.cx)
     const yBot = psy(bot, l.cx)
     drawLadder(ctx, l.cx, yTop, yBot)
@@ -2224,10 +2369,10 @@ function drawLadder(ctx: CanvasRenderingContext2D, cx: number, yTop: number, yBo
 }
 
 // ─── Goal (signed contract) ──────────────────────────────────────────────────
-function drawGoal(ctx: CanvasRenderingContext2D, s: GameState, family: string) {
-  const p4 = PLATFORMS[4]
-  const gx = p4.x2 - 24
-  const gy = psy(p4, gx) - 22
+function drawGoal(ctx: CanvasRenderingContext2D, s: GameState, platforms: Platform[], family: string) {
+  const top = platforms[platforms.length - 1]
+  const gx = top.x2 - 24
+  const gy = psy(top, gx) - 22
   // Pulsing glow
   const pulse = 0.7 + Math.sin(s.goalGlow) * 0.25
   const g = ctx.createRadialGradient(gx, gy, 4, gx, gy, 38)
@@ -2281,9 +2426,9 @@ function drawStar(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: numb
 }
 
 // ─── Tent Kong ───────────────────────────────────────────────────────────────
-function drawTentKong(ctx: CanvasRenderingContext2D, s: GameState, family: string) {
-  const baseX = 70
-  const baseY = psy(PLATFORMS[4], baseX)
+function drawTentKong(ctx: CanvasRenderingContext2D, s: GameState, cfg: LevelConfig, family: string) {
+  const baseX = cfg.kongSpawn.bx
+  const baseY = cfg.kongSpawn.by
   const bob = Math.sin(s.bgFrame * 0.06) * 1.4
   const cx = baseX
   const cy = baseY - 30 + bob
@@ -2642,13 +2787,14 @@ function drawPlayer(ctx: CanvasRenderingContext2D, s: GameState, family: string)
 }
 
 // ─── Rolling tables ──────────────────────────────────────────────────────────
-function drawTables(ctx: CanvasRenderingContext2D, s: GameState) {
-  for (const t of s.tables) {
-    drawTable(ctx, t)
-  }
+function drawHazards(ctx: CanvasRenderingContext2D, s: GameState) {
+  // Two-pass: dollies below tables so a falling table reads on top of any
+  // dolly it crosses. Future hazard types slot into their own pass.
+  for (const h of s.hazards) if (h.type === 'dolly')         drawDolly(ctx, h)
+  for (const h of s.hazards) if (h.type === 'rolling_table') drawRollingTable(ctx, h)
 }
 
-function drawTable(ctx: CanvasRenderingContext2D, t: RollingTable) {
+function drawRollingTable(ctx: CanvasRenderingContext2D, t: RollingTableHazard) {
   const x = t.x, y = t.y
   // Contact shadow
   ctx.fillStyle = 'rgba(0,0,0,0.45)'
@@ -2687,13 +2833,7 @@ function drawTable(ctx: CanvasRenderingContext2D, t: RollingTable) {
 }
 
 // ─── Chair stack dollies ─────────────────────────────────────────────────────
-function drawDollies(ctx: CanvasRenderingContext2D, s: GameState) {
-  for (const d of s.dollies) {
-    drawDolly(ctx, d)
-  }
-}
-
-function drawDolly(ctx: CanvasRenderingContext2D, d: ChairDolly) {
+function drawDolly(ctx: CanvasRenderingContext2D, d: DollyHazard) {
   const x = d.x, y = d.y
   // Shadow
   ctx.fillStyle = 'rgba(0,0,0,0.4)'
