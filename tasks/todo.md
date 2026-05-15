@@ -45,7 +45,7 @@ The driver app's `/api/routes` endpoint currently filters stops by `calculated_e
 ## Tools Hub — Content Build (Phase 2 — content authoring + UI)
 
 Empty shells exist on `/tools` for the tile grid. Content + per-tool UI is the work:
-- [ ] Tenting calculator — tent squaring
+- [x] Tenting calculator — tent squaring (shipped 2026-05-14 late evening — `/tools/tent-squaring`, replaces the Tenting tile's coming-soon stub. When additional tenting calcs land (anchoring, etc.), convert the route into a tenting sub-hub.)
 - [ ] Occupant load calculator — IFC Chapter 31 load factors by layout type
 - [ ] Exit count and spacing calculator — 100 ft max rule, 0.2 in/person egress width
 - [ ] Generator placement rule flag — 20 ft minimum

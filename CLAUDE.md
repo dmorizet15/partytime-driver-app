@@ -304,7 +304,22 @@ Dashboard (commit `03dd102`):
 - A "location off" warning surface for the driver if permission is denied (current UI silently degrades; Mark Stop Complete still works).
 - Dashboard-side audit / analytics surface for arrival → completion deltas (the data is now in the column; building reports is a separate Phase 2 thread).
 
+### Tools Hub — Tent Squaring Calculator SHIPPED ✅ (code) — May 14, 2026 late evening
+First Tools Hub calculator. Pure frontend, no migration, no Supabase. Driver enters Length / Width (ft), picks Rectangular or Square shape, gets the diagonal as e.g. `56' 7"` updating live. Square mode mirrors Length into Width and locks the Width field. Helper line below the result: "Measure corner to corner — if it matches, your tent is square."
+
+**Architecture:**
+
+- **Route:** `/tools/tent-squaring`. Auth gate follows the `/tools/weather` pattern (driver / super_admin / tools_only).
+- **Screen:** `src/screens/TentSquaringScreen.tsx`. Self-contained — no shared state, no Supabase, no API calls. Inline `C` token object (blue/ink/cream/gold/paper/muted/hair) matches WeatherScreen / ToolsScreen verbatim.
+- **Tools Hub entry:** the existing `'tenting'` tile in `ToolsScreen.TOOLS` was re-pointed from a "coming soon" stub to `/tools/tent-squaring`; renamed to "Tent Squaring" / "Diagonal calculator". When future tenting calcs (anchoring guidance, etc.) land, the route can become a sub-hub with cards — or the tile can be renamed back to "Tenting" and re-route to that hub.
+- **Inches rounding edge case:** `formatFeetInches` carries `inches === 12` (rounding boundary at 11.5") back into feet. e.g. 56.96 ft → 57' 0".
+- **No deps added.** Native `<input type="number">`, `Math.sqrt`, `Math.floor`, `Math.round`. inputMode="decimal" for mobile keyboard.
+- **Empty / non-numeric / non-positive inputs hide the output card** — no zero-state placeholder result; the card simply doesn't render until both fields parse to a positive finite number.
+
+**Not pushed.** Interactive session — build verified (`npx next build` green, route 2.3 kB) but the commit + push step deferred to Darren.
+
 ### NEXT
+- **Push the Tent Squaring Calculator.** Build is green; the work just needs `git add` + commit + push to deploy via Vercel. Smoke test after deploy: open `/tools` → tap **Tent Squaring** → enter 40 / 20 → confirm diagonal = `44' 9"` (40² + 20² = 2000; √2000 ≈ 44.72 ft = 44' 9"). Toggle to Square → confirm Width field locks and mirrors Length → enter 30 → confirm diagonal = `42' 5"` (30√2 ≈ 42.43 ft).
 - **Smoke-test Phase 2.5C arrival on production** (deploys: driver `73b7509`, dashboard `03dd102`):
   - Sign in as driver; open a delivery stop on today's route while away from the customer site (anywhere outside the 150m bubble). Confirm browser prompts for location permission on first watch.
   - Grant permission; verify console / DevTools shows watchPosition ticks with descending `lastDistanceMeters`.

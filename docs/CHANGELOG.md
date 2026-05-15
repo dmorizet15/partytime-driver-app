@@ -4,6 +4,37 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-05-14 late evening — Tools Hub: Tent Squaring Calculator
+
+**Scope:** First calculator in the Tools Hub content build. Pure frontend, no Supabase / no migration / no new dependencies. Driver enters tent dimensions, app computes diagonal via `√(L² + W²)`, displays in `feet' inches"` formatted output. Replaces the "coming soon" stub on the existing Tenting tile.
+
+### What shipped
+
+- `src/screens/TentSquaringScreen.tsx` (NEW) — hero with "← Tools" back nav, Rectangular | Square shape toggle, two `<input type="number">` dimension fields side-by-side (Length / Width), live-updating output card showing the diagonal as e.g. `56' 7"` plus the helper line "Measure corner to corner — if it matches, your tent is square." No submit button; recomputes on every keystroke. Empty / non-numeric / non-positive inputs hide the output card entirely. Square mode mirrors Length into Width and locks the Width field (`disabled`, gray background, 55% opacity, `not-allowed` cursor). Styling matches WeatherScreen / ToolsScreen — inline `C` token object (blue / ink / cream / gold / paper / muted / hair), Archivo display + Inter body, BottomNav at the foot.
+- `src/app/tools/tent-squaring/page.tsx` (NEW) — auth-gated route wrapper following the exact pattern from `/tools/weather/page.tsx`. Allowed roles: `driver`, `super_admin`, `tools_only`.
+- `src/screens/ToolsScreen.tsx` — wired the existing `'tenting'` tile to `/tools/tent-squaring`; renamed it from "Tenting" / "Calculators, anchoring" to "Tent Squaring" / "Diagonal calculator". The tile previously fired the "coming soon" toast.
+
+### Decisions made
+
+- **Re-pointed the existing Tenting tile rather than adding a new tile.** Tent squaring is the only tenting calculator built today, and the Tenting tile was a stub. When more tenting calcs ship (anchoring guidance, etc.), the cleanest move is to convert `/tools/tent-squaring` into a tenting sub-hub and re-add this calculator as a card inside it — or rename the tile back to "Tenting" once 2+ calcs exist. Grid stays at 10 tiles, no clutter.
+- **Inches rounding edge case:** when `Math.round(diagonal_inches % 12) === 12` (true at e.g. 56.96 ft → 56' 12" → render as 57' 0"), the formatter carries the inch into the feet column. Single conditional, no library.
+- **No upper size limit, no stake buffer, no clearance** — per the spec. Raw geometric diagonal only.
+- **"ptw.\*" tokens in the prompt** — the codebase doesn't have actual Tailwind `ptw.*` classes; every screen defines an inline `C` color constant. Followed the existing convention (matched WeatherScreen / ToolsScreen verbatim) rather than introducing a token system.
+
+### Verification
+
+- `npx next build` — green end-to-end. New route `/tools/tent-squaring` renders as static at 2.3 kB / 156 kB First Load JS. No type errors, no lint warnings, 24/24 static pages generated.
+- **Not pushed** — interactive session per Darren's prompt; build verification only.
+
+### Out of scope this session
+
+- Anchoring guidance (Phase 2C, separate flag flip).
+- Multi-tent / pole-tent variants.
+- Saving recent calculations.
+- Print / share view.
+
+---
+
 ## 2026-05-14 evening — Phase 2.5C: GPS Auto-Arrival (end-to-end, both repos)
 
 **Scope:** Driver opens a delivery / pickup / service stop → app arms a 150m geofence around its coordinates → driver crosses into the bubble → app POSTs once to a new `/api/stops/arrived` endpoint → server stamps `dispatch_stops.arrived_at` idempotently → dashboard's existing `dispatch_stops` realtime channel fans it out → Melissa sees a teal pin below the stop number on the board within ~1s. Migration applied via the Management API path discovered earlier today (`supabase db query --linked --file`); both repos' Supabase types regenerated. No standalone notification or polling layer — leverages infra that's been in place since Migration 034 (geocoding pipeline) and the original realtime subscriptions.
