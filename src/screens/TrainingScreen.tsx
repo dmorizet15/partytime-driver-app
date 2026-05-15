@@ -23,6 +23,7 @@ const C = {
   liveBorder:  'rgba(31,191,107,0.3)',
   soonBg:      'rgba(255,255,255,0.07)',
   soonText:    'rgba(255,255,255,0.35)',
+  soonBorder:  'rgba(255,255,255,0.1)',
 } as const
 
 const FONT_DISPLAY = "var(--font-archivo), 'Archivo', 'Inter', system-ui, -apple-system, sans-serif"
@@ -183,6 +184,7 @@ function BadgePill({ badge }: { badge: Badge }) {
     <span style={{
       display: 'inline-block',
       background: C.soonBg, color: C.soonText,
+      border: `0.5px solid ${C.soonBorder}`,
       padding: '3px 9px', borderRadius: 999,
       fontSize: 10, fontWeight: 700, letterSpacing: '0.04em',
       textTransform: 'uppercase', whiteSpace: 'nowrap',
@@ -314,7 +316,6 @@ function ArcadeCard({ onTap }: { onTap: () => void }) {
           Route Rush · Tent Tetris · Party Kong
         </div>
       </div>
-      <BadgePill badge={{ text: 'Live', kind: 'live' }} />
     </button>
   )
 }
@@ -326,13 +327,13 @@ export default function TrainingScreen() {
 
   useEffect(() => {
     if (!toast) return
-    const t = setTimeout(() => setToast(null), 3000)
+    const t = setTimeout(() => setToast(null), 2000)
     return () => clearTimeout(t)
   }, [toast])
 
   function handleTap(cat: Category) {
     if (cat.href) router.push(cat.href)
-    else setToast('Coming soon — this feature is in development.')
+    else setToast('Coming soon')
   }
 
   return (
@@ -387,6 +388,7 @@ export default function TrainingScreen() {
           fontSize: 38, fontWeight: 900,
           lineHeight: 0.95, letterSpacing: '-0.03em',
           color: C.white,
+          textTransform: 'uppercase',
         }}>
           Training hub
         </div>
@@ -437,9 +439,9 @@ export default function TrainingScreen() {
             bottom: 'calc(108px + env(safe-area-inset-bottom))',
             transform: 'translateX(-50%)',
             background: C.card, color: C.white,
-            padding: '12px 18px', borderRadius: 999,
-            fontSize: 13, fontWeight: 700,
-            borderLeft: `4px solid ${C.gold}`,
+            padding: '10px 18px', borderRadius: 999,
+            fontSize: 13, fontWeight: 600,
+            border: `0.5px solid ${C.cardBorder}`,
             boxShadow: '0 12px 30px -10px rgba(0,0,0,0.6)',
             zIndex: 100,
             maxWidth: '80vw',

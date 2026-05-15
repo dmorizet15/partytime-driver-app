@@ -9,6 +9,7 @@ const C = {
   bg:          '#0D0D0D',
   card:        '#1A1A1A',
   cardBorder:  'rgba(255,255,255,0.07)',
+  divider:     'rgba(255,255,255,0.07)',
   blue:        '#0000FF',
   white:       '#fff',
   muted:       'rgba(255,255,255,0.4)',
@@ -20,6 +21,7 @@ const C = {
   liveBorder:  'rgba(31,191,107,0.3)',
   soonBg:      'rgba(255,255,255,0.07)',
   soonText:    'rgba(255,255,255,0.35)',
+  soonBorder:  'rgba(255,255,255,0.1)',
 } as const
 
 const FONT_DISPLAY = "var(--font-archivo), 'Archivo', 'Inter', system-ui, -apple-system, sans-serif"
@@ -84,6 +86,39 @@ function Layout2Icon({ size = 22, color = C.white }: IconProps) {
   )
 }
 
+function CloudStormIcon({ size = 22, color = C.white }: IconProps) {
+  return (
+    <IconSvg size={size} color={color}>
+      <path d="M7 17a4 4 0 0 1 0 -8a5 4.5 0 0 1 10 1.5h1a3 3 0 0 1 1 5.8" />
+      <path d="M11 13l-2 4h3l-2 4" />
+    </IconSvg>
+  )
+}
+
+function BooksIcon({ size = 22, color = C.white }: IconProps) {
+  return (
+    <IconSvg size={size} color={color}>
+      <rect x="4" y="4" width="4" height="16" rx="1" />
+      <rect x="9" y="4" width="4" height="16" rx="1" />
+      <path d="M15 6l3.5 -1l3.4 14.5l-3.5 1z" />
+    </IconSvg>
+  )
+}
+
+function EngineIcon({ size = 22, color = C.white }: IconProps) {
+  return (
+    <IconSvg size={size} color={color}>
+      <path d="M9 4h6" />
+      <path d="M12 4v3" />
+      <rect x="5" y="7" width="14" height="12" rx="2" />
+      <path d="M3 12h2" />
+      <path d="M19 12h2" />
+      <path d="M9 11v4" />
+      <path d="M15 11v4" />
+    </IconSvg>
+  )
+}
+
 // ─── Category catalog ───────────────────────────────────────────────────────
 type Badge = { text: string; kind: 'live' | 'soon' }
 type Category = {
@@ -135,7 +170,37 @@ const GRID_CATEGORIES: Category[] = [
     iconColor: '#1FBF6B',
     badge: { text: 'Coming soon', kind: 'soon' },
   },
+  {
+    id: 'weather',
+    name: 'Weather',
+    detail: 'Live forecast by job site',
+    Icon: CloudStormIcon,
+    iconBg: 'rgba(100,180,255,0.15)',
+    iconColor: '#64B4FF',
+    badge: { text: 'Live', kind: 'live' },
+    href: '/tools/weather',
+  },
+  {
+    id: 'equipment-guides',
+    name: 'Equipment guides',
+    detail: 'Heater, generator & equipment docs',
+    Icon: BooksIcon,
+    iconBg: 'rgba(150,100,255,0.15)',
+    iconColor: '#A57FFF',
+    badge: { text: 'Live', kind: 'live' },
+    href: '/reference/library',
+  },
 ]
+
+const GENERATORS: Category = {
+  id: 'generators',
+  name: 'Generators',
+  detail: 'Manuals · Sizing charts · Placement',
+  Icon: EngineIcon,
+  iconBg: 'rgba(255,140,0,0.15)',
+  iconColor: '#FF8C00',
+  badge: { text: 'Coming soon', kind: 'soon' },
+}
 
 const PARTY_LAYOUTS: Category = {
   id: 'party-layouts',
@@ -168,6 +233,7 @@ function BadgePill({ badge }: { badge: Badge }) {
     <span style={{
       display: 'inline-block',
       background: C.soonBg, color: C.soonText,
+      border: `0.5px solid ${C.soonBorder}`,
       padding: '3px 9px', borderRadius: 999,
       fontSize: 10, fontWeight: 700, letterSpacing: '0.04em',
       textTransform: 'uppercase', whiteSpace: 'nowrap',
@@ -274,13 +340,13 @@ export default function ToolsScreen() {
 
   useEffect(() => {
     if (!toast) return
-    const t = setTimeout(() => setToast(null), 3000)
+    const t = setTimeout(() => setToast(null), 2000)
     return () => clearTimeout(t)
   }, [toast])
 
   function handleTap(cat: Category) {
     if (cat.href) router.push(cat.href)
-    else setToast('Coming soon — this feature is in development.')
+    else setToast('Coming soon')
   }
 
   return (
@@ -335,6 +401,7 @@ export default function ToolsScreen() {
           fontSize: 38, fontWeight: 900,
           lineHeight: 0.95, letterSpacing: '-0.03em',
           color: C.white,
+          textTransform: 'uppercase',
         }}>
           Tools hub
         </div>
@@ -350,7 +417,7 @@ export default function ToolsScreen() {
 
       {/* ── SCROLL BODY ──────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto" style={{ background: C.bg }}>
-        {/* 2-col category grid */}
+        {/* 2-col category grid (6 tiles) */}
         <div style={{
           padding: '20px 18px 0',
           display: 'grid',
@@ -362,23 +429,19 @@ export default function ToolsScreen() {
           ))}
         </div>
 
-        {/* Full-width: Party layouts */}
+        {/* Full-width: Generators (above divider) */}
         <div style={{ padding: '12px 18px 0' }}>
-          <CategoryCardWide cat={PARTY_LAYOUTS} onTap={handleTap} />
+          <CategoryCardWide cat={GENERATORS} onTap={handleTap} />
         </div>
 
-        {/* Footer line */}
-        <div style={{
-          padding: '20px 18px 24px',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-          color: C.muted, fontSize: 12,
-        }}>
-          <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor"
-               strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="9" />
-            <path d="M12 7v5l3 2" />
-          </svg>
-          <span>Weather · Reference library also in Tools</span>
+        {/* Thin divider */}
+        <div style={{ padding: '16px 18px 0' }}>
+          <div style={{ height: 1, background: C.divider, width: '100%' }} />
+        </div>
+
+        {/* Full-width: Party layouts (below divider, anchors bottom) */}
+        <div style={{ padding: '16px 18px 28px' }}>
+          <CategoryCardWide cat={PARTY_LAYOUTS} onTap={handleTap} />
         </div>
       </div>
 
@@ -394,9 +457,9 @@ export default function ToolsScreen() {
             bottom: 'calc(108px + env(safe-area-inset-bottom))',
             transform: 'translateX(-50%)',
             background: C.card, color: C.white,
-            padding: '12px 18px', borderRadius: 999,
-            fontSize: 13, fontWeight: 700,
-            borderLeft: `4px solid ${C.gold}`,
+            padding: '10px 18px', borderRadius: 999,
+            fontSize: 13, fontWeight: 600,
+            border: `0.5px solid ${C.cardBorder}`,
             boxShadow: '0 12px 30px -10px rgba(0,0,0,0.6)',
             zIndex: 100,
             maxWidth: '80vw',
