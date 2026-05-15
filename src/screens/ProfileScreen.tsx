@@ -1,6 +1,6 @@
 'use client'
 
-import { ReactNode, useEffect, useState } from 'react'
+import { ReactNode, useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { signOut } from '@/lib/auth'
@@ -8,6 +8,16 @@ import { supabase } from '@/lib/supabase'
 import type { Role } from '@/types/auth'
 import Image from 'next/image'
 import BottomNav from '@/components/BottomNav'
+import UploadComplianceDocModal from './UploadComplianceDocModal'
+import {
+  DOCUMENT_LABELS,
+  DOCUMENT_TYPES,
+  expiringDocCopy,
+  fetchMyComplianceDocs,
+  type DocumentType,
+  type DriverDocSummary,
+} from '@/lib/driverComplianceClient'
+import { fetchPersonalStats, type PersonalStats } from '@/lib/personalStatsClient'
 
 // ─── Direction 03 (Editorial) tokens ──────────────────────────────────────────
 const C = {
@@ -132,42 +142,55 @@ function formatRole(roles: Role[] | null | undefined): string {
   }
 }
 
-// ─── Stub compliance documents (Phase-2 backend) ─────────────────────────────
-// TODO: wire to compliance documents table once schema lands. Status, expiry,
-// and document type all need to come from the backend; today they're hardcoded
-// stubs so the UI surface is in place when the real data arrives.
-type DocStatus = 'valid' | 'expiring' | 'expired'
-interface ComplianceDoc {
-  name: string
-  expires: string             // pre-formatted display string
-  daysUntilExpiry: number
-  status: DocStatus
-}
-const STUB_DOCS: ComplianceDoc[] = [
-  { name: 'DOT Medical Card',          expires: 'May 17, 2026', daysUntilExpiry: 14,  status: 'expiring' },
-  { name: 'West Point ID',             expires: 'Aug 22, 2027', daysUntilExpiry: 477, status: 'valid' },
-  { name: 'Commercial Driver License', expires: 'Mar 10, 2028', daysUntilExpiry: 678, status: 'valid' },
-]
-
 // ─── Compliance card ─────────────────────────────────────────────────────────
-function ComplianceCard({ doc }: { doc: ComplianceDoc }) {
-  const expiring = doc.status === 'expiring'
+const RED = '#DC2626'
+
+function fmtExpires(iso: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso + 'T00:00:00')
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+interface ComplianceCardProps {
+  doc:       DriverDocSummary
+  onUpload:  () => void
+}
+
+function ComplianceCard({ doc, onUpload }: ComplianceCardProps) {
+  const isExpiring = doc.status === 'expiring'
+  const isExpired  = doc.status === 'expired'
+  const isMissing  = doc.status === 'missing'
+  const isValid    = doc.status === 'ok'
+
+  const accent =
+    isExpired  ? RED :
+    isExpiring ? C.gold :
+    isMissing  ? C.muted :
+    null
+
+  const eyebrow =
+    isExpired  ? `Expired ${fmtExpires(doc.expiry_date)}` :
+    isExpiring ? expiringDocCopy(doc) :
+    isMissing  ? 'Not yet uploaded' :
+    null
+
   return (
     <div style={{
-      background: expiring ? C.goldSoft : C.paper,
+      background: isExpired ? '#FEECEC' : isExpiring ? C.goldSoft : C.paper,
       border: `1.5px solid ${C.ink}`,
-      borderLeft: expiring ? `5px solid ${C.gold}` : `1.5px solid ${C.ink}`,
+      borderLeft: accent ? `5px solid ${accent}` : `1.5px solid ${C.ink}`,
       borderRadius: 16,
       padding: '14px 16px',
       marginBottom: 10,
     }}>
-      {expiring && (
+      {eyebrow && (
         <div style={{
           fontSize: 10.5, fontWeight: 900, letterSpacing: '0.18em',
-          color: C.goldDeep, textTransform: 'uppercase',
+          color: isExpired ? '#B91C1C' : isExpiring ? C.goldDeep : C.muted,
+          textTransform: 'uppercase',
           marginBottom: 4,
         }}>
-          Expires in {doc.daysUntilExpiry} days
+          {eyebrow}
         </div>
       )}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
@@ -177,13 +200,31 @@ function ComplianceCard({ doc }: { doc: ComplianceDoc }) {
             fontFamily: FONT_DISPLAY, lineHeight: 1.2,
             letterSpacing: '-0.01em',
           }}>
-            {doc.name}
+            {DOCUMENT_LABELS[doc.document_type]}
           </div>
-          <div style={{ marginTop: 4, fontSize: 12.5, color: C.muted }}>
-            Expires {doc.expires}
-          </div>
+          {doc.expiry_date && (
+            <div style={{ marginTop: 4, fontSize: 12.5, color: C.muted }}>
+              Expires {fmtExpires(doc.expiry_date)}
+              {doc.extraction_method === 'vision' && (
+                <span style={{ marginLeft: 6, fontSize: 11, color: C.muted, opacity: 0.7 }}>
+                  · captured via AI
+                </span>
+              )}
+            </div>
+          )}
         </div>
-        {expiring ? (
+        {isExpired ? (
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 5,
+            background: RED, color: '#fff',
+            padding: '4px 10px', borderRadius: 999,
+            fontSize: 10.5, fontWeight: 800, letterSpacing: '0.08em',
+            textTransform: 'uppercase', whiteSpace: 'nowrap', flexShrink: 0,
+          }}>
+            <ShieldIcon size={12} color="#fff"/>
+            Expired
+          </span>
+        ) : isExpiring ? (
           <span style={{
             display: 'inline-flex', alignItems: 'center', gap: 5,
             background: C.gold, color: C.ink,
@@ -193,6 +234,17 @@ function ComplianceCard({ doc }: { doc: ComplianceDoc }) {
           }}>
             <ShieldIcon size={12} color={C.ink}/>
             Expiring
+          </span>
+        ) : isMissing ? (
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 5,
+            background: C.off, color: C.muted,
+            border: `1px solid ${C.muted}`,
+            padding: '4px 10px', borderRadius: 999,
+            fontSize: 10.5, fontWeight: 800, letterSpacing: '0.08em',
+            textTransform: 'uppercase', whiteSpace: 'nowrap', flexShrink: 0,
+          }}>
+            Missing
           </span>
         ) : (
           <span style={{
@@ -210,24 +262,26 @@ function ComplianceCard({ doc }: { doc: ComplianceDoc }) {
       </div>
       <button
         type="button"
-        onClick={() => { /* Phase-2 placeholder */ }}
+        onClick={onUpload}
         style={{
           marginTop: 12,
           width: '100%',
-          background: 'transparent',
-          border: `1.5px dashed ${C.muted}`,
+          background: isMissing || isExpired ? C.blue : 'transparent',
+          color: isMissing || isExpired ? '#fff' : C.muted,
+          border: isMissing || isExpired ? 0 : `1.5px dashed ${C.muted}`,
           borderRadius: 12,
           padding: '10px 12px',
           cursor: 'pointer',
           fontFamily: 'inherit',
-          fontSize: 12.5, fontWeight: 700, color: C.muted,
+          fontSize: 12.5, fontWeight: 700,
           letterSpacing: '0.04em',
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
         }}
       >
-        <UploadIcon size={14} color={C.muted}/>
-        Upload new
+        <UploadIcon size={14} color={isMissing || isExpired ? '#fff' : C.muted}/>
+        {isValid ? 'Replace document' : isMissing ? 'Upload now' : isExpired ? 'Upload renewed document' : 'Replace document'}
       </button>
+      {isValid && isValid /* keep ts happy when no else branch */}
     </div>
   )
 }
@@ -310,6 +364,52 @@ export default function ProfileScreen() {
   const displayName = profile?.display_name?.trim() || 'Driver'
   const roleLabel   = formatRole(profile?.roles)
   const email       = user?.email ?? '—'
+
+  // ── Compliance documents (live data) ────────────────────────────────────────
+  const [docs, setDocs] = useState<DriverDocSummary[] | null>(null)
+  const [docsError, setDocsError] = useState<string | null>(null)
+  const [uploadFor, setUploadFor] = useState<DocumentType | null>(null)
+
+  const loadDocs = useCallback(async () => {
+    if (!user?.id) return
+    try {
+      setDocsError(null)
+      const rows = await fetchMyComplianceDocs(user.id)
+      setDocs(rows)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      setDocsError(msg)
+      // Fall back to a missing-row view per type so the user can still upload.
+      setDocs(DOCUMENT_TYPES.map((t) => ({
+        id: null,
+        document_type: t,
+        expiry_date: null,
+        storage_path: null,
+        extraction_method: null,
+        status: 'missing' as const,
+        daysUntilExpiry: null,
+      })))
+    }
+  }, [user?.id])
+
+  useEffect(() => {
+    loadDocs()
+  }, [loadDocs])
+
+  // ── Personal stats ─────────────────────────────────────────────────────────
+  const [stats, setStats] = useState<PersonalStats | null>(null)
+
+  useEffect(() => {
+    if (!user?.id) return
+    let cancelled = false
+    fetchPersonalStats(user.id)
+      .then((s) => { if (!cancelled) setStats(s) })
+      .catch((err) => {
+        console.error('[personalStats]', err)
+        if (!cancelled) setStats({ totalStopsCompleted: 0, startDate: null, truckHistory: [] })
+      })
+    return () => { cancelled = true }
+  }, [user?.id])
 
   // ── Change-password form ────────────────────────────────────────────────────
   const [pwdOpen,        setPwdOpen]        = useState(false)
@@ -468,10 +568,117 @@ export default function ProfileScreen() {
         {/* Compliance documents */}
         <SectionEyebrow>Compliance Documents</SectionEyebrow>
         <div style={{ padding: '0 18px' }}>
-          {STUB_DOCS.map((doc) => (
-            <ComplianceCard key={doc.name} doc={doc}/>
-          ))}
+          {docsError && (
+            <div style={{
+              marginBottom: 10,
+              background: '#FEECEC',
+              border: '1.5px solid #B91C1C',
+              borderLeft: '5px solid #DC2626',
+              borderRadius: 12,
+              padding: '10px 12px',
+              color: '#7F1D1D',
+              fontWeight: 700, fontSize: 12, lineHeight: 1.4,
+            }}>
+              Could not load compliance docs: {docsError}
+            </div>
+          )}
+          {docs == null ? (
+            <div style={{
+              padding: '14px 16px',
+              background: C.off,
+              border: `1.5px solid ${C.ink}`,
+              borderRadius: 16,
+              marginBottom: 10,
+              fontSize: 13, color: C.muted, textAlign: 'center',
+            }}>
+              Loading documents…
+            </div>
+          ) : (
+            docs.map((doc) => (
+              <ComplianceCard
+                key={doc.document_type}
+                doc={doc}
+                onUpload={() => setUploadFor(doc.document_type)}
+              />
+            ))
+          )}
         </div>
+
+        {/* Personal stats */}
+        {stats && (
+          <>
+            <SectionEyebrow>My Activity</SectionEyebrow>
+            <div style={{ padding: '0 18px' }}>
+              <div style={{
+                background: C.paper,
+                border: `1.5px solid ${C.ink}`,
+                borderRadius: 16,
+                padding: '14px 16px',
+                marginBottom: 10,
+              }}>
+                <div style={{
+                  fontSize: 11, fontWeight: 800, letterSpacing: '0.18em',
+                  color: C.muted, textTransform: 'uppercase',
+                }}>
+                  Stops completed
+                </div>
+                <div style={{
+                  marginTop: 4,
+                  fontFamily: FONT_DISPLAY,
+                  fontSize: 28, fontWeight: 900,
+                  color: C.ink, lineHeight: 1.0,
+                  letterSpacing: '-0.02em',
+                }}>
+                  {stats.totalStopsCompleted.toLocaleString()}
+                </div>
+                {stats.startDate && (
+                  <div style={{ marginTop: 4, fontSize: 12.5, color: C.muted }}>
+                    Since {new Date(stats.startDate + 'T00:00:00').toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
+                  </div>
+                )}
+              </div>
+
+              {stats.truckHistory.length > 0 && (
+                <div style={{
+                  background: C.paper,
+                  border: `1.5px solid ${C.ink}`,
+                  borderRadius: 16,
+                  overflow: 'hidden',
+                  marginBottom: 10,
+                }}>
+                  <div style={{
+                    padding: '12px 16px 6px',
+                    fontFamily: FONT_DISPLAY,
+                    fontSize: 11, fontWeight: 800, letterSpacing: '0.18em',
+                    textTransform: 'uppercase', color: C.muted,
+                  }}>
+                    Trucks driven
+                  </div>
+                  <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                    {stats.truckHistory.slice(0, 6).map((t) => (
+                      <li
+                        key={t.truck_id}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'baseline',
+                          padding: '10px 16px',
+                          borderTop: '1px solid rgba(10,11,20,0.08)',
+                          fontSize: 14,
+                        }}
+                      >
+                        <span style={{ fontWeight: 700, color: C.ink }}>{t.truck_name}</span>
+                        <span style={{ fontSize: 12, color: C.muted }}>
+                          {t.routes_driven} route{t.routes_driven === 1 ? '' : 's'}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </>
+        )}
 
         {/* Account */}
         <SectionEyebrow>Account</SectionEyebrow>
@@ -648,6 +855,18 @@ export default function ProfileScreen() {
       </div>
 
       <BottomNav/>
+
+      {uploadFor && user?.id && (
+        <UploadComplianceDocModal
+          driverId={user.id}
+          documentType={uploadFor}
+          onClose={() => setUploadFor(null)}
+          onSaved={() => {
+            setUploadFor(null)
+            loadDocs()
+          }}
+        />
+      )}
     </div>
   )
 }
