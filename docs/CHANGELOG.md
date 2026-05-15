@@ -4,6 +4,79 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-05-15 overnight — PartyTime Arcade: Route Rush + Tent Tetris + shared leaderboard
+
+**Scope:** Two fully playable arcade games under a new `/training/arcade` hub, plus shared Supabase-backed leaderboard infrastructure designed to also serve a future Party Kong game.
+
+### Shipped
+
+- **Migration 053 — `supabase/migrations/20260515_012_game_scores.sql`.** New table `game_scores (id uuid pk, player_id uuid → profiles, game_type text CHECK in ('route_rush','tent_tetris','party_kong'), score int >= 0, achieved_at timestamptz)`. Three indexes: `(game_type, score DESC)`, `(game_type, achieved_at DESC)`, `(player_id)`. RLS: SELECT open to authenticated (leaderboard renders across crew); INSERT scoped to `player_id = auth.uid()`. **Applied 2026-05-15** via `supabase db query --linked --file <path>` (Management API path; bypasses the two-repo `db push` history block). Tracking repaired (`supabase migration repair --status applied 20260515`). Types regenerated.
+- **Arcade hub** at `/training/arcade` (`src/app/training/arcade/page.tsx` + `src/components/arcade/ArcadeHub.tsx`). Three tiles: Route Rush, Tent Tetris, Party Kong (locked / "Soon"). Each playable tile reads the user's personal best from `game_scores` on mount. Distinct radial-glow dark background (blue + gold radial gradients on `#080814`) signals the off-app arcade context without breaking PTR brand colors.
+- **Arcade layout** at `src/app/training/arcade/layout.tsx` wraps the subtree with the `next/font/google` Outfit font (variable `--font-outfit`).
+- **Shared infrastructure:**
+  - `src/hooks/arcade/useGameScore.ts` — `submitScore(gameType, score)` inserts a `game_scores` row scoped to the authenticated user; idempotent skip on score ≤ 0 or no session.
+  - `src/hooks/arcade/useGameLeaderboard.ts` — fetches today + all-time top 10 with realtime subscription on `game_scores` INSERTs filtered by `game_type`. Joins `profiles.display_name` (first whitespace-delimited token displayed).
+  - `src/components/arcade/GameLeaderboard.tsx` — two-tab card (TODAY / ALL TIME), rank + first name + score per row, current player highlighted gold with optional emphasis on a just-submitted score (`emphasizeScore` prop). Used by both games.
+- **Route Rush** (`src/components/arcade/RouteRushGame.tsx` + `src/app/training/arcade/route-rush/page.tsx`). 390×720 canvas at devicePixelRatio. 3-lane PTR truck (gold cab, blue cargo box, PTR wordmark, four wheels, speed-line motion blur >5 speed). Obstacles: orange cones + red barrels with shadows. Collectibles: gold folded-chair silhouettes with radial glow (+25 each). Animated dashed lane markers, parallax shoulder scenery (tree silhouettes / guardrails / mile-marker posts). Speed ramps 3→9 every 8s. Score = speed·0.4·dt-normalized per frame + 25/coin. Collision = `|truckX − obsX| < 22 && |truckY − obsY| < 38`. Start screen + game-over modal with shared leaderboard. Keyboard ←/→; touch left-half/right-half + on-screen ←/→ buttons.
+- **Tent Tetris** (`src/components/arcade/TentTetrisGame.tsx` + `src/app/training/arcade/tent-tetris/page.tsx`). 390×720 canvas. 10×20 board, 26px cells, side panel right. 7 tetrominoes with PTR flavor names visible in the NEXT preview (I=Pole Tent, O=Frame Tent, T=T-Top, S=Sidewall, Z=Canopy, J=J-Frame, L=L-Frame). 7-bag piece order. Gravity 800ms → 80ms (75ms decrease per level, 10 lines/level). Lock delay 280ms. SRS rotation with wall-kick offsets `[(0,0),(-1,0),(1,0),(-2,0),(2,0),(0,-1)]`. Ghost piece at 15% opacity. Line clear: 80ms white flash → 120ms ±3px board shake → row removal. Scores 100/300/500/800 × level. Hard drop +2/cell; soft drop gravity×0.06. Side panel: SCORE / LEVEL (large, current piece color) / LINES / NEXT with name label / 10-pip SPEED indicator / PartyTime Rentals wordmark. 3D-beveled cells (top/left highlight, bottom/right shadow, 1px border). Keyboard ←/→ move, ↑/Z rotate, ↓ soft drop, Space hard drop; touch swipe + on-screen ←/⟳/→/DROP buttons.
+- **Training screen wiring** (`src/screens/TrainingScreen.tsx`): the Arcade tile now navigates to `/training/arcade` (was `/games`, which 404'd).
+- **Types regenerated** — `src/types/supabase.ts` now includes the `game_scores` table.
+
+### Decisions made
+
+- **Outfit font in canvas: read computed style off the live canvas element.** `next/font/google` doesn't register a global family name (it generates a hashed one), and canvas `ctx.font` does not resolve CSS variables. Fix: `const family = window.getComputedStyle(canvas).fontFamily` once on mount, store in a ref, interpolate into every `ctx.font` template literal. Captured as a `lessons.md` entry.
+- **Game state in `useRef`, HUD values in `useState`.** The RAF loop reads/writes `stateRef.current` directly. Score/level/lines mirror into React state only when they actually change (rounded-int compare against a previous-value ref). Avoids the obvious trap of re-rendering on every frame. Captured as a `lessons.md` entry.
+- **Migration 053 via Management API path.** Same approach proven 2026-05-14 for migration 051 — `supabase db query --linked --file <path>` followed by `supabase migration repair --status applied <version>`. Bypasses the two-repo `db push` history coordination block.
+- **Realtime over polling.** `game_scores` INSERTs trigger leaderboard re-fetch in every open game-over modal via Supabase realtime channel filtered by `game_type`. No 1s polling overhead.
+- **`'party_kong'` reserved in the CHECK constraint.** The future third arcade game can begin submitting scores the day it ships — no migration churn.
+
+### Tech debt flagged
+
+- `useGameLeaderboard.personalBestAllTime` reads from the top-10 all-time slice; if the user's best falls outside the top 10, the returned value is `null`. The ArcadeHub uses a separate dedicated query for the hub tile's "Your Best" and is unaffected. Tracked as an optional cleanup.
+- No anti-cheat / score validation server-side. RLS lets any authenticated user spam INSERTs at their own `auth.uid()`. Acceptable today (trusted driver fleet), tracked as a follow-up if access ever broadens.
+
+### Files changed
+
+- `supabase/migrations/20260515_012_game_scores.sql` (new)
+- `src/types/supabase.ts` (regenerated post-apply)
+- `src/app/training/arcade/layout.tsx` (new — Outfit font wrapper)
+- `src/app/training/arcade/page.tsx` (new — auth gate)
+- `src/app/training/arcade/route-rush/page.tsx` (new — auth gate)
+- `src/app/training/arcade/tent-tetris/page.tsx` (new — auth gate)
+- `src/components/arcade/ArcadeHub.tsx` (new)
+- `src/components/arcade/GameLeaderboard.tsx` (new — shared component)
+- `src/components/arcade/RouteRushGame.tsx` (new)
+- `src/components/arcade/TentTetrisGame.tsx` (new)
+- `src/hooks/arcade/useGameScore.ts` (new)
+- `src/hooks/arcade/useGameLeaderboard.ts` (new)
+- `src/screens/TrainingScreen.tsx` (Arcade tile `/games` → `/training/arcade`)
+- `CLAUDE.md` (architecture + NEXT block)
+- `tasks/todo.md` (close /games-404 follow-up, add arcade follow-ups)
+- `tasks/lessons.md` (two new lessons: canvas+next/font, refs-vs-state for game loops)
+- `docs/CHANGELOG.md` (this entry)
+
+### Migration
+
+- `20260515_012_game_scores.sql` applied to `partytime-east` via Management API path; tracking repaired. Verified `game_scores` table + indexes + RLS policies present in production.
+
+### Smoke tests
+
+- `npx next build` clean. Three new routes: `/training/arcade` (3.66 kB), `/training/arcade/route-rush` (7.75 kB), `/training/arcade/tent-tetris` (8.66 kB). No type errors, no lint errors.
+- Production smoke (pending Vercel deploy): coverage plan in `CLAUDE.md` → PartyTime Arcade NEXT block.
+
+### Commits
+
+- TBD on push.
+
+### Open follow-ups (tracked in `tasks/todo.md`)
+
+- Production smoke test of the arcade.
+- Build Party Kong (third arcade game; `'party_kong'` `game_type` already reserved).
+- Optional: dedicated personal-best query in `useGameLeaderboard`.
+- Optional: server-side score rate-limit.
+
+---
+
 ## 2026-05-14 night (v2) — Tools Hub: restore Weather + Equipment guides as live tiles
 
 **Commit:** `288d120` (driver-app, single commit).

@@ -423,7 +423,7 @@ export default function TrainingScreen() {
 
         {/* Arcade tile */}
         <div style={{ padding: '12px 18px 28px' }}>
-          <ArcadeCard onTap={() => router.push('/games')} />
+          <ArcadeCard onTap={() => router.push('/training/arcade')} />
         </div>
       </div>
 

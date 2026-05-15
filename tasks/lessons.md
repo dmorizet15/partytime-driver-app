@@ -6,6 +6,22 @@ Format: one lesson per block. Lead with the rule, then **Why** and **How to appl
 
 ---
 
+## `next/font/google` does not register fonts under a global name — canvas `ctx.font` cannot find them by their plain name.
+
+**Why:** Built the PartyTime Arcade games (May 15, 2026 overnight) with `Outfit` imported via `next/font/google` with a CSS variable `--font-outfit`. The React DOM rendered Outfit correctly via the wrapper layout's className. But canvas calls like `ctx.font = 'bold 9px Outfit'` or `ctx.font = 'bold 9px var(--font-outfit), system-ui'` both fell back to system-ui — because `next/font` generates a hashed font-family name (something like `'__Outfit_abc123'`), NOT the literal string `'Outfit'`, and canvas's font-shorthand parser does not resolve CSS custom properties. The hard rule in the spec was "no monospace or system fonts anywhere in the arcade." Caught the issue before push by reading the computed style off the canvas element.
+
+**How to apply:** When you need a `next/font` family inside a canvas (or any context that parses font-shorthand without CSS), capture the actual resolved family name from the live DOM at runtime: `const family = window.getComputedStyle(canvas).fontFamily` on mount, store in a ref, then use template-literal interpolation in every `ctx.font` assignment (`` ctx.font = `900 22px ${family}` ``). Do not try to hardcode the family name — the hash changes per build. Do not import the same font twice (once via `next/font` and once via Google Fonts CSS) just to get the global name — wastes a request and conflicts with `next/font`'s optimization.
+
+---
+
+## Canvas-game loops belong in `useRef`, not React state — the loop must not trigger renders.
+
+**Why:** Both Arcade games (May 15, 2026) use `useRef<GameState>` for the per-frame mutable state and only `useState` for HUD values that need to render in React (score, level, lines). The RAF loop reads from / writes to `stateRef.current` directly. Then a per-frame check compares the rounded score to a `scoreDisplayLastRef`; if different, it calls `setScoreDisplay`. This keeps React re-renders limited to genuinely-changed display values (typically <60 per second; usually 5–20). If the entire game state were in `useState`, every position update would trigger a re-render and the canvas would either drop frames or lock up.
+
+**How to apply:** Default to refs for canvas/game mutable state. Use React state only for values that drive React-rendered DOM (HUD pills, modal score, etc.). Stage the mirror at the boundary: in the RAF callback, snapshot `Math.floor(state.score)` (or whatever the displayable value is) and call `setX` only when it has actually changed. Same pattern works for game phase (`start | playing | gameover`) — the ref drives loop branching, the state drives overlay rendering.
+
+---
+
 ## Locked architectural invariants get re-enabled with a guard, not a removal.
 
 **Why:** Auto-load route (May 10, 2026) needed `/` → `/route/<id>` redirect behavior that was explicitly REVERTED on May 8 because it made BottomNav's Home tab unreachable (commit `938f4b0` → revert). The naive read of the new spec would have re-introduced the same bug. The fix wasn't to drop the May 8 invariant — it was to scope the redirect to the one moment when it actually helps (cold sign-in), and add a `sessionStorage` guard so subsequent Home visits via BottomNav stay on Home. The invariant survives; the new feature works.

@@ -410,6 +410,38 @@ export type Database = {
           },
         ]
       }
+      game_scores: {
+        Row: {
+          achieved_at: string
+          game_type: string
+          id: string
+          player_id: string
+          score: number
+        }
+        Insert: {
+          achieved_at?: string
+          game_type: string
+          id?: string
+          player_id: string
+          score: number
+        }
+        Update: {
+          achieved_at?: string
+          game_type?: string
+          id?: string
+          player_id?: string
+          score?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "game_scores_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           archived_at: string | null

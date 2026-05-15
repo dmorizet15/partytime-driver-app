@@ -354,6 +354,48 @@ First Tools Hub calculator. Pure frontend, no migration, no Supabase. Driver ent
 
 **Shipped to production** as commit `b508501` earlier on May 14 (route 2.3 kB / 156 kB First Load JS). When the hub restructure landed later that night (`f64d5bb`), the Tenting category tile in the new grid was pointed at this calculator.
 
+### PartyTime Arcade — Route Rush + Tent Tetris SHIPPED ✅ — May 15, 2026 (overnight bundle)
+
+Two fully playable arcade games + shared leaderboard infrastructure under a new `/training/arcade` hub. Replaces the previous Training-hub Arcade tile that pointed at the non-existent `/games` route (todo follow-up cleared). Reserves `party_kong` as a locked third tile for a future session.
+
+**Architecture — read this before touching any arcade code:**
+
+- **Migration 053 (`20260515_012_game_scores.sql`) created `game_scores`.** Columns: `id (uuid pk)`, `player_id (uuid → profiles.id)`, `game_type (text CHECK in 'route_rush','tent_tetris','party_kong')`, `score (int >= 0)`, `achieved_at (timestamptz)`. RLS: SELECT open to authenticated (so the leaderboard renders for everyone), INSERT scoped to `auth.uid() = player_id` (drivers can only submit their own scores). Three indexes: `(game_type, score DESC)` for leaderboard reads, `(game_type, achieved_at DESC)` for today-view, `(player_id)` for personal-best reads. **APPLIED 2026-05-15** via `supabase db query --linked --file <path>` (Management API path). Migration tracking repaired (`supabase migration repair --status applied 20260515`). Driver-app types regenerated.
+
+- **Routes:** `/training/arcade` (hub), `/training/arcade/route-rush`, `/training/arcade/tent-tetris`. All three are auth-gated with the same `driver / super_admin / tools_only` matrix as the rest of the Training module. Party Kong has no route — it's a locked tile in the hub.
+
+- **Shared infrastructure lives at:**
+  - `src/app/training/arcade/layout.tsx` — wraps the entire arcade subtree with the `next/font/google` Outfit font (variable `--font-outfit`). All arcade text — React DOM and canvas — uses Outfit. The canvas reads its computed `font-family` once on mount and uses that string in `ctx.font`, so the same loaded Outfit face renders inside the canvas (CSS variables don't resolve in `ctx.font` directly).
+  - `src/hooks/arcade/useGameScore.ts` — `submitScore(gameType, score)` inserts a `game_scores` row scoped to `auth.uid()`. Idempotent skip if `score <= 0` or no session.
+  - `src/hooks/arcade/useGameLeaderboard.ts` — fetches Top 10 for `today` (achieved_at >= start of local day) and `all_time`, joined to `profiles.display_name` (first whitespace-delimited token displayed). Realtime channel `game_scores:<gameType>` re-fetches on INSERT events filtered by `game_type=eq.<type>` — new scores appear without manual refresh.
+  - `src/components/arcade/GameLeaderboard.tsx` — two-tab card (TODAY / ALL TIME), rank + first-name + score per row, current player highlighted gold with bold weight and gold outline emphasis when `emphasizeScore === row.score` (the just-submitted run). Same instance used by both games via the `gameType` prop.
+
+- **`src/components/arcade/ArcadeHub.tsx`** is the landing hub. Three tiles: Route Rush, Tent Tetris, Party Kong (locked, `Soon` button, grayed out). Each playable tile shows the user's personal best (read from `game_scores` on mount). Hub background is a radial-gradient on `#080814` (blue glow top-left, gold glow bottom-right) — deliberately distinct from the rest of the app to set the arcade "off-app" feel without breaking PTR brand colors.
+
+- **Route Rush (`src/components/arcade/RouteRushGame.tsx`):** 390×720 canvas at devicePixelRatio. Game state in a `useRef<GameState>` — never React state — so the RAF loop doesn't trigger re-renders. 3 lanes at x=[90, 195, 300]; truck at y=580 with 0.18 lerp. Obstacles: orange cones + red barrels (shadow + 3D-cylinder banding). Collectibles: gold folded-chair silhouettes with radial-gradient glow (+25 each). Road: animated dashed lane markers (40px cycle, scrolls with speed); green shoulder with parallax tree silhouettes / guardrails / mile-marker posts. Truck rendered with blue cargo box + gold cab + PTR wordmark + four wheels + speed-line motion blur when speed > 5. Speed ramps `3 → 9` over `(MAX − INITIAL) / RAMP_AMOUNT = 12` ramp ticks of 8s each. Score = `speed × 0.4 × (dt / 16.67ms)` per frame + 25 per coin. Game over on `|truckX − obsX| < 22 && |truckY − obsY| < 38`. Animated start screen, blurred-card game over modal with the shared leaderboard. Keyboard: ←/→. Touch: tap left/right half of canvas, or on-screen arrow buttons below.
+
+- **Tent Tetris (`src/components/arcade/TentTetrisGame.tsx`):** 390×720 canvas. 10×20 board, 26px cells, board inset at x=10, side panel at x=280 (width 100px). 7 standard tetrominoes with PTR flavor names — **piece names render in the NEXT preview panel and ARE the brand differentiator**:
+  - I → Pole Tent (`#0000EE`)
+  - O → Frame Tent (`#FFB800`)
+  - T → T-Top (`#FF6600`)
+  - S → Sidewall (`#00AA44`)
+  - Z → Canopy (`#DD1111`)
+  - J → J-Frame (`#0099EE`)
+  - L → L-Frame (`#FF8800`)
+
+  7-bag piece order shuffle. Gravity 800ms → 80ms (75ms decrease per level, floor 80ms). 280ms lock delay after touchdown allows last-second slides. Line clear: rows flash white for 80ms, then board shakes ±3px for 120ms, then rows remove and shift down. Scores: 1=100 / 2=300 / 3=500 / 4=800 (× level). Level up every 10 lines. SRS-flavor rotation with wall-kick offsets `[(0,0),(-1,0),(1,0),(-2,0),(2,0),(0,-1)]`. Ghost piece at 15% opacity. Hard drop: +2 per cell. Soft drop: gravity × 0.06. Side panel: SCORE / LEVEL (large, color of currently-falling piece) / LINES / NEXT (with piece-name label) / 10-pip SPEED indicator (fills gold as level climbs) / PartyTime Rentals wordmark anchor. Cells use 3D bevel — top/left rgba white 0.22 highlight, bottom/right rgba black 0.22 shadow, 1px rgba black 0.5 border, inner fill = piece color. Keyboard: ←/→ move, ↑ or Z rotate, ↓ soft drop, Space hard drop. Touch: swipe ←/→ to move (40px per step), swipe ↓ hard drop, tap rotate; plus on-screen ←, ⟳, →, DROP buttons below.
+
+- **Both games:** start screen ("TAP TO PLAY" pulse), game over screen (centered card with blurred backdrop, large score, "NEW BEST" green pill if applicable, shared `GameLeaderboard` below, Exit / Play Again buttons). On game over: `submitScore(gameType, finalScore)` fires (guarded on `userId != null && score > 0`); the realtime channel then fans the row to all open leaderboards.
+
+- **Outfit font wiring detail:** `next/font/google` doesn't expose a global `'Outfit'` family name — it generates a hashed CSS variable. Canvas's `ctx.font` parses literal CSS font shorthand and does not resolve variables. The workaround on mount: `window.getComputedStyle(canvas).fontFamily` returns the actual resolved family string (e.g. `'__Outfit_abc123', '__Outfit_Fallback_abc123', sans-serif'`), captured into `fontFamilyRef.current` and templated into every `ctx.font = `<weight> <size>px ${family}`` call. Result: the same Outfit face renders in both the React DOM and the canvas, no monospace anywhere.
+
+- **Out of scope this session:**
+  - Party Kong (the third game — placeholder tile only; the `'party_kong'` game_type is reserved in the migration's CHECK constraint and ready to receive scores once the game ships)
+  - Background-music / sound effects (silent arcade — driver app constraints)
+  - Anti-cheat / score validation (server accepts any non-negative integer; trusted-driver context)
+  - Daily / weekly leaderboard resets, prize integrations, push-on-new-best
+  - Personal high-score history per game beyond top-1
+
 ### NEXT
 - **Smoke-test the hub restructure on production** (commit `288d120`, deploys auto via Vercel):
   - `/tools` → confirm dark surface + blue hero + uppercase "TOOLS HUB" title. 2-col grid renders 6 cards: Tenting / HVAC / Safety & compliance / Flooring (row 1+2), Weather / Equipment guides (row 3). Tenting shows "3 live" green; Weather + Equipment guides each show "Live" green; HVAC / Safety / Flooring show "Coming soon" gray (with hairline border).
@@ -364,7 +406,16 @@ First Tools Hub calculator. Pure frontend, no migration, no Supabase. Driver ent
   - Scroll below the grid: confirm Generators full-width card (Coming soon), then a thin `rgba(255,255,255,0.07)` divider line, then Party layouts full-width card (Coming soon) anchoring the bottom. No footer pointer text.
   - `/training` → confirm uppercase "TRAINING HUB" title, 2-col grid of four Live (green badge) categories, full-width "New driver orientation" card with Live badge, gold-treatment "PartyTime Arcade" tile **without a badge** (gold-on-black treatment is the affordance).
   - Tap any Live category → "Coming soon" toast (no routes exist yet).
-  - Tap Arcade → navigates to `/games` (will 404 until that route is built — expected).
+  - Tap Arcade → confirm `/training/arcade` loads (arcade hub — no longer 404s).
+- **Smoke-test PartyTime Arcade on production** (Migration 053 + arcade routes shipped May 15 overnight bundle):
+  - Open `/training` → tap PartyTime Arcade card → confirm `/training/arcade` loads with three tiles: Route Rush, Tent Tetris (both with PLAY button), Party Kong (locked / SOON button, grayed).
+  - Tap Party Kong tile → confirm nothing happens (locked tile is non-interactive).
+  - Tap Route Rush PLAY → confirm 390×720 canvas with start screen ("ROUTE RUSH" title, "TAP TO PLAY" pulse). Tap anywhere on canvas → confirm gameplay starts. Verify: truck moves left/right on tap of left/right half AND on on-screen arrow buttons below canvas, obstacles fall, gold folded-chair coins give +25 popups, speed pips fill as run progresses, score increments. Crash → confirm game over modal with score, leaderboard, NEW BEST pill (if first run or beat prior best), Play Again button. After game over: verify a new row appears in the TODAY tab of the leaderboard with your `display_name` first token.
+  - Tap Exit → confirm returns to `/training/arcade` and "Your Best" on the Route Rush tile reflects the just-submitted score.
+  - Tap Tent Tetris PLAY → confirm start screen, then gameplay. Verify: pieces fall, next piece preview in side panel with **piece name visible below it** (e.g. "POLE TENT", "FRAME TENT"). Clear a line → confirm the row flashes white briefly, then board shakes laterally, then the row drops. Game over (board full) → confirm score, leaderboard, Retry. Submit confirmed via TODAY tab.
+  - Cross-device verification: open `/training/arcade/route-rush` on a second device while playing on the first. After game over on the first device, confirm the leaderboard on the second device's game-over (or on next playthrough) shows the new score within ~1s — that confirms the realtime channel fan-out.
+  - Edge: sign out, attempt to load `/training/arcade` → confirm redirects to `/login`.
+  - Edge: sign in as a non-driver / non-tools_only / non-super_admin role → confirm "Access denied" on `/training/arcade` page.
 - **Smoke-test Tent Squaring on production** (commit `b508501`, shipped earlier today). Open `/tools` → tap **Tenting** card → enter 40 / 20 → confirm diagonal = `44' 9"`. Toggle to Square → confirm Width field locks and mirrors Length → enter 30 → confirm diagonal = `42' 5"`.
 - **Smoke-test Phase 2.5C arrival on production** (deploys: driver `73b7509`, dashboard `03dd102`):
   - Sign in as driver; open a delivery stop on today's route while away from the customer site (anywhere outside the 150m bubble). Confirm browser prompts for location permission on first watch.
