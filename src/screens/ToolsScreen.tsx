@@ -4,175 +4,293 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import BottomNav from '@/components/BottomNav'
 
-// ─── Direction 03 (Editorial) tokens ──────────────────────────────────────────
+// ─── PTR design tokens — dark hub palette ───────────────────────────────────
 const C = {
-  blue:     '#0000FF',
-  ink:      '#0A0B14',
-  cream:    '#FFF9EE',
-  gold:     '#FFB800',
-  goldDeep: '#B07F00',
-  muted:    '#6B7488',
-  paper:    '#FFFFFF',
-  off:      '#F4F6FA',
-  coral:    '#FF5A3C',
+  bg:          '#0D0D0D',
+  card:        '#1A1A1A',
+  cardBorder:  'rgba(255,255,255,0.07)',
+  blue:        '#0000FF',
+  white:       '#fff',
+  muted:       'rgba(255,255,255,0.4)',
+  gold:        '#FFB800',
+  paper:       '#FFFFFF',
+  // badges
+  liveBg:      'rgba(31,191,107,0.15)',
+  liveText:    '#1FBF6B',
+  liveBorder:  'rgba(31,191,107,0.3)',
+  soonBg:      'rgba(255,255,255,0.07)',
+  soonText:    'rgba(255,255,255,0.35)',
 } as const
 
 const FONT_DISPLAY = "var(--font-archivo), 'Archivo', 'Inter', system-ui, -apple-system, sans-serif"
 const FONT_BODY    = "var(--font-inter), 'Inter', system-ui, -apple-system, sans-serif"
 
-// ─── Phase-2 reservation flags ────────────────────────────────────────────────
-// Slots stay in JSX so flipping to `true` is a one-line change once the
-// backend is ready. While `false`, the slot renders as a designed stub.
-const HAS_AVA = false
-
-// ─── Inline icons — outline style, gold stroke, consistent weight ────────────
+// ─── Tabler-style outline icons (24×24, stroke-width 2) ─────────────────────
 type IconProps = { size?: number; color?: string }
-const STROKE_WIDTH = 2
+const SW = 2
+const IconSvg = (props: { children: React.ReactNode; size: number; color: string }) => (
+  <svg width={props.size} height={props.size} viewBox="0 0 24 24" fill="none"
+       stroke={props.color} strokeWidth={SW} strokeLinecap="round" strokeLinejoin="round"
+       aria-hidden="true">
+    {props.children}
+  </svg>
+)
 
-function TentIcon({ size = 22, color = C.gold }: IconProps) {
+function TentIcon({ size = 22, color = C.white }: IconProps) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
-         strokeWidth={STROKE_WIDTH} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M3 20 L12 4 L21 20 Z"/>
-      <line x1="12" y1="4"  x2="12" y2="20"/>
-      <line x1="8.5" y1="20" x2="15.5" y2="20"/>
-    </svg>
+    <IconSvg size={size} color={color}>
+      <path d="M3 20 L12 4 L21 20" />
+      <path d="M12 4 L12 20" />
+      <path d="M3 20 L21 20" />
+    </IconSvg>
   )
 }
 
-function DanceFloorIcon({ size = 22, color = C.gold }: IconProps) {
+function FlameIcon({ size = 22, color = C.white }: IconProps) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
-         strokeWidth={STROKE_WIDTH} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="3.5"  y="3.5"  width="7" height="7" rx="1"/>
-      <rect x="13.5" y="3.5"  width="7" height="7" rx="1"/>
-      <rect x="3.5"  y="13.5" width="7" height="7" rx="1"/>
-      <rect x="13.5" y="13.5" width="7" height="7" rx="1"/>
-    </svg>
+    <IconSvg size={size} color={color}>
+      <path d="M12 12c2 -3 0 -7 -1 -8c0 3 -1.8 4.7 -3 6c-1.2 1.3 -2 3.2 -2 5a6 6 0 1 0 12 0c0 -1.5 -1 -3.9 -2 -5c-1.8 3 -2.8 3 -4 2z" />
+    </IconSvg>
   )
 }
 
-function StageIcon({ size = 22, color = C.gold }: IconProps) {
+function ShieldCheckIcon({ size = 22, color = C.white }: IconProps) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
-         strokeWidth={STROKE_WIDTH} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="3" y="9" width="18" height="6" rx="1"/>
-      <line x1="6"  y1="15" x2="6"  y2="20"/>
-      <line x1="18" y1="15" x2="18" y2="20"/>
-    </svg>
+    <IconSvg size={size} color={color}>
+      <path d="M12 3l8 3v6c0 4.5 -3.4 8.5 -8 9c-4.6 -.5 -8 -4.5 -8 -9V6l8 -3z" />
+      <path d="M9 12l2 2 4 -4" />
+    </IconSvg>
   )
 }
 
-function ThermometerIcon({ size = 22, color = C.gold }: IconProps) {
+function LayoutGridIcon({ size = 22, color = C.white }: IconProps) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
-         strokeWidth={STROKE_WIDTH} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M14 14V5a2 2 0 0 0-4 0v9a4 4 0 1 0 4 0z"/>
-      <line x1="12" y1="9" x2="12" y2="15"/>
-    </svg>
+    <IconSvg size={size} color={color}>
+      <rect x="4"  y="4"  width="7" height="7" rx="1" />
+      <rect x="13" y="4"  width="7" height="7" rx="1" />
+      <rect x="4"  y="13" width="7" height="7" rx="1" />
+      <rect x="13" y="13" width="7" height="7" rx="1" />
+    </IconSvg>
   )
 }
 
-function BoltIcon({ size = 22, color = C.gold }: IconProps) {
+function Layout2Icon({ size = 22, color = C.white }: IconProps) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
-         strokeWidth={STROKE_WIDTH} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <polygon points="13 2 4 14 12 14 11 22 20 10 12 10 13 2"/>
-    </svg>
+    <IconSvg size={size} color={color}>
+      <rect x="4"  y="4"  width="7" height="16" rx="1" />
+      <rect x="13" y="4"  width="7" height="7"  rx="1" />
+      <rect x="13" y="13" width="7" height="7"  rx="1" />
+    </IconSvg>
   )
 }
 
-function FlameIcon({ size = 22, color = C.gold }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
-         strokeWidth={STROKE_WIDTH} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M12 2c0 4-5 5-5 11a5 5 0 0 0 10 0c0-4-3-6-5-11z"/>
-    </svg>
-  )
+// ─── Category catalog ───────────────────────────────────────────────────────
+type Badge = { text: string; kind: 'live' | 'soon' }
+type Category = {
+  id: string
+  name: string
+  detail: string
+  Icon: (p: IconProps) => JSX.Element
+  iconBg: string
+  iconColor: string
+  badge: Badge
+  href?: string
 }
 
-function DocIcon({ size = 22, color = C.gold }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
-         strokeWidth={STROKE_WIDTH} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-      <polyline points="14 2 14 8 20 8"/>
-      <line x1="8"  y1="13" x2="16" y2="13"/>
-      <line x1="8"  y1="17" x2="13" y2="17"/>
-    </svg>
-  )
-}
-
-function BookIcon({ size = 22, color = C.gold }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
-         strokeWidth={STROKE_WIDTH} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M4 4.5A1.5 1.5 0 0 1 5.5 3H11v17H5.5A1.5 1.5 0 0 1 4 18.5z"/>
-      <path d="M20 4.5A1.5 1.5 0 0 0 18.5 3H13v17h5.5A1.5 1.5 0 0 0 20 18.5z"/>
-      <line x1="6.5" y1="7" x2="9" y2="7"/>
-      <line x1="6.5" y1="10" x2="9" y2="10"/>
-      <line x1="15" y1="7" x2="17.5" y2="7"/>
-      <line x1="15" y1="10" x2="17.5" y2="10"/>
-    </svg>
-  )
-}
-
-function CloudIcon({ size = 22, color = C.gold }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
-         strokeWidth={STROKE_WIDTH} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M16 16H7a4 4 0 1 1 1-7.9A6 6 0 0 1 19 10a3 3 0 0 1-3 6z"/>
-      <line x1="3"  y1="20" x2="9"  y2="20"/>
-      <line x1="13" y1="20" x2="20" y2="20"/>
-    </svg>
-  )
-}
-
-// ─── Tool tile catalog ───────────────────────────────────────────────────────
-type ToolTile = {
-  id:    string
-  name:  string
-  sub:   string
-  Icon:  (props: IconProps) => JSX.Element
-  href?: string  // when set, the tile navigates instead of firing the "coming soon" toast
-}
-
-const TOOLS: ToolTile[] = [
-  { id: 'tent-drawings',     name: 'Tent Drawings',     sub: 'Manufacturer diagrams by size',    Icon: TentIcon, href: '/reference/tents' },
-  { id: 'reference-library', name: 'Reference Library', sub: 'Heater, generator & equipment docs', Icon: BookIcon, href: '/reference/library' },
-  { id: 'tenting',     name: 'Tent Squaring',    sub: 'Diagonal calculator',              Icon: TentIcon, href: '/tools/tent-squaring' },
-  { id: 'dance-floor', name: 'Dance Floor',      sub: 'Size calculator',                  Icon: DanceFloorIcon },
-  { id: 'stage',       name: 'Stage',            sub: 'Stage size calculator',            Icon: StageIcon },
-  { id: 'heat-air',    name: 'Heat & Air',       sub: 'Tent climate calculator',          Icon: ThermometerIcon },
-  { id: 'power',       name: 'Power',            sub: 'Generator & power requirements', Icon: BoltIcon },
-  { id: 'propane',     name: 'Propane',          sub: 'Heater usage calculator',      Icon: FlameIcon },
-  { id: 'guides',      name: 'Equipment Guides', sub: 'Specs, setup, troubleshooting', Icon: DocIcon },
-  { id: 'weather',     name: 'Weather & Wind',   sub: 'Live forecast by job site',    Icon: CloudIcon, href: '/tools/weather' },
+const GRID_CATEGORIES: Category[] = [
+  {
+    id: 'tenting',
+    name: 'Tenting',
+    detail: 'Calcs · Drawings · Certs',
+    Icon: TentIcon,
+    iconBg: 'rgba(0,0,255,0.18)',
+    iconColor: '#6B8FFF',
+    badge: { text: '3 live', kind: 'live' },
+    href: '/tools/tent-squaring',
+  },
+  {
+    id: 'hvac',
+    name: 'HVAC',
+    detail: 'Propane · BTU · Generator',
+    Icon: FlameIcon,
+    iconBg: 'rgba(255,184,0,0.15)',
+    iconColor: C.gold,
+    badge: { text: 'Coming soon', kind: 'soon' },
+  },
+  {
+    id: 'safety',
+    name: 'Safety & compliance',
+    detail: 'Fire code · Compliance',
+    Icon: ShieldCheckIcon,
+    iconBg: 'rgba(220,50,50,0.15)',
+    iconColor: '#E05555',
+    badge: { text: 'Coming soon', kind: 'soon' },
+  },
+  {
+    id: 'flooring',
+    name: 'Flooring',
+    detail: 'Piece calcs by type',
+    Icon: LayoutGridIcon,
+    iconBg: 'rgba(31,191,107,0.12)',
+    iconColor: '#1FBF6B',
+    badge: { text: 'Coming soon', kind: 'soon' },
+  },
 ]
 
-// ─── Screen ───────────────────────────────────────────────────────────────────
+const PARTY_LAYOUTS: Category = {
+  id: 'party-layouts',
+  name: 'Party layouts',
+  detail: 'Setup drawings · Send to customer',
+  Icon: Layout2Icon,
+  iconBg: 'rgba(150,100,255,0.15)',
+  iconColor: '#A57FFF',
+  badge: { text: 'Coming soon', kind: 'soon' },
+}
+
+// ─── Tiny presentational components ─────────────────────────────────────────
+function BadgePill({ badge }: { badge: Badge }) {
+  if (badge.kind === 'live') {
+    return (
+      <span style={{
+        display: 'inline-block',
+        background: C.liveBg, color: C.liveText,
+        border: `0.5px solid ${C.liveBorder}`,
+        padding: '3px 9px', borderRadius: 999,
+        fontSize: 10, fontWeight: 800, letterSpacing: '0.04em',
+        textTransform: 'uppercase', whiteSpace: 'nowrap',
+        lineHeight: 1.2,
+      }}>
+        {badge.text}
+      </span>
+    )
+  }
+  return (
+    <span style={{
+      display: 'inline-block',
+      background: C.soonBg, color: C.soonText,
+      padding: '3px 9px', borderRadius: 999,
+      fontSize: 10, fontWeight: 700, letterSpacing: '0.04em',
+      textTransform: 'uppercase', whiteSpace: 'nowrap',
+      lineHeight: 1.2,
+    }}>
+      {badge.text}
+    </span>
+  )
+}
+
+function IconWrap({ bg, children }: { bg: string; children: React.ReactNode }) {
+  return (
+    <div style={{
+      width: 40, height: 40, borderRadius: 10,
+      background: bg,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      flexShrink: 0,
+    }}>
+      {children}
+    </div>
+  )
+}
+
+function CategoryCardGrid({ cat, onTap }: { cat: Category; onTap: (c: Category) => void }) {
+  const { Icon } = cat
+  return (
+    <button
+      onClick={() => onTap(cat)}
+      aria-label={cat.name}
+      style={{
+        background: C.card,
+        border: `0.5px solid ${C.cardBorder}`,
+        borderRadius: 14,
+        padding: '16px 14px',
+        cursor: 'pointer', fontFamily: 'inherit',
+        textAlign: 'left',
+        minHeight: 132,
+        display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+        color: C.white,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+        <IconWrap bg={cat.iconBg}><Icon size={22} color={cat.iconColor} /></IconWrap>
+        <BadgePill badge={cat.badge} />
+      </div>
+      <div style={{ marginTop: 14 }}>
+        <div style={{
+          fontFamily: FONT_DISPLAY, fontSize: 16, fontWeight: 800,
+          color: C.white, letterSpacing: '-0.01em', lineHeight: 1.2,
+        }}>
+          {cat.name}
+        </div>
+        <div style={{
+          marginTop: 4, fontSize: 12, color: C.muted, lineHeight: 1.4,
+        }}>
+          {cat.detail}
+        </div>
+      </div>
+    </button>
+  )
+}
+
+function CategoryCardWide({ cat, onTap }: { cat: Category; onTap: (c: Category) => void }) {
+  const { Icon } = cat
+  return (
+    <button
+      onClick={() => onTap(cat)}
+      aria-label={cat.name}
+      style={{
+        background: C.card,
+        border: `0.5px solid ${C.cardBorder}`,
+        borderRadius: 14,
+        padding: '16px 14px',
+        cursor: 'pointer', fontFamily: 'inherit',
+        textAlign: 'left',
+        display: 'flex', alignItems: 'center', gap: 14,
+        color: C.white,
+        width: '100%',
+      }}
+    >
+      <IconWrap bg={cat.iconBg}><Icon size={22} color={cat.iconColor} /></IconWrap>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          fontFamily: FONT_DISPLAY, fontSize: 16, fontWeight: 800,
+          color: C.white, letterSpacing: '-0.01em', lineHeight: 1.2,
+        }}>
+          {cat.name}
+        </div>
+        <div style={{
+          marginTop: 4, fontSize: 12, color: C.muted, lineHeight: 1.4,
+        }}>
+          {cat.detail}
+        </div>
+      </div>
+      <BadgePill badge={cat.badge} />
+    </button>
+  )
+}
+
+// ─── Screen ─────────────────────────────────────────────────────────────────
 export default function ToolsScreen() {
   const router = useRouter()
   const [toast, setToast] = useState<string | null>(null)
 
-  // Toast auto-dismiss after 3s
   useEffect(() => {
     if (!toast) return
     const t = setTimeout(() => setToast(null), 3000)
     return () => clearTimeout(t)
   }, [toast])
 
-  function showToast(msg: string) { setToast(msg) }
+  function handleTap(cat: Category) {
+    if (cat.href) router.push(cat.href)
+    else setToast('Coming soon — this feature is in development.')
+  }
 
   return (
-    <div className="screen" style={{ background: C.cream, fontFamily: FONT_BODY, color: C.ink }}>
+    <div className="screen" style={{ background: C.bg, fontFamily: FONT_BODY, color: C.white }}>
       {/* ── HERO ─────────────────────────────────────────────────────────── */}
       <div style={{
-        background: C.blue, color: '#fff',
-        padding: '32px 22px 24px',
+        background: C.blue, color: C.white,
+        padding: '32px 22px 28px',
         position: 'relative', overflow: 'hidden', flexShrink: 0,
       }}>
-        {/* asymmetric gold star */}
         <svg
           aria-hidden="true"
           width={200} height={200} viewBox="0 0 100 100"
@@ -186,7 +304,6 @@ export default function ToolsScreen() {
           <path d="M50 8l8 28 28 8-28 8-8 28-8-28-28-8 28-8z" fill={C.gold}/>
         </svg>
 
-        {/* Eyebrow row: section name + PTR mark */}
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           position: 'relative',
@@ -195,7 +312,7 @@ export default function ToolsScreen() {
             fontSize: 11, fontWeight: 800, letterSpacing: '0.24em',
             color: C.gold, textTransform: 'uppercase',
           }}>
-            Field Utilities
+            Driver tools
           </div>
           <div style={{
             width: 32, height: 32, borderRadius: 9,
@@ -212,147 +329,61 @@ export default function ToolsScreen() {
           </div>
         </div>
 
-        {/* Headline */}
         <div style={{
-          marginTop: 22, position: 'relative',
+          marginTop: 18, position: 'relative',
           fontFamily: FONT_DISPLAY,
           fontSize: 38, fontWeight: 900,
           lineHeight: 0.95, letterSpacing: '-0.03em',
-          color: '#fff',
+          color: C.white,
         }}>
-          Tools.
+          Tools hub
         </div>
 
-        {/* Sub-copy */}
         <div style={{
-          marginTop: 12, position: 'relative',
+          marginTop: 10, position: 'relative',
           fontSize: 14, color: 'rgba(255,255,255,0.85)', lineHeight: 1.4,
-          maxWidth: '32ch',
+          maxWidth: '36ch',
         }}>
-          Field utilities for every job — sized for gloves, built for lots.
+          Calculators, references & compliance
         </div>
       </div>
 
       {/* ── SCROLL BODY ──────────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto">
-
-        {/* Tool tile grid */}
+      <div className="flex-1 overflow-y-auto" style={{ background: C.bg }}>
+        {/* 2-col category grid */}
         <div style={{
           padding: '20px 18px 0',
           display: 'grid',
           gridTemplateColumns: 'repeat(2, 1fr)',
           gap: 12,
         }}>
-          {TOOLS.map((tool) => {
-            const { Icon } = tool
-            return (
-              <button
-                key={tool.id}
-                onClick={() => tool.href
-                  ? router.push(tool.href)
-                  : showToast('Coming soon — this feature is in development.')}
-                aria-label={tool.href ? tool.name : `${tool.name} — coming soon`}
-                style={{
-                  background: C.ink,
-                  border: 0, cursor: 'pointer',
-                  borderRadius: 16,
-                  padding: '16px 14px',
-                  fontFamily: 'inherit',
-                  textAlign: 'left',
-                  position: 'relative',
-                  minHeight: 152,
-                  display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
-                  color: '#fff',
-                }}
-              >
-                {/* gold accent dot top-right */}
-                <span
-                  aria-hidden="true"
-                  style={{
-                    position: 'absolute',
-                    top: 12, right: 12,
-                    width: 7, height: 7, borderRadius: '50%',
-                    background: C.gold,
-                  }}
-                />
-
-                {/* gold-bordered icon tile */}
-                <div style={{
-                  width: 44, height: 44, borderRadius: 11,
-                  border: `1.5px solid ${C.gold}`,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  flexShrink: 0,
-                }}>
-                  <Icon size={22} color={C.gold}/>
-                </div>
-
-                {/* text block */}
-                <div>
-                  <div style={{
-                    fontSize: 16, fontWeight: 800, color: '#fff',
-                    fontFamily: FONT_DISPLAY, letterSpacing: '-0.01em',
-                    lineHeight: 1.15,
-                  }}>
-                    {tool.name}
-                  </div>
-                  <div style={{
-                    marginTop: 4, fontSize: 11.5, color: 'rgba(255,255,255,0.55)',
-                    lineHeight: 1.35,
-                  }}>
-                    {tool.sub}
-                  </div>
-                </div>
-              </button>
-            )
-          })}
+          {GRID_CATEGORIES.map((cat) => (
+            <CategoryCardGrid key={cat.id} cat={cat} onTap={handleTap} />
+          ))}
         </div>
 
-        {/* Ask Ava chip — designed stub, centered */}
+        {/* Full-width: Party layouts */}
+        <div style={{ padding: '12px 18px 0' }}>
+          <CategoryCardWide cat={PARTY_LAYOUTS} onTap={handleTap} />
+        </div>
+
+        {/* Footer line */}
         <div style={{
-          padding: '24px 18px 0',
-          display: 'flex', justifyContent: 'center',
+          padding: '20px 18px 24px',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+          color: C.muted, fontSize: 12,
         }}>
-          <button
-            onClick={() => HAS_AVA
-              ? showToast('Ava is thinking…')
-              : showToast('Coming soon — this feature is in development.')}
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: 10,
-              background: C.paper,
-              border: `1.5px solid rgba(10,11,20,0.10)`,
-              padding: '6px 16px 6px 6px',
-              borderRadius: 999,
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-              color: C.ink,
-              boxShadow: '0 6px 16px -8px rgba(10,11,20,0.18)',
-            }}
-          >
-            <span style={{
-              width: 28, height: 28, borderRadius: '50%',
-              background: C.coral,
-              color: '#fff',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              flexShrink: 0,
-              fontSize: 14, fontWeight: 900,
-              fontFamily: FONT_DISPLAY,
-              lineHeight: 1,
-            }}>
-              +
-            </span>
-            <span style={{
-              fontSize: 13, fontWeight: 700, color: C.ink, letterSpacing: '-0.005em',
-            }}>
-              Ask Ava to find a tool
-            </span>
-          </button>
+          <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 7v5l3 2" />
+          </svg>
+          <span>Weather · Reference library also in Tools</span>
         </div>
       </div>
 
       <BottomNav/>
 
-      {/* Toast — fixed bottom, ephemeral. Single state slot, auto-dismiss 3s.
-          Bottom offset clears the 80px BottomNav + iOS safe-area inset. */}
       {toast && (
         <div
           role="status"
@@ -362,11 +393,11 @@ export default function ToolsScreen() {
             left: '50%',
             bottom: 'calc(108px + env(safe-area-inset-bottom))',
             transform: 'translateX(-50%)',
-            background: C.ink, color: '#fff',
+            background: C.card, color: C.white,
             padding: '12px 18px', borderRadius: 999,
             fontSize: 13, fontWeight: 700,
             borderLeft: `4px solid ${C.gold}`,
-            boxShadow: '0 12px 30px -10px rgba(0,0,0,0.45)',
+            boxShadow: '0 12px 30px -10px rgba(0,0,0,0.6)',
             zIndex: 100,
             maxWidth: '80vw',
             fontFamily: 'inherit',
