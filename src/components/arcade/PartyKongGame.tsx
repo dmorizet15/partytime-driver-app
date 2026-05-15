@@ -134,6 +134,12 @@ const DOLLY_HIT_DX = 17
 const DOLLY_HIT_DY = 30
 const DOLLY_SPEED = 1.1
 
+const PALLET_HALF_W = 14
+const PALLET_HALF_H = 8
+const PALLET_SLIDE_VX = 2.0
+const PALLET_HIT_DX = 22
+const PALLET_HIT_DY = 20
+
 // ─── Color palette ───────────────────────────────────────────────────────────
 const C = {
   FUR_SHADOW:    '#1A0C04',
@@ -217,7 +223,11 @@ interface ConveyorPalletHazard {
   x:          number
   y:          number
   vx:         number
-  onPlatform: number
+  vy:         number
+  onPlatform: number | null
+  // Direction the pallet will resume sliding once it lands. Set on each
+  // edge-fall to (−sign of fall direction) so the descent zigzags.
+  nextDir:    -1 | 1
 }
 
 interface WindGustHazard {
@@ -254,6 +264,17 @@ type Level = 1|2|3|4
 
 type BackgroundKind = 'warehouse' | 'loading_dock' | 'outdoor_tent' | 'grand_ballroom'
 
+// A segment of a flat platform that behaves as a conveyor belt. Pushes the
+// player horizontally while they're on the host platform AND inside [x1, x2].
+// Velocity = dir * speed (px / 60fps-frame), applied AFTER input each frame.
+interface ConveyorSegment {
+  platformIdx: number
+  x1:          number
+  x2:          number
+  dir:         -1 | 1
+  speed:       number
+}
+
 interface LevelConfig {
   num:             Level
   name:            string
@@ -266,6 +287,7 @@ interface LevelConfig {
   throwDelayFloor: number
   background:      BackgroundKind
   initialHazards:  Hazard[]
+  conveyors?:      ConveyorSegment[]
 }
 
 // L1 geometry — byte-identical to the pre-v3 PLATFORMS/LADDERS/WIN_X constants.
@@ -293,6 +315,28 @@ const DOLLY_SEED: Hazard[] = [
   { type: 'dolly', x: 150, y: 0, vx: -DOLLY_SPEED, onPlatform: 2 },
 ]
 
+// ─── L2 — Loading Dock ───────────────────────────────────────────────────────
+// 4 flat platforms, 3 ladders, 2 conveyor segments. Pallets replace tables.
+const L2_PLATFORMS: Platform[] = [
+  { x1: 0,  y1: 560, x2: 390, y2: 560 },
+  { x1: 20, y1: 430, x2: 370, y2: 430 },
+  { x1: 20, y1: 300, x2: 370, y2: 300 },
+  { x1: 20, y1: 170, x2: 370, y2: 170 },
+]
+const L2_LADDERS: Ladder[] = [
+  { cx: 340, bpi: 0, tpi: 1 },
+  { cx: 50,  bpi: 1, tpi: 2 },
+  { cx: 340, bpi: 2, tpi: 3 },
+]
+const L2_PLAYER_SPAWN = { x: 30, y: 560 }
+const L2_KONG_SPAWN   = { bx: 195, by: 170 }
+const L2_WIN_CONDITION: (pl: PlayerState) => boolean =
+  (pl) => pl.onPlatform === 3 && pl.x > 320
+const L2_CONVEYORS: ConveyorSegment[] = [
+  { platformIdx: 1, x1: 80,  x2: 220, dir: -1, speed: 1.2 },
+  { platformIdx: 2, x1: 150, x2: 310, dir:  1, speed: 1.2 },
+]
+
 const LEVEL_CONFIGS: LevelConfig[] = [
   {
     num:             1,
@@ -310,15 +354,16 @@ const LEVEL_CONFIGS: LevelConfig[] = [
   {
     num:             2,
     name:            'Loading Dock',
-    platforms:       L1_PLATFORMS,
-    ladders:         L1_LADDERS,
-    playerSpawn:     L1_PLAYER_SPAWN,
-    kongSpawn:       L1_KONG_SPAWN,
-    winCondition:    L1_WIN_CONDITION,
-    throwDelayBase:  215,
-    throwDelayFloor: 100,
+    platforms:       L2_PLATFORMS,
+    ladders:         L2_LADDERS,
+    playerSpawn:     L2_PLAYER_SPAWN,
+    kongSpawn:       L2_KONG_SPAWN,
+    winCondition:    L2_WIN_CONDITION,
+    throwDelayBase:  200,
+    throwDelayFloor: 90,
     background:      'loading_dock',
-    initialHazards:  DOLLY_SEED,
+    initialHazards:  [],
+    conveyors:       L2_CONVEYORS,
   },
   {
     num:             3,
@@ -1399,6 +1444,16 @@ function GameOverOverlay({
 }
 
 // ─── Game logic ──────────────────────────────────────────────────────────────
+function conveyorVxAt(cfg: LevelConfig, onPlatformIdx: number | null, x: number): number {
+  if (onPlatformIdx == null || !cfg.conveyors) return 0
+  for (const c of cfg.conveyors) {
+    if (c.platformIdx !== onPlatformIdx) continue
+    if (x < c.x1 || x > c.x2) continue
+    return c.dir * c.speed
+  }
+  return 0
+}
+
 function isNearLadderHint(p: Player, cfg: LevelConfig): boolean {
   if (p.onLadder) return false
   if (p.onPlatform == null) return false
@@ -1480,6 +1535,10 @@ function step(s: GameState, u: number) {
       p.vx = wantVx
       p.vy = 0
       p.x += p.vx * u
+      // Conveyor — applied additively after input so walking with the belt
+      // is fast, walking against is slow, and standing still gets pushed.
+      const belt = conveyorVxAt(cfg, p.onPlatform, p.x)
+      if (belt !== 0) p.x += belt * u
       // Jump
       if (s.jumpQueued && p.jumpCooldown === 0) {
         s.jumpQueued = false
@@ -1583,7 +1642,7 @@ function step(s: GameState, u: number) {
 
   if (s.throwTimer >= s.nextThrowAt) {
     s.throwTimer = 0
-    spawnRollingTable(s)
+    spawnLevelHazard(s)
     s.kongThrowFlash = 0
   }
 
@@ -1599,13 +1658,13 @@ function step(s: GameState, u: number) {
     s.kongArm = 0
   }
 
-  // Update each hazard by type. Future hazard types (conveyor_pallet, wind_gust,
-  // falling_stake, glass_shard) get their update branches added in Sessions B–D.
+  // Update each hazard by type. Future hazard types (wind_gust, falling_stake,
+  // glass_shard) get their update branches added in Sessions C–D.
   for (const h of s.hazards) {
     switch (h.type) {
-      case 'rolling_table': updateRollingTable(h, u, s, platforms); break
-      case 'dolly':         updateDolly(h, u, platforms);            break
-      case 'conveyor_pallet':
+      case 'rolling_table':   updateRollingTable(h, u, s, platforms);   break
+      case 'dolly':           updateDolly(h, u, platforms);              break
+      case 'conveyor_pallet': updateConveyorPallet(h, u, s, platforms); break
       case 'wind_gust':
       case 'falling_stake':
       case 'glass_shard':
@@ -1613,10 +1672,13 @@ function step(s: GameState, u: number) {
         break
     }
   }
-  // Cull off-screen rolling tables (other hazard types manage their own lifetimes).
+  // Cull off-screen transient hazards. Dollies and stage furniture manage
+  // their own lifetimes by bouncing within platform bounds.
   s.hazards = s.hazards.filter((h) => {
-    if (h.type !== 'rolling_table') return true
-    return h.y < H + 80 && h.x > -40 && h.x < W + 40
+    if (h.type === 'rolling_table' || h.type === 'conveyor_pallet') {
+      return h.y < H + 80 && h.x > -40 && h.x < W + 40
+    }
+    return true
   })
 
   // ── Score: survival drip ─────────────────────────────────────────────────
@@ -1659,9 +1721,9 @@ function playerHit(s: GameState) {
     s.player.ladderIdx = null
     s.player.facing = 1
     s.player.walking = false
-    // Clear in-flight rolling tables; keep stationary stage furniture
-    // (dollies, future per-level fixtures) so the stage stays itself.
-    s.hazards = s.hazards.filter((h) => h.type !== 'rolling_table')
+    // Clear in-flight projectiles (tables, pallets); keep stationary stage
+    // furniture (dollies, future per-level fixtures) so the stage stays itself.
+    s.hazards = s.hazards.filter((h) => h.type !== 'rolling_table' && h.type !== 'conveyor_pallet')
     s.throwTimer = 0
     s.kongThrowFlash = 9999
     s.walkSoundTimer = 0
@@ -1676,6 +1738,9 @@ function hazardHitsPlayer(h: Hazard, p: Player): boolean {
     case 'dolly':
       return Math.abs(p.x - h.x) < DOLLY_HIT_DX && Math.abs(p.y - h.y - 14) < DOLLY_HIT_DY
     case 'conveyor_pallet':
+      // Pallet's y is its center; player's y is its foot. Bias offset puts
+      // the hit window over the player's torso for a fair read.
+      return Math.abs(p.x - h.x) < PALLET_HIT_DX && Math.abs(p.y - h.y - 8) < PALLET_HIT_DY
     case 'falling_stake':
     case 'glass_shard':
       // Implemented in later v3 sessions.
@@ -1768,6 +1833,92 @@ function updateRollingTable(t: RollingTableHazard, u: number, s: GameState, plat
   }
 }
 
+// Level-aware hazard spawner. Routes Kong's throw to the right hazard type
+// for the current level. L1: rolling tables. L2: sliding pallets. L3+: tables
+// today; replaced when later v3 sessions ship their stage mechanics.
+function spawnLevelHazard(s: GameState) {
+  if (s.level === 2) spawnConveyorPallet(s)
+  else               spawnRollingTable(s)
+}
+
+function spawnConveyorPallet(s: GameState) {
+  const cfg = levelCfg(s.level)
+  const topIdx = cfg.platforms.length - 1
+  const topP = cfg.platforms[topIdx]
+  // Alternate direction stochastically — Kong throws to either side of the
+  // truck bay, so the player can't memorize one safe lane.
+  const dir: -1 | 1 = Math.random() < 0.5 ? -1 : 1
+  const spawnX = cfg.kongSpawn.bx + dir * 22
+  const surf  = psy(topP, spawnX) - PALLET_HALF_H
+  s.hazards.push({
+    type:       'conveyor_pallet',
+    x:          spawnX,
+    y:          surf,
+    vx:         dir * PALLET_SLIDE_VX,
+    vy:         0,
+    onPlatform: topIdx,
+    nextDir:    dir,
+  })
+  sfxKongThrow()
+}
+
+function updateConveyorPallet(t: ConveyorPalletHazard, u: number, s: GameState, platforms: Platform[]) {
+  const topIdx = platforms.length - 1
+  if (t.onPlatform != null) {
+    const pl = platforms[t.onPlatform]
+    t.x += t.vx * u
+    // Off the platform edge? Snap x just inside the bound and drop. L2's
+    // platforms x-align exactly, so dropping straight down at an interior
+    // x reliably lands on the platform below — producing a zigzag descent
+    // when nextDir flips on each fall.
+    if (t.x < pl.x1 || t.x > pl.x2) {
+      const fellOffRight = t.x > pl.x2
+      // Snap back inside the bound by a few px so the airborne x is well
+      // within the next platform's range when we check landing.
+      t.x = fellOffRight ? pl.x2 - 4 : pl.x1 + 4
+      t.onPlatform = null
+      t.vx = 0
+      t.vy = 0
+      t.nextDir = fellOffRight ? -1 : 1
+      sfxTableFall()
+    } else {
+      t.y = psy(pl, t.x) - PALLET_HALF_H
+    }
+  } else {
+    // Airborne — fall straight down (vx = 0 during fall preserves the snap).
+    t.vy += GRAVITY * u
+    const oldY = t.y
+    t.x += t.vx * u
+    t.y += t.vy * u
+    let landedIdx = -1
+    let landedSurf = Infinity
+    for (let i = 0; i < platforms.length; i++) {
+      const pl = platforms[i]
+      if (t.x < pl.x1 || t.x > pl.x2) continue
+      const surf = psy(pl, t.x) - PALLET_HALF_H
+      if (oldY <= surf + 0.5 && t.y >= surf - 0.5) {
+        if (surf < landedSurf) {
+          landedSurf = surf
+          landedIdx  = i
+        }
+      }
+    }
+    if (landedIdx >= 0) {
+      t.onPlatform = landedIdx
+      t.y = landedSurf
+      t.vy = 0
+      // Resume sliding in the zigzag direction stored at the prior fall.
+      t.vx = t.nextDir * PALLET_SLIDE_VX
+      sfxTableBounce()
+      // Score for landing on any platform below the spawn (top) platform.
+      if (landedIdx < topIdx) {
+        s.score += 10
+        s.popups.push({ x: t.x, y: t.y - 14, t: 0, text: '+10', color: 'rgba(255,184,0,0.95)' })
+      }
+    }
+  }
+}
+
 function updateDolly(d: DollyHazard, u: number, platforms: Platform[]) {
   const pl = platforms[d.onPlatform]
   d.x += d.vx * u
@@ -1787,6 +1938,7 @@ function drawScene(
   const cfg = levelCfg(s.level)
   drawBackground(ctx, s, cfg.background, family, logo, logoLoaded)
   drawPlatforms(ctx, cfg.platforms)
+  drawConveyors(ctx, s, cfg)
   drawLadders(ctx, cfg.platforms, cfg.ladders)
   drawGoal(ctx, s, cfg.platforms, family)
   drawTentKong(ctx, s, cfg, family)
@@ -2307,6 +2459,114 @@ function drawPlatformTile(ctx: CanvasRenderingContext2D, p: Platform, idx: numbe
   }
 }
 
+// ─── Conveyors ───────────────────────────────────────────────────────────────
+// Renders the belt visual on top of the platform's gold gradient: a subtle
+// dark stripe, animated diagonal hatching, and shifting directional arrows
+// at 60px intervals. Visual ordering matters — must run after drawPlatforms
+// (so the hatching reads on top of the gradient) but before drawLadders (so
+// ladder rungs are not obscured at junctions).
+function drawConveyors(ctx: CanvasRenderingContext2D, s: GameState, cfg: LevelConfig) {
+  if (!cfg.conveyors) return
+  const platforms = cfg.platforms
+  for (const c of cfg.conveyors) {
+    const pl = platforms[c.platformIdx]
+    if (!pl) continue
+    // Platforms with conveyors in v3 Session B are flat; treat as flat for
+    // belt rendering (y1 === y2). Top surface sits at y1, has 10px height.
+    const topY = pl.y1
+    const beltW = c.x2 - c.x1
+    if (beltW <= 0) continue
+
+    // Belt scrolling offset — bgFrame is monotonic so motion is consistent
+    // across pauses, and dir keeps the perceptual direction correct.
+    const offset = s.bgFrame * c.speed * c.dir
+
+    // 1. Subtle dark base over the platform gradient so the belt reads as
+    //    a distinct surface without losing the underlying gold tone.
+    ctx.fillStyle = 'rgba(20,14,8,0.25)'
+    ctx.fillRect(c.x1, topY, beltW, 10)
+
+    // 2. End caps (slightly darker rollers at each end of the belt segment).
+    ctx.fillStyle = 'rgba(40,30,18,0.55)'
+    ctx.fillRect(c.x1, topY,       3, 10)
+    ctx.fillRect(c.x2 - 3, topY,   3, 10)
+
+    // 3. Diagonal hatch lines, animated.
+    ctx.save()
+    ctx.beginPath()
+    ctx.rect(c.x1 + 3, topY, beltW - 6, 10)
+    ctx.clip()
+    ctx.strokeStyle = 'rgba(255,200,80,0.35)'
+    ctx.lineWidth = 1.5
+    const hatchStep = 8
+    // Phase the start point so the pattern slides with the belt.
+    const phase = ((offset % hatchStep) + hatchStep) % hatchStep
+    // Hatch slants the same visual direction regardless of dir; the offset
+    // sign already encodes direction so it scrolls correctly.
+    for (let dx = -10 + phase; dx < beltW + 10; dx += hatchStep) {
+      ctx.beginPath()
+      ctx.moveTo(c.x1 + dx,     topY)
+      ctx.lineTo(c.x1 + dx + 6, topY + 10)
+      ctx.stroke()
+    }
+    ctx.restore()
+
+    // 4. Directional arrow indicators. Spec: every 60px, shifting with belt.
+    const arrowStep = 60
+    const arrowPhase = ((offset % arrowStep) + arrowStep) % arrowStep
+    const arrowY = topY + 5
+    ctx.save()
+    ctx.beginPath()
+    ctx.rect(c.x1 + 6, topY, beltW - 12, 10)
+    ctx.clip()
+    for (let ax = -arrowStep + arrowPhase; ax < beltW + arrowStep; ax += arrowStep) {
+      drawBeltArrow(ctx, c.x1 + ax, arrowY, c.dir)
+    }
+    ctx.restore()
+
+    // 5. Top edge highlight so the belt reads as raised rubber, not paint.
+    ctx.fillStyle = 'rgba(255,230,160,0.35)'
+    ctx.fillRect(c.x1 + 3, topY + 0.5, beltW - 6, 0.8)
+  }
+}
+
+function drawBeltArrow(ctx: CanvasRenderingContext2D, cx: number, cy: number, dir: -1 | 1) {
+  // Small chevron — 8px wide, 6px tall. Two-tone fill, no outline.
+  const half = 4
+  const tall = 3
+  ctx.fillStyle = 'rgba(20,14,8,0.85)'
+  ctx.beginPath()
+  if (dir > 0) {
+    ctx.moveTo(cx - half, cy - tall)
+    ctx.lineTo(cx + half, cy)
+    ctx.lineTo(cx - half, cy + tall)
+    ctx.lineTo(cx - half + 2, cy)
+  } else {
+    ctx.moveTo(cx + half, cy - tall)
+    ctx.lineTo(cx - half, cy)
+    ctx.lineTo(cx + half, cy + tall)
+    ctx.lineTo(cx + half - 2, cy)
+  }
+  ctx.closePath()
+  ctx.fill()
+  // Inner highlight
+  ctx.fillStyle = 'rgba(255,210,120,0.85)'
+  ctx.beginPath()
+  if (dir > 0) {
+    ctx.moveTo(cx - half + 1, cy - tall + 1)
+    ctx.lineTo(cx + half - 1, cy)
+    ctx.lineTo(cx - half + 1, cy + tall - 1)
+    ctx.lineTo(cx - half + 2, cy)
+  } else {
+    ctx.moveTo(cx + half - 1, cy - tall + 1)
+    ctx.lineTo(cx - half + 1, cy)
+    ctx.lineTo(cx + half - 1, cy + tall - 1)
+    ctx.lineTo(cx + half - 2, cy)
+  }
+  ctx.closePath()
+  ctx.fill()
+}
+
 function drawRivet(ctx: CanvasRenderingContext2D, x: number, y: number) {
   ctx.fillStyle = '#2A1A08'
   ctx.beginPath()
@@ -2786,12 +3046,46 @@ function drawPlayer(ctx: CanvasRenderingContext2D, s: GameState, family: string)
   ctx.fillRect(x - 8, headCy - 3, 16, 0.5)
 }
 
-// ─── Rolling tables ──────────────────────────────────────────────────────────
+// ─── Rolling tables / pallets ────────────────────────────────────────────────
 function drawHazards(ctx: CanvasRenderingContext2D, s: GameState) {
-  // Two-pass: dollies below tables so a falling table reads on top of any
-  // dolly it crosses. Future hazard types slot into their own pass.
-  for (const h of s.hazards) if (h.type === 'dolly')         drawDolly(ctx, h)
-  for (const h of s.hazards) if (h.type === 'rolling_table') drawRollingTable(ctx, h)
+  // Multi-pass so heavier hazards always read on top of stationary fixtures.
+  for (const h of s.hazards) if (h.type === 'dolly')           drawDolly(ctx, h)
+  for (const h of s.hazards) if (h.type === 'rolling_table')   drawRollingTable(ctx, h)
+  for (const h of s.hazards) if (h.type === 'conveyor_pallet') drawConveyorPallet(ctx, h)
+}
+
+function drawConveyorPallet(ctx: CanvasRenderingContext2D, t: ConveyorPalletHazard) {
+  const x = t.x, y = t.y
+  const w = PALLET_HALF_W * 2
+  const h = PALLET_HALF_H * 2
+  const x0 = x - PALLET_HALF_W
+  const y0 = y - PALLET_HALF_H
+  // Contact shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.45)'
+  ctx.beginPath(); ctx.ellipse(x, y + PALLET_HALF_H + 3, PALLET_HALF_W + 2, 3, 0, 0, Math.PI * 2); ctx.fill()
+  // Base wood — 3-tone, no outlines
+  ctx.fillStyle = '#3a2412'   // shadow
+  ctx.fillRect(x0, y0, w, h)
+  ctx.fillStyle = '#6a4824'   // base
+  ctx.fillRect(x0, y0 + 1, w, h - 3)
+  ctx.fillStyle = '#8a6438'   // mid
+  ctx.fillRect(x0, y0 + 1, w, 3)
+  // Plank grain (3 horizontal slats)
+  ctx.fillStyle = 'rgba(255,210,140,0.18)'
+  ctx.fillRect(x0 + 1, y0 + 2, w - 2, 0.8)
+  ctx.fillRect(x0 + 1, y0 + h * 0.5, w - 2, 0.8)
+  ctx.fillRect(x0 + 1, y0 + h - 3, w - 2, 0.8)
+  // Cross-brace gaps (the three vertical blocks of a pallet)
+  ctx.fillStyle = 'rgba(20,12,4,0.55)'
+  ctx.fillRect(x0 + w * 0.25, y0 + h - 3, 2, 3)
+  ctx.fillRect(x0 + w * 0.5  - 1, y0 + h - 3, 2, 3)
+  ctx.fillRect(x0 + w * 0.75 - 1, y0 + h - 3, 2, 3)
+  // Top highlight
+  ctx.fillStyle = 'rgba(255,225,170,0.4)'
+  ctx.fillRect(x0, y0, w, 1.2)
+  // Side dark edge for solidity
+  ctx.fillStyle = 'rgba(20,12,4,0.55)'
+  ctx.fillRect(x0, y0 + h - 1.5, w, 1.5)
 }
 
 function drawRollingTable(ctx: CanvasRenderingContext2D, t: RollingTableHazard) {
