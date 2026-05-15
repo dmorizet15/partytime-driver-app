@@ -4,6 +4,30 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-05-16 — Driver Profile / Compliance (overnight, autonomous; driver-app slice)
+
+**Scope:** driver-app slice of the two-repo Driver Compliance build. Spec: Notion `3600aa64-51b8-812f-aeed-ced5f8cca98e`. Dashboard side shipped in parallel (`partytime-dashboard` commits `111852d`, `296086e`, `fe1b003`). Migration 055 (`driver_documents` + `driver-compliance-docs` storage bucket) lives in the dashboard repo and is already applied.
+
+**Commits**
+- `b45fbd1` — `src/lib/driverComplianceClient.ts` (mirror of the dashboard's shared lib) + types regen against linked DB (`driver_documents` table now typed).
+- `0c691b0` — `@anthropic-ai/sdk` installed. New `POST /api/profile/extract-document-expiry` route does service-role download of the just-uploaded file, base64-encodes it, and asks Claude vision (`claude-sonnet-4-6`) for the expiry date with a strict JSON-output system prompt. Path-prefix ownership check (`storage_path` must start with `<user.id>/`) is the defense-in-depth gate since the route runs under service role. New `src/screens/UploadComplianceDocModal.tsx` — file picker (JPG/PNG/PDF, 10 MB), uploads to `driver-compliance-docs` at `<driver_id>/<document_type>/<uuid>.<ext>`, calls extract, prefills or falls back to manual.
+- `f2b8703` — `ProfileScreen` rewrite. Removed `STUB_DOCS`; compliance section now reads `driver_documents` on mount and re-fetches after every save. Cards render four states (valid/expiring/expired/missing) with state-aware copy. "Driver's License" replaces the legacy "Commercial Driver License" stub label (PTR has no CDLs). West Point ID gets the spec-mandated "Renewal window open — renew now" copy in its expiring state. New "My Activity" section: total stops with start-date anchor + trucks driven list (top 6 by most recent).
+
+**Graceful-fallback contract.** Every failure point in the extract path — `ANTHROPIC_API_KEY` not set, PDF input, model parse failure, low confidence, network error — returns either `{success: false}` JSON or a non-200, and the UI drops the driver into manual date entry without surfacing the error. The feature works on day 1 even before `ANTHROPIC_API_KEY` is added to Vercel.
+
+**Env var requirement (post-deploy).** `ANTHROPIC_API_KEY` must be added to `partytime-driver-app` Vercel Preview + Production for vision pre-fill to fire. The dashboard repo already has it; copy the same value via `vercel env add` from `~/Projects/partytime-driver-app`.
+
+**Build state.** `npx next build` clean. `/profile` is now 10.3 kB / 169 kB First Load JS (was 7.6 kB before this session — net +2.7 kB for the compliance + stats + upload modal infrastructure). No regressions on other routes.
+
+**Open follow-ups** (mirror of dashboard's `tasks/todo.md` entry):
+
+- [ ] Add `ANTHROPIC_API_KEY` to driver-app Vercel Preview + Production.
+- [ ] Interactive smoke test on a real device — upload a real license photo, confirm vision prefill works, confirm manual fallback works when vision returns no date.
+- [ ] PDF expiry extraction (Anthropic `document` content block — different shape from `image` block; deferred until someone actually wants to upload a PDF license).
+- [ ] Driver-facing tenure copy refinement — today's "Since April 2026" is computed from `min(route_date)`. Some long-tenure drivers may have routes from before the system was deployed; consider a hardcoded floor or pulling from `profiles.created_at` instead. Defer until a driver complains.
+
+---
+
 ## 2026-05-15 overnight — PartyTime Arcade: Route Rush + Tent Tetris + shared leaderboard
 
 **Scope:** Two fully playable arcade games under a new `/training/arcade` hub, plus shared Supabase-backed leaderboard infrastructure designed to also serve a future Party Kong game.
