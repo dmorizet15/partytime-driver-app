@@ -4,6 +4,23 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-05-16 — PartyTime Arcade · Party Kong (autonomous; driver-app slice)
+
+**Scope:** third arcade game. DK-style platformer. Closes out the PartyTime Arcade trio (Route Rush · Tent Tetris · Party Kong) reserved by the May 15 overnight bundle.
+
+**Commits**
+- _pending_ — `src/components/arcade/PartyKongGame.tsx` (new, ~1450 lines). Single component holds physics + drawing + state machine. 4 levels via `s.level` state (Warehouse / Loading Dock / Outdoor Tent Setup / Grand Ballroom). Visual rule: NO OUTLINES — all depth via DKC-style layered shading. Logo loader 3-tier fallback: `/images/PARTYTIME-RENTALS-LOGO.png` → `/ptr-mark.png` → procedural wordmark. Score submits as `game_type: 'party_kong'` (reserved in `game_scores` CHECK constraint by Migration 053; no new migration needed).
+- _pending_ — `src/app/training/arcade/party-kong/page.tsx` (new). Auth gate mirrors Route Rush / Tent Tetris (`driver / super_admin / tools_only`).
+- _pending_ — `src/components/arcade/ArcadeHub.tsx`. Party Kong tile flipped from `comingSoon: true` → live PLAY (`href: '/training/arcade/party-kong'`). Bests loader extended to include `party_kong`.
+
+**Design points worth preserving.** Tables fall STRAIGHT DOWN when going off platform edges (vx zeroed) — without this, P1–P3 inset platforms cause tables to fly past and never land; the zigzag breaks. Player respawns immediately after a hit with 110 frames of invincibility (no death pause phase). Win = reach `x > 265` on P4, not visual contact with the contract paper. Throw interval starts at 240 frames (L1) / 215 (L2) / 195 (L3) / 175 (L4), decreases by `floor(score / 8)`, floors at per-level minimum.
+
+**Build state.** `npx next build` clean. `/training/arcade/party-kong` is 14.2 kB / 164 kB First Load JS (Route Rush is 7.75 kB, Tent Tetris is 8.66 kB — Party Kong is the largest of the three because of the DK-style background art and Tent Kong sprite). No regressions on other routes.
+
+**Out of scope:** sound effects, anti-cheat, prize integrations, per-level music, deeper environmental art polish. All Phase 2.
+
+---
+
 ## 2026-05-16 — Driver Profile / Compliance (overnight, autonomous; driver-app slice)
 
 **Scope:** driver-app slice of the two-repo Driver Compliance build. Spec: Notion `3600aa64-51b8-812f-aeed-ced5f8cca98e`. Dashboard side shipped in parallel (`partytime-dashboard` commits `111852d`, `296086e`, `fe1b003`). Migration 055 (`driver_documents` + `driver-compliance-docs` storage bucket) lives in the dashboard repo and is already applied.

@@ -45,12 +45,11 @@ const TILES: Tile[] = [
     art:     'tetromino',
   },
   {
-    id:         'party_kong',
-    name:       'Party Kong',
-    tagline:    'Coming soon',
-    href:       '#',
-    art:        'kong',
-    comingSoon: true,
+    id:      'party_kong',
+    name:    'Party Kong',
+    tagline: 'Climb the warehouse · save the contract',
+    href:    '/training/arcade/party-kong',
+    art:     'kong',
   },
 ]
 
@@ -69,7 +68,7 @@ export default function ArcadeHub() {
       const uid = sess.session?.user.id
       if (!uid) return
 
-      const types: ArcadeGameType[] = ['route_rush', 'tent_tetris']
+      const types: ArcadeGameType[] = ['route_rush', 'tent_tetris', 'party_kong']
       const results = await Promise.all(
         types.map(async (gt) => {
           const { data } = await supabase

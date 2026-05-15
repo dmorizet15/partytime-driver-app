@@ -396,6 +396,64 @@ Two fully playable arcade games + shared leaderboard infrastructure under a new 
   - Daily / weekly leaderboard resets, prize integrations, push-on-new-best
   - Personal high-score history per game beyond top-1
 
+### PartyTime Arcade — Party Kong SHIPPED ✅ — May 15, 2026 (post-overnight session)
+
+Third arcade game live at `/training/arcade/party-kong`. DK-style platformer: PTR driver climbs four platforms via ladders while Tent Kong throws rolling banquet tables, reaches the signed contract at the top-right of P4 to clear each of four warehouse-themed levels. Submits to the shared `game_scores` table as `game_type: 'party_kong'` — no schema changes, no new migration (the CHECK constraint already permitted the value).
+
+**Architecture — read this before touching any Party Kong code:**
+
+- **Single component:** `src/components/arcade/PartyKongGame.tsx`. Self-contained — no shared physics module, no per-level subcomponents. Route mounts the component for any of the four levels via `s.level` state. Page wrapper at `src/app/training/arcade/party-kong/page.tsx` follows the Route Rush / Tent Tetris auth pattern (`driver / super_admin / tools_only`).
+
+- **Game-state lives in `useRef<GameState>` — never React state.** Same pattern as Route Rush + Tent Tetris. The RAF loop mutates the ref freely; only player-visible counters (`score`, `lives`, `level`, ladder hint) are pushed to React state via change-detected setters. Don't introduce useState anywhere inside the game loop or you'll trash performance.
+
+- **Visual rule: NO OUTLINES.** Every game element — Tent Kong, player, platforms, ladders, tables, dollies, the warehouse sign — gets its depth exclusively from layered shading (multi-tone ellipses / stroked-bezier shading / gradient fills). DKC sprite method. **Any future change that introduces a hard black outline will be wrong by spec.** Tent Kong specifically: 4-tone warm brown (`FUR_SHADOW #1A0C04` → `FUR_BASE #3A1E08` → `FUR_MID #5A3418` → `FUR_HIGHLIGHT #7A5030`), light source upper-left, layered ellipses for body / head / shoulders, three-stroke leg shading, four-stroke bezier arms.
+
+- **Logo loader is a 3-tier fallback chain.** Tries `/images/PARTYTIME-RENTALS-LOGO.png` first (spec path — file does NOT exist in the repo today), then `/ptr-mark.png` (lives in `public/`), then a procedurally-drawn "PARTYTIME RENTALS" wordmark on the warehouse sign. Drop the proper hi-res logo at the spec path when ready and it'll auto-pick up. The sign cabinet renders identically in all three cases — only the inner artwork changes.
+
+- **Platforms are an array of 5 `PlatformDef`s, ladders are an array of 4.** All geometry literals are at the top of the file. Slope direction (`slopeDir(p)`) returns `-1 | 0 | +1` based on `(y2 - y1)`; tables rolling on a sloped platform use this to pick rolling direction. Player walking on a tilted platform snaps `y = psy(p, x)` each frame — no slide.
+
+- **Rolling tables: spawn at Kong, roll, fall straight down off edges.** Critical deviation from the natural "preserve vx" airborne model: when a table goes off a platform edge, `vx` is zeroed and it falls straight down. Reason: P1–P3 are inset (`x1=15, x2=345`) while P4 is `x1=35, x2=325`. A table preserving its rolling vx after going off an edge would fly past the inset platforms below and never land. Falling straight down guarantees the classic DK zigzag works. **Do not re-introduce horizontal-momentum-airborne** without rethinking platform geometry.
+
+- **Table landing scores +10.** Awarded once per landing on a platform with `idx < 4`. Cannot score by landing on the spawn platform (P4). Survival drip is `+3 every 55 frames`. Player jump is `+5`. Win sequence (reach `x > 265` on P4) triggers level-complete card; level 4 win → full game-over screen + `submitScore`.
+
+- **Chair stack dollies spawn from Level 2 onward.** Two per level — one patrolling P1, one patrolling P2. Bounce off platform edges. Same hit-detection geometry as tables (slightly narrower X box). Drawn as a 4-folded-chair stack on a 2-wheeled dolly with a directional handle. Defined in `makeFreshState` and updated in `step()`. NOT spawned mid-game; they're stationary fixtures that bounce, so adding more = re-running `makeFreshState` for that level.
+
+- **Throw interval per level:** L1 `240 → 105`, L2 `215 → 100`, L3 `195 → 95`, L4 `175 → 85` (frames). Decreases by `floor(totalScore / 8)` each tick until the per-level floor.
+
+- **Death pause is gone.** Earlier draft had a `death_pause` Phase; removed. Player respawn is immediate at `(28, 560)` with full `INVINCIBLE_FRAMES` (110). Game over fires immediately when `lives <= 0` is detected after the step.
+
+- **4 backgrounds, switched by `cfg.bg`:**
+  - `warehouse` (L1) — back wall, amber sconces, 3 fluorescent strips, PTR cabinet sign with logo, tagline below sign.
+  - `dock` (L2) — daylight bay door cutout, pallet stacks, small PTR badge above bay door.
+  - `outdoor` (L3) — sky gradient, star dots, distant tent silhouettes, PTR truck silhouette far-right, cool purple tint overlay.
+  - `ballroom` (L4) — warm ambient gradient, fairy light dots, 2 chandeliers, ornate arch instead of the PTR sign.
+
+- **Controls — three input paths:**
+  - Keyboard: `←/→` or `A/D` move, `↑/W` climb up / grab ladder, `↓/S` climb down / drop, `Space` jump.
+  - On-screen D-pad (4 arrow buttons in a 3×3 grid, center cell empty).
+  - On-screen JUMP button (gold circle).
+  - Canvas tap: tap left/right half pulses a 120ms move input on that side. Useful as a fallback on touch devices that can't reliably press the D-pad.
+
+- **Ladder hint pulses at the bottom-center of the canvas** when the player is within `LADDER_GRAB_WIDTH` of a ladder cx on a connecting platform and NOT already on a ladder. Pulses gold-on-shadow at ~0.5–1.0 alpha. State derived from `isNearLadderHint(player)` in the frame loop with change detection (one setState per transition).
+
+- **HUD:** three top pills (Score left, Lvl center, Lives right) — same dark-blue translucent style as Route Rush / Tent Tetris with a gold border. Lives display as 3 small radial-gradient gold circles with a "P" character; depleted lives show as faint gray.
+
+- **Win path = signed contract.** Drawn at the upper-right of P4 (around `x=p4.x2-24`). Cream paper with a "SIGNED" stamp (red rotated rectangle), gold star top-left, pulsing radial gold glow tied to `s.goalGlow`. Reaching `x > 265` on P4 is what triggers win — not visual contact with the paper. The paper is positional cue only.
+
+**Hub wiring:** `src/components/arcade/ArcadeHub.tsx` — the `'party_kong'` tile in `TILES` is now playable (`comingSoon` removed; `href: '/training/arcade/party-kong'`). The `bests` loader includes `party_kong` so the "Your Best" pill renders alongside Route Rush + Tent Tetris.
+
+**No new dependencies. No new migrations.** Built entirely against the existing `game_scores` schema; the CHECK constraint already had `'party_kong'` reserved from Migration 053 (May 15 overnight bundle).
+
+**Out of scope this session:**
+- Background music / sound effects (silent arcade — consistent with Route Rush + Tent Tetris)
+- Per-level music or ambient sound
+- Anti-cheat / server-side score validation (still trusted-driver context)
+- Daily / weekly leaderboard resets, prize integrations
+- A boss-rush mode or endless mode after winning L4
+- Background-art polish for the four level themes (each background ships with a single pass; deeper environmental art is Phase 2)
+- Customizing controls or in-game pause menu
+- Replays / score-attack mode
+
 ### NEXT
 - **Smoke-test the hub restructure on production** (commit `288d120`, deploys auto via Vercel):
   - `/tools` → confirm dark surface + blue hero + uppercase "TOOLS HUB" title. 2-col grid renders 6 cards: Tenting / HVAC / Safety & compliance / Flooring (row 1+2), Weather / Equipment guides (row 3). Tenting shows "3 live" green; Weather + Equipment guides each show "Live" green; HVAC / Safety / Flooring show "Coming soon" gray (with hairline border).
@@ -416,6 +474,20 @@ Two fully playable arcade games + shared leaderboard infrastructure under a new 
   - Cross-device verification: open `/training/arcade/route-rush` on a second device while playing on the first. After game over on the first device, confirm the leaderboard on the second device's game-over (or on next playthrough) shows the new score within ~1s — that confirms the realtime channel fan-out.
   - Edge: sign out, attempt to load `/training/arcade` → confirm redirects to `/login`.
   - Edge: sign in as a non-driver / non-tools_only / non-super_admin role → confirm "Access denied" on `/training/arcade` page.
+- **Smoke-test Party Kong on production** (route + ArcadeHub flip shipped after the overnight bundle):
+  - `/training/arcade` → confirm Party Kong tile now has a gold **PLAY** button (not "Soon") and shows "Your Best" of 0/—.
+  - Tap PLAY → confirm `/training/arcade/party-kong` loads with start screen ("PARTY KONG" / "Climb the warehouse · save the contract"). Tap → game starts.
+  - Verify Level 1 warehouse background: amber wall sconces, 3 fluorescent ceiling strips, PTR cabinet sign center-top of back wall (logo on the acrylic face if `public/ptr-mark.png` exists, procedural "PARTYTIME RENTALS" wordmark otherwise; both are correct).
+  - Verify Tent Kong renders at top-left of P4 with throw-arm animation, mini cream table when the arm is raised, and the "TENT KONG" label below.
+  - Walk right with `→`/D-pad → confirm the PTR driver animates with a leg-stride. Approach the right-side ladder L0 (cx=306) → confirm "▲ CLIMB" gold-pulsing hint at bottom-center. Press `↑`/up D-pad → confirm grab → climb to P1.
+  - Continue zigzag: L1 (left) → P2 → L2 (right) → P3 → L3 (left) → P4. Reach `x > 265` on P4 (right side of P4, near the gold-glowing SIGNED contract) → confirm "LEVEL 1 CLEARED" overlay. Tap Continue.
+  - L2 background: loading bay door opening with distant truck, pallet stacks, smaller PTR badge above bay. Verify chair stack dollies (L2 introduces them — patrolling P1 + P2). Touch a dolly → confirm life decrement + respawn at bottom-left.
+  - L3 background: night sky + tent silhouettes + PTR truck silhouette far-right. L4 background: warm ballroom + fairy lights + chandeliers + ornate arch instead of the PTR sign.
+  - L4 win → confirm full game-over modal with "YOU WON" green eyebrow + leaderboard + Play Again. Verify `game_scores` row inserted with `game_type='party_kong'` and the leaderboard's TODAY tab shows the run.
+  - Cross-device realtime: same as Route Rush / Tent Tetris — open the L4 game-over leaderboard on a second signed-in device, finish a run on the first → confirm new row appears within ~1s.
+  - Edge: lose all 3 lives → confirm "GAME OVER" (gray eyebrow, not green) modal, score submitted, returns to leaderboard.
+  - Edge: tap JUMP button on touch device → confirm player vertical hop. Repeat near a ladder → confirm jump exits ladder.
+  - Edge: sign out, hit `/training/arcade/party-kong` → confirm `/login` redirect. Sign in as a non-eligible role → confirm "Access denied".
 - **Smoke-test Tent Squaring on production** (commit `b508501`, shipped earlier today). Open `/tools` → tap **Tenting** card → enter 40 / 20 → confirm diagonal = `44' 9"`. Toggle to Square → confirm Width field locks and mirrors Length → enter 30 → confirm diagonal = `42' 5"`.
 - **Smoke-test Phase 2.5C arrival on production** (deploys: driver `73b7509`, dashboard `03dd102`):
   - Sign in as driver; open a delivery stop on today's route while away from the customer site (anywhere outside the 150m bubble). Confirm browser prompts for location permission on first watch.
