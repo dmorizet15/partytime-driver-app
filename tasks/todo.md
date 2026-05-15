@@ -1,5 +1,13 @@
 # Open Tasks — partytime-driver-app
 
+## May 14, 2026 night — Tools / Training hub restructure follow-ups (commit `f64d5bb`)
+
+- [ ] **Smoke-test the new category-card hubs on production.** Coverage list in `CLAUDE.md` → "Tools Hub + Training Hub — category-card restructure" → NEXT block. `/tools`: dark surface + blue hero + 2-col grid + Tenting → tent-squaring calc + Party-layouts full-width + footer line. `/training`: 2-col grid (all Live → toast) + orientation card + gold Arcade tile → `/games` (404 expected). Spot-check toast auto-dismiss + BottomNav still works on both screens.
+- [ ] **`/games` route does not exist.** Arcade tile in Training hub navigates to it per spec; result is a 404 until the route is built. Build the games hub when content is ready, or change the tile to toast if Arcade is shelved.
+- [ ] **Tenting subcategory screen.** Tile claims "3 live" (Squaring + Drawings + Certs) but currently lands directly on the single calculator. When second/third tenting tools land, convert `/tools/tent-squaring` into a tenting sub-hub OR re-point the Tenting tile to a new `/tools/tenting` route with a card grid inside.
+- [ ] **Duplicated layout components between ToolsScreen and TrainingScreen.** `C` token object, `BadgePill`, `IconWrap`, `CategoryCardGrid`, `CategoryCardWide`, and several Tabler-style icons (TentIcon, ShieldCheckIcon) are redeclared in both files. Acceptable today (two screens, fully styled differently from the rest of the app); extract to `src/components/hub/*` when a third hub-style surface appears or when an icon needs to change in lockstep across both.
+- [ ] **Tools hub footer line is a known soft pointer.** "Weather · Reference library also in Tools" admits two routes (`/tools/weather`, `/reference/*`) live outside the new grid. When Weather and Reference get formal category tiles (or are folded into HVAC / Safety subcategories), drop the footer line so it doesn't rot.
+
 ## May 14, 2026 — Phase 2.5C session follow-ups (GPS Auto-Arrival)
 
 - [ ] **Smoke-test arrival on production** — driver `73b7509`, dashboard `03dd102` both deployed. Test plan in `CLAUDE.md` → "Phase 2.5C — GPS Auto-Arrival" → NEXT block. Loops: permission prompt on first watch, mid-route entry into the 150m bubble, dashboard teal pin within ~1s, badge coexistence with the green completion check, persistence across refetch.

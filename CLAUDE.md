@@ -304,6 +304,36 @@ Dashboard (commit `03dd102`):
 - A "location off" warning surface for the driver if permission is denied (current UI silently degrades; Mark Stop Complete still works).
 - Dashboard-side audit / analytics surface for arrival → completion deltas (the data is now in the column; building reports is a separate Phase 2 thread).
 
+### Tools Hub + Training Hub — category-card restructure SHIPPED ✅ — May 14, 2026 night (commit `f64d5bb`)
+
+Both home screens (`/tools` and `/training`) moved off flat tile/module grids to a category-card layout with a dark surface and the PTR-blue hero. Pure frontend — only `ToolsScreen.tsx` and `TrainingScreen.tsx` were touched; no migration, no new routes, no Supabase, no new deps.
+
+**Architecture — read this before touching either hub:**
+
+- **Two screens, same visual system.** Both use a private `C` token object: `bg #0D0D0D`, `card #1A1A1A`, `cardBorder rgba(255,255,255,0.07)`, `blue #0000FF` (hero), `white #fff`, `muted rgba(255,255,255,0.4)`, `gold #FFB800`. The badge palette (live = green tints, soon = gray tints) is also shared. **No shared component file** — both screens redeclare `BadgePill`, `IconWrap`, `CategoryCardGrid`, `CategoryCardWide`, and the `C` constant. Drift is possible; if you change one, mirror it. Acceptable cost for now since each screen is < ~450 lines and the surfaces are different.
+
+- **Tools hub categories:** Tenting (3 live · green badge · `/tools/tent-squaring`), HVAC / Safety & compliance / Flooring (all soon), Party layouts (full-width, soon). Footer line: "Weather · Reference library also in Tools" — non-interactive pointer text, since Weather and Reference Library are NOT category tiles in this hub (Weather is reached via the `/tools/weather` route directly; same for `/reference/*`). When more weather / reference surfaces exist, the footer line is the seam where they'd be promoted into the grid.
+
+- **Training hub categories:** Safety & DOT / Tent setup / Equipment ops / Customer service (all "Live" badge, none have routes yet — all toast). Full-width New driver orientation card. Full-width gold-treatment Arcade tile linking to `/games`. The "Live" badges are aspirational — they signal the category is on-deck for content authoring, not that a route exists today. Tapping any of them toasts "Coming soon."
+
+- **Arcade tile is the only one wired to a route that doesn't exist.** Per spec, Arcade → `/games`. That route 404s until Darren builds it. Don't "fix" this by changing it to a toast — the spec is explicit and the 404 is the placeholder UX.
+
+- **Inline Tabler-style outline icons.** No new dependency. Both screens redeclare their own subset of icons (TentIcon, ShieldCheckIcon, etc.) as inline SVG with stroke-width 2, 24×24 viewBox. TentIcon and ShieldCheckIcon appear in BOTH screens. Same cost/benefit as the duplicated `C` constant — fine for now.
+
+- **The hero retains the PTR mark + gold star burst from the prior cream-themed hero** for visual continuity with WeatherScreen / ToolsScreen-pre-restructure. Eyebrow / title / subtitle wording comes from the spec verbatim.
+
+- **`ToolsScreen.TOOLS` is gone.** The old 10-tile flat catalog (Tent Drawings, Reference Library, Dance Floor, Stage, Heat & Air, Power, Propane, Equipment Guides, plus the existing Tenting + Weather wired tiles) was deleted in this restructure. Two of those surfaces still have routes (`/reference/tents`, `/reference/library`, `/tools/weather`) and live on; they're just no longer surfaced from the Tools hub home screen. The footer pointer line acknowledges Weather + Reference Library still exist somewhere. Tent Drawings is now subsumed under the future Tenting subcategory screen (one of the "3 live"). The other 5 (Dance Floor / Stage / Heat & Air / Power / Propane / Equipment Guides) were tile-only stubs with no behavior — their disappearance is a net simplification.
+
+- **`TrainingScreen.MODULES` is gone.** Old 5-module list (Safety / Tent Setup / Equipment / Service / Orientation) is replaced by the new 4-grid + orientation-wide + Arcade structure. Same names, same surfaces — just laid out as category cards instead of horizontal pills with "Coming Soon" chips.
+
+**The footer pointer line on Tools is the one architecturally-loaded element.** "Weather · Reference library also in Tools" is the breadcrumb that those two routes still belong to the Tools surface area. When Weather gets a tile in a future restructure (e.g. inside an HVAC subcategory or a top-level Operations group), drop the footer or rewrite it. Don't let it rot into "Weather and Reference library used to be here."
+
+**Out of scope this session:**
+- Tenting subcategory screen (the "3 live" badge promises Squaring + Drawings + Certs once the subcategory exists). Today the Tenting tile lands directly on `/tools/tent-squaring`. When subcategory ships, the route either becomes a hub or the tile re-points.
+- Content for any of the "Coming soon" categories (HVAC / Safety & compliance / Flooring / Party layouts).
+- Content for any Training category — they all toast despite the Live badge.
+- `/games` route itself (Arcade tile points there but the route doesn't exist).
+
 ### Tools Hub — Tent Squaring Calculator SHIPPED ✅ (code) — May 14, 2026 late evening
 First Tools Hub calculator. Pure frontend, no migration, no Supabase. Driver enters Length / Width (ft), picks Rectangular or Square shape, gets the diagonal as e.g. `56' 7"` updating live. Square mode mirrors Length into Width and locks the Width field. Helper line below the result: "Measure corner to corner — if it matches, your tent is square."
 
@@ -316,10 +346,18 @@ First Tools Hub calculator. Pure frontend, no migration, no Supabase. Driver ent
 - **No deps added.** Native `<input type="number">`, `Math.sqrt`, `Math.floor`, `Math.round`. inputMode="decimal" for mobile keyboard.
 - **Empty / non-numeric / non-positive inputs hide the output card** — no zero-state placeholder result; the card simply doesn't render until both fields parse to a positive finite number.
 
-**Not pushed.** Interactive session — build verified (`npx next build` green, route 2.3 kB) but the commit + push step deferred to Darren.
+**Shipped to production** as commit `b508501` earlier on May 14 (route 2.3 kB / 156 kB First Load JS). When the hub restructure landed later that night (`f64d5bb`), the Tenting category tile in the new grid was pointed at this calculator.
 
 ### NEXT
-- **Push the Tent Squaring Calculator.** Build is green; the work just needs `git add` + commit + push to deploy via Vercel. Smoke test after deploy: open `/tools` → tap **Tent Squaring** → enter 40 / 20 → confirm diagonal = `44' 9"` (40² + 20² = 2000; √2000 ≈ 44.72 ft = 44' 9"). Toggle to Square → confirm Width field locks and mirrors Length → enter 30 → confirm diagonal = `42' 5"` (30√2 ≈ 42.43 ft).
+- **Smoke-test the hub restructure on production** (commit `f64d5bb`, deploys auto via Vercel):
+  - `/tools` → confirm dark surface, blue hero, 2-col grid renders four category cards (Tenting / HVAC / Safety & compliance / Flooring) and Party layouts full-width below. Tenting card shows green "3 live" badge; others show gray "Coming soon".
+  - Tap Tenting → lands on the Tent Squaring calculator at `/tools/tent-squaring`.
+  - Tap any "Coming soon" tile → confirm toast appears centered above the BottomNav and auto-dismisses in 3s.
+  - Confirm footer text "Weather · Reference library also in Tools" renders muted at the bottom of the scroll body.
+  - `/training` → confirm same dark surface + blue hero, 2-col grid of four Live (green badge) categories, full-width "New driver orientation" card, gold-treatment "PartyTime Arcade" tile at the bottom.
+  - Tap any Live category → confirm "Coming soon" toast (no routes exist yet).
+  - Tap Arcade → confirm navigates to `/games` (will 404 until that route is built — expected).
+- **Smoke-test Tent Squaring on production** (commit `b508501`, shipped earlier today). Open `/tools` → tap **Tenting** card → enter 40 / 20 → confirm diagonal = `44' 9"`. Toggle to Square → confirm Width field locks and mirrors Length → enter 30 → confirm diagonal = `42' 5"`.
 - **Smoke-test Phase 2.5C arrival on production** (deploys: driver `73b7509`, dashboard `03dd102`):
   - Sign in as driver; open a delivery stop on today's route while away from the customer site (anywhere outside the 150m bubble). Confirm browser prompts for location permission on first watch.
   - Grant permission; verify console / DevTools shows watchPosition ticks with descending `lastDistanceMeters`.

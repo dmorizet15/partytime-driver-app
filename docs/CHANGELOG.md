@@ -4,6 +4,40 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-05-14 night — Tools Hub + Training Hub: category-card restructure
+
+**Commits:** `f64d5bb` (driver-app, single commit).
+
+**Scope:** Both home screens (`/tools` and `/training`) restructured from flat tile/module grids into a category-card layout with a dark surface (`#0D0D0D`) and the PTR-blue hero. Pure frontend — only `ToolsScreen.tsx` and `TrainingScreen.tsx` modified. No migration, no new routes, no Supabase, no new dependencies.
+
+### What shipped
+
+- **`src/screens/ToolsScreen.tsx`** — complete rewrite. Old 10-tile flat catalog (Tent Drawings, Reference Library, Tent Squaring, Dance Floor, Stage, Heat & Air, Power, Propane, Equipment Guides, Weather) plus the Ask Ava chip all removed. New layout: blue hero ("Driver tools" eyebrow → "Tools hub" → "Calculators, references & compliance"), 2-col grid of four category cards (Tenting / HVAC / Safety & compliance / Flooring), full-width Party layouts card below the grid, footer pointer text "Weather · Reference library also in Tools". Tenting → `/tools/tent-squaring`; the other four toast "Coming soon".
+- **`src/screens/TrainingScreen.tsx`** — complete rewrite. Old 5-module vertical list (Safety / Tents / Equipment / Service / Orientation, all with "Coming Soon" pills) replaced with: blue hero ("Driver training" → "Training hub" → "SOPs, guides & orientation"), 2-col grid of four Live-badged categories (Safety & DOT / Tent setup / Equipment ops / Customer service), full-width New driver orientation card, gold-treatment PartyTime Arcade tile linking to `/games`. All Live cards currently toast since no subcategory routes exist; Arcade navigates to `/games` (route doesn't exist yet — 404 placeholder).
+
+### Decisions made
+
+- **Dark surface for both hubs, not the cream + ink palette used by Weather / Tent Squaring / the old Tools and Training screens.** Spec called for `bg #0D0D0D`, `card #1A1A1A`, white text, muted text at 40% alpha — that's a new visual direction for the hub home screens specifically. The PTR-blue hero + gold star burst + PTR mark are preserved as the visual anchor. Inner content screens (`/tools/tent-squaring`, `/tools/weather`) keep the cream-light treatment for now; hub-level rooms go dark, leaf-level surfaces stay light. Re-evaluate as more leaves ship.
+- **Two screens redeclare the same `C` constant + `BadgePill` / `IconWrap` / `CategoryCardGrid` / `CategoryCardWide` components inline.** Acceptable cost today; logged as todo to extract when a third hub-style surface appears.
+- **Old `TOOLS` / `MODULES` arrays both deleted.** Five of the old Tools tiles were inert stubs (Dance Floor, Stage, Heat & Air, Power, Propane, Equipment Guides) — their disappearance is a net simplification. Tent Drawings + Reference Library still have routes (`/reference/tents`, `/reference/library`); they're acknowledged in the new Tools hub footer line. Weather still has `/tools/weather`; same acknowledgment.
+- **Arcade tile points at `/games` even though the route doesn't exist.** Per the spec verbatim. Placeholder UX; will resolve when the games hub is built.
+- **`Ask Ava` chip removed from Tools.** It was stubbed (HAS_AVA flag was hard-`false`) and out of scope for this restructure. If Ava lands in the future it can return as a hub-level shortcut.
+
+### Verification
+
+- `npx next build` — green end-to-end. `/tools` 2.99 kB / 157 kB First Load JS. `/training` 3.18 kB / 157 kB First Load JS. No type errors, no lint warnings, 24/24 static pages generated.
+- Pushed to `origin/main` as commit `f64d5bb`; Vercel auto-deploy triggered.
+
+### Out of scope this session
+
+- Content authoring for any "Coming soon" Tools categories (HVAC / Safety / Flooring / Party layouts).
+- Content authoring for any Training Live-badged category (all toast today).
+- Tenting subcategory screen (the "3 live" badge is aspirational until Drawings + Certs join Squaring).
+- The `/games` route itself.
+- Extracting shared hub components.
+
+---
+
 ## 2026-05-14 late evening — Tools Hub: Tent Squaring Calculator
 
 **Scope:** First calculator in the Tools Hub content build. Pure frontend, no Supabase / no migration / no new dependencies. Driver enters tent dimensions, app computes diagonal via `√(L² + W²)`, displays in `feet' inches"` formatted output. Replaces the "coming soon" stub on the existing Tenting tile.
