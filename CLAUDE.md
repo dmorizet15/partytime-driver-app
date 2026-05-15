@@ -304,17 +304,17 @@ Dashboard (commit `03dd102`):
 - A "location off" warning surface for the driver if permission is denied (current UI silently degrades; Mark Stop Complete still works).
 - Dashboard-side audit / analytics surface for arrival → completion deltas (the data is now in the column; building reports is a separate Phase 2 thread).
 
-### Tools Hub + Training Hub — category-card restructure SHIPPED ✅ — May 14, 2026 night (commit `f64d5bb`)
+### Tools Hub + Training Hub — category-card restructure SHIPPED ✅ — May 14, 2026 night (commits `f64d5bb` → `288d120`)
 
-Both home screens (`/tools` and `/training`) moved off flat tile/module grids to a category-card layout with a dark surface and the PTR-blue hero. Pure frontend — only `ToolsScreen.tsx` and `TrainingScreen.tsx` were touched; no migration, no new routes, no Supabase, no new deps.
+Both home screens (`/tools` and `/training`) moved off flat tile/module grids to a category-card layout with a dark surface and the PTR-blue hero. Pure frontend — only `ToolsScreen.tsx` and `TrainingScreen.tsx` were touched; no migration, no new routes, no Supabase, no new deps. Shipped in two passes: v1 (`f64d5bb`) hid Weather + Equipment guides behind a footer pointer line; v2 (`288d120`) corrected that — both are now first-class Live-badged tiles in the grid, Generators full-width card added, a hairline divider separates Generators from the Party layouts anchor card at the bottom.
 
 **Architecture — read this before touching either hub:**
 
 - **Two screens, same visual system.** Both use a private `C` token object: `bg #0D0D0D`, `card #1A1A1A`, `cardBorder rgba(255,255,255,0.07)`, `blue #0000FF` (hero), `white #fff`, `muted rgba(255,255,255,0.4)`, `gold #FFB800`. The badge palette (live = green tints, soon = gray tints) is also shared. **No shared component file** — both screens redeclare `BadgePill`, `IconWrap`, `CategoryCardGrid`, `CategoryCardWide`, and the `C` constant. Drift is possible; if you change one, mirror it. Acceptable cost for now since each screen is < ~450 lines and the surfaces are different.
 
-- **Tools hub categories:** Tenting (3 live · green badge · `/tools/tent-squaring`), HVAC / Safety & compliance / Flooring (all soon), Party layouts (full-width, soon). Footer line: "Weather · Reference library also in Tools" — non-interactive pointer text, since Weather and Reference Library are NOT category tiles in this hub (Weather is reached via the `/tools/weather` route directly; same for `/reference/*`). When more weather / reference surfaces exist, the footer line is the seam where they'd be promoted into the grid.
+- **Tools hub categories (v2):** 2-col grid of 6: Tenting (3 live · `/tools/tent-squaring`), HVAC (soon), Safety & compliance (soon), Flooring (soon), Weather (live · `/tools/weather`), Equipment guides (live · `/reference/library`). Then full-width Generators card (soon), then a `rgba(255,255,255,0.07)` divider line, then full-width Party layouts card (soon) anchoring the bottom. No footer pointer text. Two routes are live and working today (`/tools/weather`, `/reference/library`) — must not break in any future hub change.
 
-- **Training hub categories:** Safety & DOT / Tent setup / Equipment ops / Customer service (all "Live" badge, none have routes yet — all toast). Full-width New driver orientation card. Full-width gold-treatment Arcade tile linking to `/games`. The "Live" badges are aspirational — they signal the category is on-deck for content authoring, not that a route exists today. Tapping any of them toasts "Coming soon."
+- **Training hub categories:** Safety & DOT / Tent setup / Equipment ops / Customer service (all "Live" badge, none have routes yet — all toast). Full-width New driver orientation card (Live badge, no route → toast). Full-width gold-treatment Arcade tile linking to `/games` — **no badge in v2**; the gold-on-black treatment IS the affordance. The "Live" badges on the educational cards are aspirational — they signal the category is on-deck for content authoring, not that a route exists today. Tapping any of them toasts "Coming soon."
 
 - **Arcade tile is the only one wired to a route that doesn't exist.** Per spec, Arcade → `/games`. That route 404s until Darren builds it. Don't "fix" this by changing it to a toast — the spec is explicit and the 404 is the placeholder UX.
 
@@ -322,11 +322,17 @@ Both home screens (`/tools` and `/training`) moved off flat tile/module grids to
 
 - **The hero retains the PTR mark + gold star burst from the prior cream-themed hero** for visual continuity with WeatherScreen / ToolsScreen-pre-restructure. Eyebrow / title / subtitle wording comes from the spec verbatim.
 
-- **`ToolsScreen.TOOLS` is gone.** The old 10-tile flat catalog (Tent Drawings, Reference Library, Dance Floor, Stage, Heat & Air, Power, Propane, Equipment Guides, plus the existing Tenting + Weather wired tiles) was deleted in this restructure. Two of those surfaces still have routes (`/reference/tents`, `/reference/library`, `/tools/weather`) and live on; they're just no longer surfaced from the Tools hub home screen. The footer pointer line acknowledges Weather + Reference Library still exist somewhere. Tent Drawings is now subsumed under the future Tenting subcategory screen (one of the "3 live"). The other 5 (Dance Floor / Stage / Heat & Air / Power / Propane / Equipment Guides) were tile-only stubs with no behavior — their disappearance is a net simplification.
+- **`ToolsScreen.TOOLS` is gone.** The old 10-tile flat catalog (Tent Drawings, Reference Library, Dance Floor, Stage, Heat & Air, Power, Propane, Equipment Guides, plus the existing Tenting + Weather wired tiles) was deleted in this restructure. Weather and Reference Library are back in the v2 grid as Live-badged tiles (`Weather` → `/tools/weather`, `Equipment guides` → `/reference/library`). `/reference/tents` (Tent Drawings) is currently NOT surfaced from the hub — it's expected to land inside the future Tenting subcategory screen alongside Squaring + Certs. The other 5 from the old catalog (Dance Floor / Stage / Heat & Air / Power / Propane / Equipment Guides) were tile-only stubs with no behavior — their disappearance is a net simplification.
 
-- **`TrainingScreen.MODULES` is gone.** Old 5-module list (Safety / Tent Setup / Equipment / Service / Orientation) is replaced by the new 4-grid + orientation-wide + Arcade structure. Same names, same surfaces — just laid out as category cards instead of horizontal pills with "Coming Soon" chips.
+- **`TrainingScreen.MODULES` is gone.** Old 5-module list (Safety / Tent Setup / Equipment / Service / Orientation) is replaced by the 4-grid + orientation-wide + Arcade structure. Same names, same surfaces — just laid out as category cards instead of horizontal pills with "Coming Soon" chips.
 
-**The footer pointer line on Tools is the one architecturally-loaded element.** "Weather · Reference library also in Tools" is the breadcrumb that those two routes still belong to the Tools surface area. When Weather gets a tile in a future restructure (e.g. inside an HVAC subcategory or a top-level Operations group), drop the footer or rewrite it. Don't let it rot into "Weather and Reference library used to be here."
+- **Toast spec (v2):** `setToast('Coming soon')` → fixed bottom pill on `#1A1A1A` with `0.5px` hairline border (`rgba(255,255,255,0.07)`), white text, `13px / 600`, auto-dismisses in **2000ms**. No gold border-left accent (that was v1). Both screens redeclare the toast inline — no shared toast component in the codebase.
+
+- **Badge styles (both kinds carry a 0.5px border in v2):** Live = `rgba(31,191,107,0.15)` bg / `#1FBF6B` text / `rgba(31,191,107,0.3)` border. Soon = `rgba(255,255,255,0.07)` bg / `rgba(255,255,255,0.35)` text / `rgba(255,255,255,0.1)` border. The Soon border was added in v2 for visual parity with Live; without it the Soon pill reads as a flat shape next to the bordered Live pill.
+
+- **Hub titles uppercase.** `Tools hub` and `Training hub` render with `text-transform: uppercase`. Eyebrow + subtitle stay sentence case.
+
+- **No shared toast component, no shared badge component.** Both screens redeclare `BadgePill`, `IconWrap`, `CategoryCardGrid`, `CategoryCardWide`, plus their own copy of the `C` token object and the icons each uses. v1 ↔ v2 drift is possible; if you change one screen's card padding / icon size / badge text, mirror it. Logged in `tasks/todo.md` to extract when a third hub-style surface appears.
 
 **Out of scope this session:**
 - Tenting subcategory screen (the "3 live" badge promises Squaring + Drawings + Certs once the subcategory exists). Today the Tenting tile lands directly on `/tools/tent-squaring`. When subcategory ships, the route either becomes a hub or the tile re-points.
@@ -349,14 +355,16 @@ First Tools Hub calculator. Pure frontend, no migration, no Supabase. Driver ent
 **Shipped to production** as commit `b508501` earlier on May 14 (route 2.3 kB / 156 kB First Load JS). When the hub restructure landed later that night (`f64d5bb`), the Tenting category tile in the new grid was pointed at this calculator.
 
 ### NEXT
-- **Smoke-test the hub restructure on production** (commit `f64d5bb`, deploys auto via Vercel):
-  - `/tools` → confirm dark surface, blue hero, 2-col grid renders four category cards (Tenting / HVAC / Safety & compliance / Flooring) and Party layouts full-width below. Tenting card shows green "3 live" badge; others show gray "Coming soon".
-  - Tap Tenting → lands on the Tent Squaring calculator at `/tools/tent-squaring`.
-  - Tap any "Coming soon" tile → confirm toast appears centered above the BottomNav and auto-dismisses in 3s.
-  - Confirm footer text "Weather · Reference library also in Tools" renders muted at the bottom of the scroll body.
-  - `/training` → confirm same dark surface + blue hero, 2-col grid of four Live (green badge) categories, full-width "New driver orientation" card, gold-treatment "PartyTime Arcade" tile at the bottom.
-  - Tap any Live category → confirm "Coming soon" toast (no routes exist yet).
-  - Tap Arcade → confirm navigates to `/games` (will 404 until that route is built — expected).
+- **Smoke-test the hub restructure on production** (commit `288d120`, deploys auto via Vercel):
+  - `/tools` → confirm dark surface + blue hero + uppercase "TOOLS HUB" title. 2-col grid renders 6 cards: Tenting / HVAC / Safety & compliance / Flooring (row 1+2), Weather / Equipment guides (row 3). Tenting shows "3 live" green; Weather + Equipment guides each show "Live" green; HVAC / Safety / Flooring show "Coming soon" gray (with hairline border).
+  - Tap Tenting → `/tools/tent-squaring` (existing calculator).
+  - Tap Weather → `/tools/weather` (existing Phase 2A weather screen) — verify it loads identically to before the restructure.
+  - Tap Equipment guides → `/reference/library` (existing Reference Library screen) — verify it loads identically.
+  - Tap any "Coming soon" tile → confirm small dark pill toast appears, no gold accent, auto-dismisses at ~2s.
+  - Scroll below the grid: confirm Generators full-width card (Coming soon), then a thin `rgba(255,255,255,0.07)` divider line, then Party layouts full-width card (Coming soon) anchoring the bottom. No footer pointer text.
+  - `/training` → confirm uppercase "TRAINING HUB" title, 2-col grid of four Live (green badge) categories, full-width "New driver orientation" card with Live badge, gold-treatment "PartyTime Arcade" tile **without a badge** (gold-on-black treatment is the affordance).
+  - Tap any Live category → "Coming soon" toast (no routes exist yet).
+  - Tap Arcade → navigates to `/games` (will 404 until that route is built — expected).
 - **Smoke-test Tent Squaring on production** (commit `b508501`, shipped earlier today). Open `/tools` → tap **Tenting** card → enter 40 / 20 → confirm diagonal = `44' 9"`. Toggle to Square → confirm Width field locks and mirrors Length → enter 30 → confirm diagonal = `42' 5"`.
 - **Smoke-test Phase 2.5C arrival on production** (deploys: driver `73b7509`, dashboard `03dd102`):
   - Sign in as driver; open a delivery stop on today's route while away from the customer site (anywhere outside the 150m bubble). Confirm browser prompts for location permission on first watch.

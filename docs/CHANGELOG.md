@@ -4,6 +4,47 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-05-14 night (v2) — Tools Hub: restore Weather + Equipment guides as live tiles
+
+**Commit:** `288d120` (driver-app, single commit).
+
+**Scope:** Follow-up correction to the v1 hub restructure (`f64d5bb`, earlier this evening). v1 hid Weather and Equipment Guides behind a muted footer pointer line ("Weather · Reference library also in Tools") — both surfaces had working routes (`/tools/weather`, `/reference/library`) and shouldn't have been demoted. v2 brings them back as first-class Live-badged tiles in the grid. Same pure-frontend constraints — only `ToolsScreen.tsx` and `TrainingScreen.tsx` modified.
+
+### What shipped
+
+- **Tools hub `/tools`:**
+  - Grid expanded from 4 → 6 tiles. New row 3: Weather (Live, `/tools/weather`, `ti-cloud-storm`-style icon, blue accent) + Equipment guides (Live, `/reference/library`, `ti-books`-style icon, purple accent).
+  - **New full-width Generators card** below the grid (Coming soon, `ti-engine`-style icon, orange accent).
+  - **Hairline divider** (`1px / rgba(255,255,255,0.07)`) between Generators and Party layouts.
+  - Party layouts moved below the divider, anchors the bottom of the page.
+  - Footer pointer text removed.
+- **Both hubs — polish:**
+  - "Coming soon" badge picked up a `0.5px` hairline border at `rgba(255,255,255,0.1)` for visual parity with the bordered Live pill.
+  - Toast: dwell time `3000ms` → `2000ms`; lost the gold border-left accent and the long copy "Coming soon — this feature is in development." → just "Coming soon". Style is now a small dark pill (`#1A1A1A`, white text, hairline border, `13px / 600`) per the v2 spec.
+  - Hub titles render `text-transform: uppercase` ("TOOLS HUB" / "TRAINING HUB"). Eyebrow + subtitle remain sentence case.
+- **Training hub `/training`:**
+  - Arcade tile **no longer carries a Live badge** — the gold-on-black treatment IS the affordance now. Title still gold, detail still muted gold, route still `/games`.
+
+### Decisions made
+
+- **Weather + Equipment Guides treatment must mirror their working-route status.** v1 architecturally classified them as "live but not surfaced in the hub" — that's wrong; they have routes that the driver can use today and the hub is the navigation surface to them. v2 makes the hub honest about what's working.
+- **Generators is a placeholder, but it's a placeholder with structural intent.** The full-width card + divider + Party layouts anchor establishes the "operations / planning" group as a visual zone below the daily-use tile grid. When Generators get content, this zone is where it lands; Party layouts will eventually live there too.
+- **Arcade badge removed because two Live badges (gold + green) compete visually.** Gold-on-black is unique to Arcade in the codebase — that uniqueness IS the live-state signal. Adding a green Live pill on top of the gold treatment muddied the hierarchy.
+- **Toast copy shortened from a sentence to two words.** "Coming soon — this feature is in development." was honest but verbose; at a dismiss time of 2s it's not readable anyway. The label on the tile already says "Coming soon"; the toast confirms the tap registered.
+- **Did NOT restore `/reference/tents` (Tent Drawings) to the hub.** That route is alive but the v2 spec doesn't list it; it's expected to land inside the future Tenting subcategory screen alongside Squaring + Certs. Logged.
+
+### Verification
+
+- `npx next build` — green end-to-end. `/tools` 3.18 kB / 157 kB First Load. `/training` 3.15 kB / 157 kB First Load. No type errors, no lint warnings.
+- Pushed to `origin/main` as commit `288d120`; Vercel auto-deploy triggered.
+
+### Out of scope this session
+
+- Same as v1 (subcategory screens, content authoring, `/games` route).
+- Restoring `/reference/tents` (Tent Drawings) — deliberate hold pending Tenting subcategory build.
+
+---
+
 ## 2026-05-14 night — Tools Hub + Training Hub: category-card restructure
 
 **Commits:** `f64d5bb` (driver-app, single commit).
