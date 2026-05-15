@@ -363,6 +363,47 @@ export type Database = {
         }
         Relationships: []
       }
+      driver_documents: {
+        Row: {
+          created_at: string
+          document_type: string
+          driver_id: string
+          expiry_date: string
+          extraction_method: string
+          id: string
+          storage_path: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          document_type: string
+          driver_id: string
+          expiry_date: string
+          extraction_method?: string
+          id?: string
+          storage_path: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          document_type?: string
+          driver_id?: string
+          expiry_date?: string
+          extraction_method?: string
+          id?: string
+          storage_path?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "driver_documents_driver_id_fkey"
+            columns: ["driver_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       flame_certificates: {
         Row: {
           created_at: string
@@ -754,6 +795,7 @@ export type Database = {
           created_by: string | null
           dispatched_at: string | null
           dispatched_by: string | null
+          estimated_return_at: string | null
           id: string
           label: string
           route_date: string
@@ -765,6 +807,8 @@ export type Database = {
           unload_completed_at: string | null
           unload_started_at: string | null
           updated_at: string
+          warehouse_arrived_at: string | null
+          warehouse_arrived_by: string | null
         }
         Insert: {
           break_blocks?: Json
@@ -772,6 +816,7 @@ export type Database = {
           created_by?: string | null
           dispatched_at?: string | null
           dispatched_by?: string | null
+          estimated_return_at?: string | null
           id?: string
           label: string
           route_date: string
@@ -783,6 +828,8 @@ export type Database = {
           unload_completed_at?: string | null
           unload_started_at?: string | null
           updated_at?: string
+          warehouse_arrived_at?: string | null
+          warehouse_arrived_by?: string | null
         }
         Update: {
           break_blocks?: Json
@@ -790,6 +837,7 @@ export type Database = {
           created_by?: string | null
           dispatched_at?: string | null
           dispatched_by?: string | null
+          estimated_return_at?: string | null
           id?: string
           label?: string
           route_date?: string
@@ -801,6 +849,8 @@ export type Database = {
           unload_completed_at?: string | null
           unload_started_at?: string | null
           updated_at?: string
+          warehouse_arrived_at?: string | null
+          warehouse_arrived_by?: string | null
         }
         Relationships: [
           {
@@ -815,6 +865,13 @@ export type Database = {
             columns: ["truck_id"]
             isOneToOne: false
             referencedRelation: "trucks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "routes_warehouse_arrived_by_fkey"
+            columns: ["warehouse_arrived_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -1439,6 +1496,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      is_scheduler_or_super_admin: { Args: never; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
     }
     Enums: {
