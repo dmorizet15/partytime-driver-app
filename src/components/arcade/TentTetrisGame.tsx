@@ -350,9 +350,13 @@ export default function TentTetrisGame() {
   // Touch — swipe + tap.
   const touchRef = useRef<{ x: number; y: number; t: number } | null>(null)
   const onTouchStart = useCallback((e: React.TouchEvent<HTMLCanvasElement>) => {
+    e.preventDefault()
     const t = e.touches[0]
     if (!t) return
     touchRef.current = { x: t.clientX, y: t.clientY, t: Date.now() }
+  }, [])
+  const onTouchCancel = useCallback(() => {
+    touchRef.current = null
   }, [])
   const onTouchEnd = useCallback((e: React.TouchEvent<HTMLCanvasElement>) => {
     const start = touchRef.current
@@ -407,14 +411,20 @@ export default function TentTetrisGame() {
   return (
     <div
       style={{
-        minHeight: '100vh',
+        minHeight: '100dvh',
         background: '#04040A',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        paddingBottom: 24,
+        paddingBottom: 'calc(24px + env(safe-area-inset-bottom))',
         color: '#fff',
         fontFamily: 'inherit',
+        overflowY: 'auto',
+        overflowX: 'hidden',
+        WebkitOverflowScrolling: 'touch',
+        WebkitUserSelect: 'none',
+        userSelect: 'none',
+        WebkitTouchCallout: 'none',
       }}
     >
       {/* Top bar */}
@@ -431,11 +441,17 @@ export default function TentTetrisGame() {
       >
         <button
           type="button"
+          tabIndex={-1}
           onClick={() => router.push('/training/arcade')}
+          onContextMenu={(e) => e.preventDefault()}
           style={{
             background: 'transparent', border: 0, cursor: 'pointer',
             color: 'rgba(255,255,255,0.7)', fontFamily: 'inherit',
             fontSize: 13, fontWeight: 700, letterSpacing: '0.04em', padding: 0,
+            WebkitUserSelect: 'none',
+            userSelect: 'none',
+            WebkitTouchCallout: 'none',
+            WebkitTapHighlightColor: 'transparent',
           }}
         >
           ← Arcade
@@ -463,7 +479,18 @@ export default function TentTetrisGame() {
           ref={canvasRef}
           onTouchStart={onTouchStart}
           onTouchEnd={onTouchEnd}
-          style={{ display: 'block', width: '100%', height: '100%', touchAction: 'none' }}
+          onTouchCancel={onTouchCancel}
+          onContextMenu={(e) => e.preventDefault()}
+          style={{
+            display: 'block',
+            width: '100%',
+            height: '100%',
+            touchAction: 'none',
+            WebkitUserSelect: 'none',
+            userSelect: 'none',
+            WebkitTouchCallout: 'none',
+            WebkitTapHighlightColor: 'transparent',
+          }}
         />
 
         {phase === 'start' && (
@@ -495,7 +522,12 @@ export default function TentTetrisGame() {
           width: W,
           maxWidth: '100%',
           padding: '0 16px',
+          paddingBottom: 'calc(8px + env(safe-area-inset-bottom))',
           boxSizing: 'border-box',
+          WebkitUserSelect: 'none',
+          userSelect: 'none',
+          WebkitTouchCallout: 'none',
+          touchAction: 'none',
         }}
       >
         <ControlBtn label="←"  onTap={() => onTapAction('left')} />
@@ -512,8 +544,12 @@ function ControlBtn({ label, onTap, gold }: { label: string; onTap: () => void; 
   return (
     <button
       type="button"
+      tabIndex={-1}
       onClick={onTap}
       onTouchStart={(e) => { e.preventDefault(); onTap() }}
+      onTouchEnd={(e) => { e.preventDefault() }}
+      onTouchCancel={(e) => { e.preventDefault() }}
+      onContextMenu={(e) => e.preventDefault()}
       style={{
         padding: '16px 0',
         background: gold ? '#FFB800' : 'rgba(255,255,255,0.08)',
@@ -525,8 +561,11 @@ function ControlBtn({ label, onTap, gold }: { label: string; onTap: () => void; 
         letterSpacing: gold ? '0.06em' : 0,
         cursor: 'pointer',
         fontFamily: 'inherit',
+        WebkitUserSelect: 'none',
         userSelect: 'none',
+        WebkitTouchCallout: 'none',
         WebkitTapHighlightColor: 'transparent',
+        touchAction: 'none',
       }}
     >
       {label}

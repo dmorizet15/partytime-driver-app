@@ -6,7 +6,7 @@ import { useAuth } from '@/hooks/useAuth'
 import TentTetrisGame from '@/components/arcade/TentTetrisGame'
 
 const pageStyle = {
-  minHeight: '100vh',
+  minHeight: '100dvh',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',

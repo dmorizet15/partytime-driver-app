@@ -6,7 +6,7 @@ import { useAuth } from '@/hooks/useAuth'
 import PartyKongGame from '@/components/arcade/PartyKongGame'
 
 const pageStyle = {
-  minHeight: '100vh',
+  minHeight: '100dvh',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',

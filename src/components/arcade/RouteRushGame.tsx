@@ -224,14 +224,20 @@ export default function RouteRushGame() {
   return (
     <div
       style={{
-        minHeight: '100vh',
+        minHeight: '100dvh',
         background: '#05050C',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        paddingBottom: 24,
+        paddingBottom: 'calc(24px + env(safe-area-inset-bottom))',
         color: '#fff',
         fontFamily: 'inherit',
+        overflowY: 'auto',
+        overflowX: 'hidden',
+        WebkitOverflowScrolling: 'touch',
+        WebkitUserSelect: 'none',
+        userSelect: 'none',
+        WebkitTouchCallout: 'none',
       }}
     >
       {/* Top bar */}
@@ -248,7 +254,9 @@ export default function RouteRushGame() {
       >
         <button
           type="button"
+          tabIndex={-1}
           onClick={() => router.push('/training/arcade')}
+          onContextMenu={(e) => e.preventDefault()}
           style={{
             background: 'transparent',
             border: 0,
@@ -259,6 +267,10 @@ export default function RouteRushGame() {
             fontWeight: 700,
             letterSpacing: '0.04em',
             padding: 0,
+            WebkitUserSelect: 'none',
+            userSelect: 'none',
+            WebkitTouchCallout: 'none',
+            WebkitTapHighlightColor: 'transparent',
           }}
         >
           ← Arcade
@@ -292,7 +304,17 @@ export default function RouteRushGame() {
           ref={canvasRef}
           onClick={handleCanvasTap}
           onTouchStart={(e) => { e.preventDefault(); handleCanvasTap(e) }}
-          style={{ display: 'block', width: '100%', height: '100%', touchAction: 'none' }}
+          onContextMenu={(e) => e.preventDefault()}
+          style={{
+            display: 'block',
+            width: '100%',
+            height: '100%',
+            touchAction: 'none',
+            WebkitUserSelect: 'none',
+            userSelect: 'none',
+            WebkitTouchCallout: 'none',
+            WebkitTapHighlightColor: 'transparent',
+          }}
         />
 
         {phase === 'start' && (
@@ -323,7 +345,12 @@ export default function RouteRushGame() {
           width: W,
           maxWidth: '100%',
           padding: '0 16px',
+          paddingBottom: 'calc(8px + env(safe-area-inset-bottom))',
           boxSizing: 'border-box',
+          WebkitUserSelect: 'none',
+          userSelect: 'none',
+          WebkitTouchCallout: 'none',
+          touchAction: 'none',
         }}
       >
         <ControlBtn label="←" disabled={phase !== 'playing'} onTap={() => moveLane(-1)} />
@@ -338,8 +365,12 @@ function ControlBtn({ label, onTap, disabled }: { label: string; onTap: () => vo
   return (
     <button
       type="button"
+      tabIndex={-1}
       onClick={onTap}
       onTouchStart={(e) => { e.preventDefault(); onTap() }}
+      onTouchEnd={(e) => { e.preventDefault() }}
+      onTouchCancel={(e) => { e.preventDefault() }}
+      onContextMenu={(e) => e.preventDefault()}
       disabled={disabled}
       style={{
         flex: 1,
@@ -352,8 +383,11 @@ function ControlBtn({ label, onTap, disabled }: { label: string; onTap: () => vo
         fontWeight: 900,
         cursor: disabled ? 'not-allowed' : 'pointer',
         fontFamily: 'inherit',
+        WebkitUserSelect: 'none',
         userSelect: 'none',
+        WebkitTouchCallout: 'none',
         WebkitTapHighlightColor: 'transparent',
+        touchAction: 'none',
       }}
     >
       {label}
