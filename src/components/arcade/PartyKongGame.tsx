@@ -1254,7 +1254,7 @@ export default function PartyKongGame() {
           <span />
           <DpadBtn label="◀" disabled={phase !== 'playing'} onPress={() => press('left', true)} onRelease={() => press('left', false)} />
           <span />
-          <DpadBtn label="▶" disabled={phase !== 'playing'} onPress={() => press('right', true)} onRelease={() => press('right', false)} />
+          <DpadBtn label="▶" disabled={phase !== 'playing'} onPress={() => press('right', true)} onRelease={() => press('right', false)} hitExpand={{ top: 12, right: 16, bottom: 12, left: 4 }} />
           <span />
           <DpadBtn label="▼" disabled={phase !== 'playing'} onPress={() => press('down', true)}  onRelease={() => press('down', false)}  />
           <span />
@@ -1317,13 +1317,14 @@ function SpeakerIcon({ muted }: { muted: boolean }) {
   )
 }
 
-function DpadBtn({ label, onPress, onRelease, disabled }: {
+function DpadBtn({ label, onPress, onRelease, disabled, hitExpand }: {
   label: string
   onPress: () => void
   onRelease: () => void
   disabled?: boolean
+  hitExpand?: { top?: number; right?: number; bottom?: number; left?: number }
 }) {
-  return (
+  const btn = (
     <button
       type="button"
       tabIndex={-1}
@@ -1350,10 +1351,39 @@ function DpadBtn({ label, onPress, onRelease, disabled }: {
         WebkitTapHighlightColor: 'transparent',
         touchAction: 'none',
         padding: 0,
+        position: 'relative',
+        width: '100%',
+        height: '100%',
       }}
     >
       {label}
     </button>
+  )
+
+  if (!hitExpand) return btn
+
+  const { top = 0, right = 0, bottom = 0, left = 0 } = hitExpand
+  return (
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      {/* Transparent overlay behind the button that extends the touch target */}
+      <div
+        style={{
+          position: 'absolute',
+          top: -top,
+          right: -right,
+          bottom: -bottom,
+          left: -left,
+        }}
+        onMouseDown={(e) => { e.preventDefault(); if (!disabled) onPress() }}
+        onMouseUp={(e) => { e.preventDefault(); if (!disabled) onRelease() }}
+        onMouseLeave={() => { if (!disabled) onRelease() }}
+        onTouchStart={(e) => { e.preventDefault(); if (!disabled) onPress() }}
+        onTouchEnd={(e) => { e.preventDefault(); if (!disabled) onRelease() }}
+        onTouchCancel={(e) => { e.preventDefault(); if (!disabled) onRelease() }}
+        onContextMenu={(e) => e.preventDefault()}
+      />
+      {btn}
+    </div>
   )
 }
 
