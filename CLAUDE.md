@@ -396,6 +396,48 @@ Two fully playable arcade games + shared leaderboard infrastructure under a new 
   - Daily / weekly leaderboard resets, prize integrations, push-on-new-best
   - Personal high-score history per game beyond top-1
 
+### PartyTime Arcade — Party Kong v3 COMPLETE — May 16, 2026
+
+All four stages now have genuinely different layouts, hazards, and win conditions. Sessions A → D shipped over a single day. Reskin-only model is gone — every level is its own scene.
+
+**Sessions shipped:**
+- **A** — Foundation refactor: `LevelConfig` architecture, `Hazard` discriminated union, per-level geometry data. L1 byte-identical. (See "Session A" subsection below.)
+- **B** — L2 Loading Dock: 4 flat platforms + conveyor segments that push the player ±vx; sliding pallets replace rolling tables.
+- **C** — L3 Outdoor Tent Setup: 7 staggered platforms, 3 vertical tent-pole elevators bridge the gaps, falling stakes from ceiling, periodic alternating-direction wind gusts. Kong is decorative on this stage; stakes/wind run on independent timers.
+- **D** — L4 Grand Ballroom: 4 wide flat platforms, 3 zigzagging ladders, **chain-pull win condition** — pull all 4 chandelier chains by holding ↑ for ~1s on each. Glass shards rain from ceiling during active pulls. Kong throws faster (`throwDelayBase=150`). Win sequence runs `'winning'` phase: Kong fades + drifts right while 4 chandeliers crash on his last position; transitions to `'won'` after 120 frames with leaderboard + Play Again.
+
+**L4 architecture — read this before touching ballroom code:**
+
+- **`s.chains: ChainState[]` is parallel to `cfg.chains: ChainDef[]`** by array index. Each entry tracks `{ progress: 0..60, pulled: boolean }`. `pulled` is terminal AND persistent across player deaths within an L4 attempt — `playerHit` resets in-progress (unpulled) chains' progress to 0 but does NOT touch `pulled`. Only `startGame` (full restart) reseeds `s.chains` via `makeFreshState`.
+
+- **`winCondition` signature was widened in Session D** from `(pl: PlayerState) => boolean` to `(s: GameState) => boolean` so L4 can read `s.chains.every(c => c.pulled)`. L1–L3 implementations updated to `(s) => ...s.player...`. The `PlayerState` type alias is retained for API symmetry but isn't used in any current winCondition.
+
+- **Chain-pull mechanic in `step()`:** for each chain, if `s.player.onPlatform === def.platformIdx && !onLadder && onElevator == null && |x − chain.x| < 20 && input.up` → `progress += u`, else → `progress = 0` (no partial credit). Reaching `CHAIN_PULL_FRAMES` (60) marks `pulled = true` and plays `sfxChainPull` (square wave 300→150Hz creak).
+
+- **Glass shards spawn while `s.chains.some(c => c.progress > 0 && !c.pulled)` AND `!allPulled`.** Random x at top of canvas, falls at `SHARD_VY = 4 px/frame`. Hit detection `|dx| < 10 && |dy| < 20`. Spawn cadence 30–60 frames. Stops spawning when player releases ↑ (any chain at progress 0) OR when all pulled.
+
+- **Win sequence (`'winning'` phase) lives in the frame loop, not `step()`.** When `cfg.chains && s.chains.every(c => c.pulled)` is detected after `step()`, phase flips `playing → winning`. While in `winning`, `step()` does NOT run — world freezes. Frame loop ticks `s.winSeq.t`; one chandelier crashes every `CHANDELIER_INTERVAL = 30` frames (4 total over 120 frames). Kong fade is `globalAlpha = max(0, 1 − t/60)` with `translate(t * 2, 0)` — handled in `drawScene` with a save/restore wrapper around `drawTentKong`. After `WIN_FREEZE_FRAMES = 120` → phase `winning → won`, score submits, leaderboard appears.
+
+- **Win-detection `useEffect` skips L4** (`if (cfg.chains) return`). L1–L3 still use the 90ms positional polling; L4 win is purely the frame-loop chain-pull check. This avoids the race where the polling interval transitions to `'won'` before the frame loop can transition to `'winning'`.
+
+- **Drawing order in L4:** background → platforms → ladders → (no goal — chains ARE the goal) → Kong (alpha-wrapped during winning) → hazards → wind → chains → player → win-sequence chandeliers → popups → bonus-life flash. Chain handles draw BEHIND the player so the player walks in front. Progress bars draw in a second pass on TOP of the player so they remain readable. Each progress bar is `CHAIN_BAR_HEIGHT = 240px` tall × `CHAIN_BAR_WIDTH = 8px` wide, anchored at the chain's handle Y (bar grows upward).
+
+- **L4 hazards beyond shards:** Kong still throws rolling tables (no level-3-style decoration override). On flat L4 platforms tables retain their initial `vx` until they fall off the right edge, then drop straight down and stop (since `slopeDir(flat) = 0` doesn't reseed `vx` on landing). Net: tables become stationary obstacles clustered at the right edge of each platform. Chain x-positions (195/130/260/195) avoid that column, so the geometry is navigable.
+
+- **Phase enum widened** to include `'winning'`. Input handlers (keyboard, D-pad, jump button, canvas tap) all gate on `phaseRef.current === 'playing'`, so `'winning'` naturally freezes input. The existing `'won'` overlay (score + leaderboard + Play Again) renders unchanged after the win sequence completes.
+
+**Sound additions in Session D:**
+- `sfxChainPull` — square wave 300→150Hz, 200ms, vol 0.3 (creaking chain mechanism)
+- `sfxChandelierCrash` — square wave 110→55Hz, 90ms, vol 0.4 (low thump per chandelier landing)
+
+**Out of scope (Phase 2 candidates for v4):**
+- Animated chain-link sway during pull (today: bar fills, handle pulses; chain itself is static)
+- Particle debris from chandelier crashes
+- Distinct "YOU WIN!" cinematic frame — currently the `'won'` GameOverOverlay's "You Won" eyebrow does double duty
+- Per-stage chiptune music
+- Persisted level unlocks across sessions (Supabase row per user)
+- Stage-select on the start screen
+
 ### PartyTime Arcade — Party Kong v3 Session A (LevelConfig refactor) — May 16, 2026
 
 **Foundation-only refactor.** Zero visible gameplay change — L1 plays byte-identical to the v2 build. Sets up the architecture for Sessions B/C/D where each level gets its own platform/ladder layout, hazard set, and win condition.

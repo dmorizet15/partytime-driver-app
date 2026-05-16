@@ -46,4 +46,6 @@ Four true stages mapped to classic Donkey Kong arcade, themed for PartyTime:
 - [x] Session A — Foundation refactor (shipped 2026-05-16)
 - [x] Session B — L2 conveyor stage (shipped 2026-05-16)
 - [x] Session C — L3 elevator stage (shipped 2026-05-16)
-- [ ] Session D — L4 chain-pull finale
+- [x] Session D — L4 chain-pull finale (shipped 2026-05-16)
+
+**Party Kong v3 — DONE.** All four stages live. Each has its own platform/ladder/hazard layout and win condition.

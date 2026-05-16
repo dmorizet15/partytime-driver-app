@@ -80,6 +80,8 @@ const sfxClimb        = () => tone(320, 320, 40, 'triangle', 0.08)
 const sfxTableBounce  = () => tone(100, 60, 90, 'square', 0.15)
 const sfxTableFall    = () => tone(140, 70, 150, 'triangle', 0.1)
 const sfxKongThrow    = () => tone(80, 40, 100, 'square', 0.2)
+const sfxChainPull    = () => tone(300, 150, 200, 'square', 0.3)
+const sfxChandelierCrash = () => tone(110, 55, 90, 'square', 0.4)
 const sfxHit          = () => seq([
   [400, 200, 80, 'square', 0.35],
   [200, 100, 80, 'square', 0.35],
@@ -139,6 +141,21 @@ const PALLET_HALF_H = 8
 const PALLET_SLIDE_VX = 2.0
 const PALLET_HIT_DX = 22
 const PALLET_HIT_DY = 20
+
+// ─── L4 chain-pull + glass shard + win sequence constants ────────────────────
+const CHAIN_PULL_RADIUS    = 20
+const CHAIN_PULL_FRAMES    = 60     // ~1 second at 60fps
+const CHAIN_BAR_HEIGHT     = 240    // tall enough to read from anywhere on canvas
+const CHAIN_BAR_WIDTH      = 8
+const SHARD_HIT_DX         = 10
+const SHARD_HIT_DY         = 20
+const SHARD_VY             = 4
+const SHARD_SPAWN_MIN      = 30     // frames between glass-shard spawns
+const SHARD_SPAWN_MAX      = 60
+const WIN_FREEZE_FRAMES    = 120
+const CHANDELIER_INTERVAL  = 30     // one chandelier dropped every 30 frames
+const KONG_FADE_FRAMES     = 60
+const KONG_DRIFT_VX        = 2      // px / frame during win fade-out
 
 // ─── Color palette ───────────────────────────────────────────────────────────
 const C = {
@@ -224,6 +241,29 @@ interface WindState {
   framesUntilNext: number
   dir:             -1 | 1
   vx:              number
+}
+
+// ─── L4 chain-pull mechanic ──────────────────────────────────────────────────
+// Static geometry — what LevelConfig declares.
+interface ChainDef {
+  x:           number
+  platformIdx: number
+}
+
+// Per-game runtime state — one entry per chain in cfg.chains (array index
+// matches). pulled is terminal AND persistent across player deaths within an
+// L4 attempt; only resets when entering L4 fresh (level transition / restart).
+interface ChainState {
+  progress: number    // 0..CHAIN_PULL_FRAMES
+  pulled:   boolean
+}
+
+// Win-sequence runtime state. t === 0 means inactive; t > 0 means the
+// chain-pull win sequence has started and the kong-fade / chandelier-drop /
+// hand-off-to-'won' animation is running.
+interface WinSequenceState {
+  t:                  number   // frames since the sequence started
+  chandeliersDropped: number   // count for crash-sfx idempotency
 }
 
 // ─── Hazards (discriminated union) ───────────────────────────────────────────
@@ -320,7 +360,9 @@ interface LevelConfig {
   ladders:         Ladder[]
   playerSpawn:     { x: number; y: number }
   kongSpawn:       { bx: number; by: number }
-  winCondition:    (pl: PlayerState) => boolean
+  // Receives the full GameState so L4's chain-pull win can read s.chains.
+  // L1–L3 use only s.player but the wider parameter keeps the interface uniform.
+  winCondition:    (s: GameState) => boolean
   throwDelayBase:  number
   throwDelayFloor: number
   background:      BackgroundKind
@@ -333,6 +375,11 @@ interface LevelConfig {
   // L3 — independent timer; pushes the player horizontally for durationFrames
   // every intervalFrames. Direction alternates each gust.
   windPattern?:    { intervalFrames: number; durationFrames: number; vx: number }
+  // L4 — chain-pull win condition. Each chain has a fixed x and the platform
+  // index it terminates at. Player stands on that platform within
+  // CHAIN_PULL_RADIUS of the chain x and holds ↑ for CHAIN_PULL_FRAMES to
+  // pull. All four pulled triggers the win sequence.
+  chains?:         ChainDef[]
 }
 
 // L1 geometry — byte-identical to the pre-v3 PLATFORMS/LADDERS/WIN_X constants.
@@ -352,8 +399,8 @@ const L1_LADDERS: Ladder[] = [
 ]
 const L1_PLAYER_SPAWN = { x: 28, y: 560 }
 const L1_KONG_SPAWN   = { bx: 70, by: 168 }
-const L1_WIN_CONDITION: (pl: PlayerState) => boolean =
-  (pl) => pl.onPlatform === 4 && pl.x > 265
+const L1_WIN_CONDITION: (s: GameState) => boolean =
+  (s) => s.player.onPlatform === 4 && s.player.x > 265
 
 const DOLLY_SEED: Hazard[] = [
   { type: 'dolly', x: 200, y: 0, vx:  DOLLY_SPEED, onPlatform: 1 },
@@ -375,8 +422,8 @@ const L2_LADDERS: Ladder[] = [
 ]
 const L2_PLAYER_SPAWN = { x: 30, y: 560 }
 const L2_KONG_SPAWN   = { bx: 195, by: 170 }
-const L2_WIN_CONDITION: (pl: PlayerState) => boolean =
-  (pl) => pl.onPlatform === 3 && pl.x > 320
+const L2_WIN_CONDITION: (s: GameState) => boolean =
+  (s) => s.player.onPlatform === 3 && s.player.x > 320
 const L2_CONVEYORS: ConveyorSegment[] = [
   { platformIdx: 1, x1: 80,  x2: 220, dir: -1, speed: 1.2 },
   { platformIdx: 2, x1: 150, x2: 310, dir:  1, speed: 1.2 },
@@ -404,8 +451,8 @@ const L3_PLATFORMS: Platform[] = [
 const L3_PLAYER_SPAWN = { x: 30, y: 560 }
 const L3_KONG_SPAWN   = { bx: 340, by: 200 }   // P5 right side
 // Win: feet on P6's x-range, y within 5px of P6's surface.
-const L3_WIN_CONDITION: (pl: PlayerState) => boolean =
-  (pl) => pl.x >= 130 && pl.x <= 260 && Math.abs(pl.y - 100) <= 5
+const L3_WIN_CONDITION: (s: GameState) => boolean =
+  (s) => s.player.x >= 130 && s.player.x <= 260 && Math.abs(s.player.y - 100) <= 5
 const L3_ELEVATORS: ElevatorDef[] = [
   { x: 60,  yTop: 450, yBottom: 560, speed: 1.0, initialY: 560, initialDir: -1 },
   { x: 190, yTop: 320, yBottom: 450, speed: 1.2, initialY: 450, initialDir: -1 },
@@ -413,6 +460,32 @@ const L3_ELEVATORS: ElevatorDef[] = [
 ]
 const L3_STAKE_PATTERN = { intervalMinFrames: 180, intervalMaxFrames: 240, vy: 3.5 }
 const L3_WIND_PATTERN  = { intervalFrames: 480, durationFrames: 90, vx: 0.9 }
+
+// ─── L4 — Grand Ballroom (chain-pull finale) ─────────────────────────────────
+// 4 flat platforms, 3 ladders zigzagging up. No win-by-position; instead the
+// player pulls 4 chandelier chains (one per platform) by holding ↑ on each
+// for ~1 second. All 4 pulled triggers the win sequence.
+const L4_PLATFORMS: Platform[] = [
+  { x1: 0,  y1: 560, x2: 390, y2: 560 },  // P0 ground
+  { x1: 20, y1: 420, x2: 370, y2: 420 },  // P1
+  { x1: 20, y1: 280, x2: 370, y2: 280 },  // P2
+  { x1: 20, y1: 140, x2: 370, y2: 140 },  // P3 (Kong perch)
+]
+const L4_LADDERS: Ladder[] = [
+  { cx: 110, bpi: 0, tpi: 1 },
+  { cx: 280, bpi: 1, tpi: 2 },
+  { cx: 110, bpi: 2, tpi: 3 },
+]
+const L4_PLAYER_SPAWN = { x: 30, y: 560 }
+const L4_KONG_SPAWN   = { bx: 195, by: 140 }   // center of P3
+const L4_CHAINS: ChainDef[] = [
+  { x: 195, platformIdx: 0 },
+  { x: 130, platformIdx: 1 },
+  { x: 260, platformIdx: 2 },
+  { x: 195, platformIdx: 3 },
+]
+const L4_WIN_CONDITION: (s: GameState) => boolean =
+  (s) => s.chains.length > 0 && s.chains.every((c) => c.pulled)
 
 const LEVEL_CONFIGS: LevelConfig[] = [
   {
@@ -461,15 +534,16 @@ const LEVEL_CONFIGS: LevelConfig[] = [
   {
     num:             4,
     name:            'Grand Ballroom',
-    platforms:       L1_PLATFORMS,
-    ladders:         L1_LADDERS,
-    playerSpawn:     L1_PLAYER_SPAWN,
-    kongSpawn:       L1_KONG_SPAWN,
-    winCondition:    L1_WIN_CONDITION,
-    throwDelayBase:  175,
-    throwDelayFloor: 85,
+    platforms:       L4_PLATFORMS,
+    ladders:         L4_LADDERS,
+    playerSpawn:     L4_PLAYER_SPAWN,
+    kongSpawn:       L4_KONG_SPAWN,
+    winCondition:    L4_WIN_CONDITION,
+    throwDelayBase:  150,
+    throwDelayFloor: 70,
     background:      'grand_ballroom',
-    initialHazards:  DOLLY_SEED,
+    initialHazards:  [],
+    chains:          L4_CHAINS,
   },
 ]
 function levelCfg(l: Level): LevelConfig { return LEVEL_CONFIGS[l - 1] }
@@ -500,7 +574,10 @@ type PlayerState = Player
 
 type Popup = { x: number; y: number; t: number; text: string; color?: string }
 
-type Phase = 'start' | 'playing' | 'level_complete' | 'gameover' | 'won'
+// 'winning' is the L4 chain-pull win-sequence phase: input is frozen, the
+// chandeliers fall, Kong fades + drifts, then we transition to 'won' which
+// shows the score + leaderboard + Play Again overlay.
+type Phase = 'start' | 'playing' | 'level_complete' | 'winning' | 'gameover' | 'won'
 
 type BonusLifeAwarded = { [k: number]: boolean }
 
@@ -512,6 +589,16 @@ type GameState = {
   // Countdown until the next falling stake. Frame-based; only ticks when
   // the active level config declares a stakePattern.
   stakeTimer:    number
+  // L4 chain-pull state. Length matches cfg.chains.length; empty array on
+  // levels without chains. Persistent across player deaths within a single
+  // L4 attempt — `pulled` is terminal until full restart.
+  chains:        ChainState[]
+  // Countdown until the next glass shard spawns. Only ticks while at least
+  // one chain has progress > 0 and not all chains are pulled.
+  shardSpawnTimer: number
+  // Win-sequence runtime state. t === 0 means inactive; > 0 means the
+  // chain-pull win sequence is running (Kong fade + chandelier crashes).
+  winSeq:        WinSequenceState
   score:         number
   lives:         number
   level:         Level
@@ -588,6 +675,9 @@ function makeFreshState(
     stakeTimer: cfg.stakePattern
       ? cfg.stakePattern.intervalMinFrames + Math.random() * (cfg.stakePattern.intervalMaxFrames - cfg.stakePattern.intervalMinFrames)
       : Infinity,
+    chains: (cfg.chains ?? []).map(() => ({ progress: 0, pulled: false })),
+    shardSpawnTimer: 0,
+    winSeq: { t: 0, chandeliersDropped: 0 },
     score,
     lives,
     level,
@@ -740,6 +830,35 @@ export default function PartyKongGame() {
           if (finalS > best) { setIsNewBest(true); setBest(finalS) }
           if (userId && finalS > 0) submitScore('party_kong', finalS).catch(() => {})
         }
+        // L4: chain-pull win sequence triggered when all chains pulled.
+        // Frame-loop check beats the 90ms win-detection useEffect to the
+        // transition, so we cleanly enter 'winning' (not 'won').
+        else {
+          const lcfg = levelCfg(s.level)
+          if (lcfg.chains && lcfg.chains.length > 0 && s.chains.every((c) => c.pulled)) {
+            phaseRef.current = 'winning'
+            setPhase('winning')
+            sfxLevelComplete()
+          }
+        }
+      } else if (phaseRef.current === 'winning') {
+        // Tick the win-sequence timer. Drives Kong fade + chandelier-drop
+        // animation; transition to 'won' (which shows the score / leaderboard
+        // / Play Again overlay) when WIN_FREEZE_FRAMES elapse.
+        s.winSeq.t += u
+        const dueChandeliers = Math.min(4, Math.floor(s.winSeq.t / CHANDELIER_INTERVAL))
+        while (s.winSeq.chandeliersDropped < dueChandeliers) {
+          s.winSeq.chandeliersDropped += 1
+          sfxChandelierCrash()
+        }
+        if (s.winSeq.t >= WIN_FREEZE_FRAMES) {
+          phaseRef.current = 'won'
+          setPhase('won')
+          const finalS = Math.floor(s.score)
+          setFinalScore(finalS)
+          if (finalS > best) { setIsNewBest(true); setBest(finalS) }
+          if (userId && finalS > 0) submitScore('party_kong', finalS).catch(() => {})
+        }
       }
 
       ctx.clearRect(0, 0, W, H)
@@ -760,11 +879,15 @@ export default function PartyKongGame() {
   const nearLadderRef = useRef<boolean>(false)
 
   // Win detection: poll once per RAF tick via interval (cheap, decoupled).
+  // Stages with chain-pull win conditions (L4) are handled in the frame loop
+  // so the 'winning' transition can't be skipped by this 90ms interval.
   useEffect(() => {
     const id = window.setInterval(() => {
       const s = stateRef.current
       if (phaseRef.current !== 'playing') return
-      if (levelCfg(s.level).winCondition(s.player)) {
+      const cfg = levelCfg(s.level)
+      if (cfg.chains) return
+      if (cfg.winCondition(s)) {
         const isLast = s.level === 4
         sfxLevelComplete()
         if (isLast) {
@@ -1883,6 +2006,57 @@ function step(s: GameState, u: number) {
     }
   }
 
+  // ── Chain pulls (L4) ─────────────────────────────────────────────────────
+  // For each chain: if the player is on the right platform within range and
+  // holding ↑, advance progress; otherwise reset to 0 (no partial credit).
+  // Reaching CHAIN_PULL_FRAMES marks the chain pulled — terminal, persists
+  // across deaths until full restart.
+  if (cfg.chains && cfg.chains.length > 0) {
+    for (let i = 0; i < cfg.chains.length; i++) {
+      const def = cfg.chains[i]
+      const cs  = s.chains[i]
+      if (cs.pulled) continue
+      const onCorrectPlatform =
+        p.onPlatform === def.platformIdx &&
+        !p.onLadder &&
+        p.onElevator == null
+      const inRange = Math.abs(p.x - def.x) < CHAIN_PULL_RADIUS
+      if (onCorrectPlatform && inRange && s.input.up) {
+        cs.progress += u
+        if (cs.progress >= CHAIN_PULL_FRAMES) {
+          cs.progress = CHAIN_PULL_FRAMES
+          cs.pulled = true
+          sfxChainPull()
+        }
+      } else if (cs.progress > 0) {
+        // Released early, walked out of range, or stepped off the platform —
+        // wipe progress completely.
+        cs.progress = 0
+      }
+    }
+
+    // Glass shards spawn while a pull is in progress (any chain progress > 0
+    // and not all pulled). Stops when all chains are pulled OR when the
+    // player isn't holding the chain. Falls straight down at SHARD_VY.
+    const anyPulling = s.chains.some((c) => c.progress > 0 && !c.pulled)
+    const allPulled  = s.chains.every((c) => c.pulled)
+    if (anyPulling && !allPulled) {
+      s.shardSpawnTimer -= u
+      if (s.shardSpawnTimer <= 0) {
+        s.hazards.push({
+          type: 'glass_shard',
+          x:    30 + Math.random() * 330,
+          y:    -20,
+          vx:   0,
+          vy:   SHARD_VY,
+        })
+        s.shardSpawnTimer = SHARD_SPAWN_MIN + Math.random() * (SHARD_SPAWN_MAX - SHARD_SPAWN_MIN)
+      }
+    } else {
+      s.shardSpawnTimer = 0
+    }
+  }
+
   // ── Hit detection (player vs hazards) ────────────────────────────────────
   if (p.invincible === 0) {
     for (const h of s.hazards) {
@@ -1923,18 +2097,16 @@ function step(s: GameState, u: number) {
     s.kongArm = 0
   }
 
-  // Update each hazard by type. Future hazard types (wind_gust, glass_shard)
-  // get their update branches added in Session D.
+  // Update each hazard by type. wind_gust runs on GameState.wind via the
+  // windPattern block above, not as a list entry, so it's a no-op here.
   for (const h of s.hazards) {
     switch (h.type) {
       case 'rolling_table':   updateRollingTable(h, u, s, platforms);   break
       case 'dolly':           updateDolly(h, u, platforms);              break
       case 'conveyor_pallet': updateConveyorPallet(h, u, s, platforms); break
       case 'falling_stake':   h.y += h.vy * u;                           break
+      case 'glass_shard':     h.y += h.vy * u;                           break
       case 'wind_gust':
-      case 'glass_shard':
-        // Stub — wind is tracked on GameState (see windPattern above);
-        // glass_shard ships in Session D.
         break
     }
   }
@@ -1944,7 +2116,7 @@ function step(s: GameState, u: number) {
     if (h.type === 'rolling_table' || h.type === 'conveyor_pallet') {
       return h.y < H + 80 && h.x > -40 && h.x < W + 40
     }
-    if (h.type === 'falling_stake') {
+    if (h.type === 'falling_stake' || h.type === 'glass_shard') {
       return h.y < H + 80
     }
     return true
@@ -1992,14 +2164,22 @@ function playerHit(s: GameState) {
     s.player.noMountCooldown = 0
     s.player.facing = 1
     s.player.walking = false
-    // Clear in-flight projectiles (tables, pallets, falling stakes); keep
-    // stationary stage furniture (dollies, future per-level fixtures) so the
-    // stage stays itself.
+    // Clear in-flight projectiles (tables, pallets, falling stakes, glass
+    // shards); keep stationary stage furniture (dollies, future per-level
+    // fixtures) so the stage stays itself. s.chains is intentionally NOT
+    // touched — pulled chains persist through deaths within an L4 attempt.
     s.hazards = s.hazards.filter((h) =>
       h.type !== 'rolling_table' &&
       h.type !== 'conveyor_pallet' &&
-      h.type !== 'falling_stake'
+      h.type !== 'falling_stake' &&
+      h.type !== 'glass_shard'
     )
+    // In-progress (unpulled) chains reset on death — fair: the player can't
+    // hold ↑ through respawn anyway. Pulled chains stay pulled.
+    for (const cs of s.chains) {
+      if (!cs.pulled) cs.progress = 0
+    }
+    s.shardSpawnTimer = 0
     s.throwTimer = 0
     s.kongThrowFlash = 9999
     s.walkSoundTimer = 0
@@ -2020,8 +2200,7 @@ function hazardHitsPlayer(h: Hazard, p: Player): boolean {
     case 'falling_stake':
       return Math.abs(p.x - h.x) < 12 && Math.abs(p.y - h.y) < 30
     case 'glass_shard':
-      // Implemented in Session D.
-      return false
+      return Math.abs(p.x - h.x) < SHARD_HIT_DX && Math.abs(p.y - h.y) < SHARD_HIT_DY
     case 'wind_gust':
       // Not a hit hazard; affects player velocity instead.
       return false
@@ -2222,11 +2401,29 @@ function drawScene(
   drawConveyors(ctx, s, cfg)
   drawLadders(ctx, cfg.platforms, cfg.ladders)
   drawElevators(ctx, s)
-  drawGoal(ctx, s, cfg.platforms, family)
-  drawTentKong(ctx, s, cfg, family)
+  // L4: goal is the chains, not a positional contract — skip the contract
+  // drawing on stages with chain-pull win conditions.
+  if (!cfg.chains) drawGoal(ctx, s, cfg.platforms, family)
+  // Tent Kong fades + drifts right during the win sequence (L4 only path
+  // that ever ticks winSeq.t > 0 today). Wrap in save/restore so the alpha
+  // and translate can't leak into later draws.
+  if (s.winSeq.t > 0) {
+    const alpha = Math.max(0, 1 - s.winSeq.t / KONG_FADE_FRAMES)
+    const drift = s.winSeq.t * KONG_DRIFT_VX
+    ctx.save()
+    ctx.globalAlpha = alpha
+    ctx.translate(drift, 0)
+    drawTentKong(ctx, s, cfg, family)
+    ctx.restore()
+  } else {
+    drawTentKong(ctx, s, cfg, family)
+  }
   drawHazards(ctx, s)
   drawWind(ctx, s)
+  if (cfg.chains) drawChains(ctx, s, cfg)
   drawPlayer(ctx, s, family)
+  // Win-sequence overlay (chandeliers crashing onto Kong's last-known spot).
+  if (s.winSeq.t > 0) drawWinSequence(ctx, s, cfg)
   drawPopups(ctx, s, family)
   drawBonusLifeFlash(ctx, s, family)
 }
@@ -3340,6 +3537,39 @@ function drawHazards(ctx: CanvasRenderingContext2D, s: GameState) {
   for (const h of s.hazards) if (h.type === 'rolling_table')   drawRollingTable(ctx, h)
   for (const h of s.hazards) if (h.type === 'conveyor_pallet') drawConveyorPallet(ctx, h)
   for (const h of s.hazards) if (h.type === 'falling_stake')   drawFallingStake(ctx, h)
+  for (const h of s.hazards) if (h.type === 'glass_shard')     drawGlassShard(ctx, h)
+}
+
+function drawGlassShard(ctx: CanvasRenderingContext2D, h: GlassShardHazard) {
+  // Tiny angular triangle — bright cool-white with a darker shadow facet
+  // so it reads as a shard at small size. No outlines.
+  const x = h.x
+  const y = h.y
+  // Soft halo so a falling shard is legible against the warm ballroom bg.
+  const halo = ctx.createRadialGradient(x, y, 0, x, y, 9)
+  halo.addColorStop(0, 'rgba(220,235,255,0.55)')
+  halo.addColorStop(1, 'rgba(220,235,255,0)')
+  ctx.fillStyle = halo
+  ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.fill()
+  // Shadow facet (bottom-right side)
+  ctx.fillStyle = 'rgba(120,150,180,0.85)'
+  ctx.beginPath()
+  ctx.moveTo(x,     y - 6)
+  ctx.lineTo(x + 4, y + 5)
+  ctx.lineTo(x - 3, y + 4)
+  ctx.closePath()
+  ctx.fill()
+  // Light facet (upper-left)
+  ctx.fillStyle = 'rgba(240,250,255,0.95)'
+  ctx.beginPath()
+  ctx.moveTo(x,       y - 6)
+  ctx.lineTo(x - 3,   y + 4)
+  ctx.lineTo(x - 1.5, y + 1)
+  ctx.closePath()
+  ctx.fill()
+  // Specular speck
+  ctx.fillStyle = 'rgba(255,255,255,0.95)'
+  ctx.beginPath(); ctx.arc(x - 1, y - 3, 0.7, 0, Math.PI * 2); ctx.fill()
 }
 
 // ─── Tent-pole elevators ─────────────────────────────────────────────────────
@@ -3565,5 +3795,166 @@ function drawPopups(ctx: CanvasRenderingContext2D, s: GameState, family: string)
       : `rgba(255,184,0,${0.95 * fade})`
     ctx.font = `900 13px ${family}`
     ctx.fillText(pp.text, pp.x, pp.y + dy)
+  }
+}
+
+// ─── L4 chain-pull rendering ─────────────────────────────────────────────────
+function drawChains(ctx: CanvasRenderingContext2D, s: GameState, cfg: LevelConfig) {
+  if (!cfg.chains) return
+  const pulse = 0.65 + Math.sin(s.bgFrame * 0.18) * 0.35
+  // First pass: chain lines + handles (behind everything in this group so
+  // the progress bar sits visually atop them).
+  for (let i = 0; i < cfg.chains.length; i++) {
+    const def = cfg.chains[i]
+    const cs  = s.chains[i]
+    const platform = cfg.platforms[def.platformIdx]
+    const handleY  = psy(platform, def.x)
+    drawChainLine(ctx, def.x, 0, handleY - 12, cs.pulled)
+    const inRange =
+      !cs.pulled &&
+      s.player.onPlatform === def.platformIdx &&
+      !s.player.onLadder &&
+      s.player.onElevator == null &&
+      Math.abs(s.player.x - def.x) < CHAIN_PULL_RADIUS
+    drawChainHandle(ctx, def.x, handleY - 6, cs.pulled, inRange, pulse)
+    if (cs.pulled) drawPulledCheck(ctx, def.x + 14, handleY - 14)
+  }
+  // Second pass: progress bars on top so the player can read them clearly
+  // even with hazards/Kong/etc. in front.
+  for (let i = 0; i < cfg.chains.length; i++) {
+    const def = cfg.chains[i]
+    const cs  = s.chains[i]
+    if (cs.pulled || cs.progress <= 0) continue
+    const platform = cfg.platforms[def.platformIdx]
+    const handleY  = psy(platform, def.x)
+    drawChainProgressBar(ctx, def.x, handleY, cs.progress / CHAIN_PULL_FRAMES)
+  }
+}
+
+function drawChainLine(ctx: CanvasRenderingContext2D, x: number, y1: number, y2: number, pulled: boolean) {
+  const len = Math.max(0, y2 - y1)
+  const linkH = 9
+  const links = Math.floor(len / linkH)
+  const dim = pulled ? 0.45 : 1
+  for (let i = 0; i < links; i++) {
+    const ly = y1 + i * linkH
+    const isShadow = i % 2 === 0
+    // Two-tone link: alternating dark / mid for the chain texture.
+    ctx.fillStyle = isShadow
+      ? `rgba(90,58,0,${dim})`
+      : `rgba(208,144,0,${dim})`
+    ctx.fillRect(x - 2.5, ly, 5, linkH - 1.5)
+    // Top highlight per link
+    ctx.fillStyle = `rgba(255,224,128,${0.55 * dim})`
+    ctx.fillRect(x - 2.5, ly, 5, 1)
+  }
+  // Pulled chain reads as a slack/dim gold strand.
+  if (pulled) {
+    ctx.fillStyle = 'rgba(0,0,0,0.35)'
+    ctx.fillRect(x - 2.5, y1, 5, len)
+  }
+}
+
+function drawChainHandle(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number,
+  pulled: boolean,
+  inRange: boolean,
+  pulse: number,
+) {
+  if (pulled) {
+    // Slack loop — small dim ellipse where the handle used to be.
+    ctx.fillStyle = '#5A3A00'
+    ctx.beginPath(); ctx.ellipse(x, y, 9, 5, 0, 0, Math.PI * 2); ctx.fill()
+    ctx.fillStyle = '#7A5000'
+    ctx.beginPath(); ctx.ellipse(x, y, 6, 3, 0, 0, Math.PI * 2); ctx.fill()
+    return
+  }
+  // Outer ring (shadow) — gives the handle weight against the background.
+  ctx.fillStyle = '#3C2400'
+  ctx.beginPath(); ctx.arc(x, y, 13, 0, Math.PI * 2); ctx.fill()
+  // Mid ring — pulses brighter when player is in range so it reads as "act here".
+  const mid = inRange ? `rgba(255,184,0,${pulse})` : '#A07000'
+  ctx.fillStyle = mid
+  ctx.beginPath(); ctx.arc(x, y, 11, 0, Math.PI * 2); ctx.fill()
+  // Inner cutout — donut hole.
+  ctx.fillStyle = 'rgba(8,6,20,0.85)'
+  ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2); ctx.fill()
+  // Top-left highlight — the only "shape" cue (no outlines per spec).
+  ctx.fillStyle = inRange
+    ? `rgba(255,232,160,${0.85 * pulse})`
+    : 'rgba(255,224,128,0.55)'
+  ctx.beginPath(); ctx.ellipse(x - 3, y - 4, 4, 2, 0, 0, Math.PI * 2); ctx.fill()
+}
+
+function drawChainProgressBar(ctx: CanvasRenderingContext2D, chainX: number, baseY: number, frac: number) {
+  // Bar sits immediately left of the chain. Anchored at the handle (bottom)
+  // and extends upward CHAIN_BAR_HEIGHT px so the fill is readable from
+  // anywhere on the canvas — by spec.
+  const barX = chainX - CHAIN_BAR_WIDTH - 6
+  const barY = baseY - CHAIN_BAR_HEIGHT
+  // Background well — dark with a subtle gold border edge.
+  ctx.fillStyle = 'rgba(8,6,20,0.78)'
+  ctx.fillRect(barX, barY, CHAIN_BAR_WIDTH, CHAIN_BAR_HEIGHT)
+  ctx.fillStyle = 'rgba(255,184,0,0.25)'
+  ctx.fillRect(barX, barY, 1, CHAIN_BAR_HEIGHT)
+  ctx.fillRect(barX + CHAIN_BAR_WIDTH - 1, barY, 1, CHAIN_BAR_HEIGHT)
+  // Fill (gold gradient) from bottom up.
+  const filled = CHAIN_BAR_HEIGHT * Math.min(1, Math.max(0, frac))
+  if (filled <= 0) return
+  const fillTop = baseY - filled
+  const grad = ctx.createLinearGradient(0, fillTop, 0, baseY)
+  grad.addColorStop(0,   '#FFE070')
+  grad.addColorStop(0.4, '#FFB800')
+  grad.addColorStop(1,   '#A07000')
+  ctx.fillStyle = grad
+  ctx.fillRect(barX + 1, fillTop, CHAIN_BAR_WIDTH - 2, filled)
+  // Bright leading edge so the player sees the bar climbing.
+  ctx.fillStyle = 'rgba(255,255,200,0.9)'
+  ctx.fillRect(barX + 1, fillTop, CHAIN_BAR_WIDTH - 2, 2)
+}
+
+function drawPulledCheck(ctx: CanvasRenderingContext2D, x: number, y: number) {
+  // Small green check above the slack-loop handle. Drawn as two strokes
+  // — no outline — to keep the visual language consistent.
+  ctx.strokeStyle = '#3FE08A'
+  ctx.lineWidth = 2.2
+  ctx.lineCap = 'round'
+  ctx.beginPath()
+  ctx.moveTo(x - 4, y + 1)
+  ctx.lineTo(x - 1, y + 4)
+  ctx.lineTo(x + 5, y - 4)
+  ctx.stroke()
+}
+
+// ─── L4 win sequence rendering ───────────────────────────────────────────────
+function drawWinSequence(ctx: CanvasRenderingContext2D, s: GameState, cfg: LevelConfig) {
+  // 4 chandeliers crash onto Kong's original platform position one at a
+  // time, every CHANDELIER_INTERVAL frames. Each falls for ~24 frames then
+  // shows an expanding white flash for ~30 frames.
+  const fallDuration  = 24
+  const flashDuration = 30
+  const targetY = cfg.kongSpawn.by - 12
+  for (let i = 0; i < 4; i++) {
+    const startFrame = i * CHANDELIER_INTERVAL
+    if (s.winSeq.t < startFrame) continue
+    const localT = s.winSeq.t - startFrame
+    // Spread the 4 chandeliers around Kong's spawn x so they don't stack.
+    const targetX = cfg.kongSpawn.bx - 45 + i * 30
+    if (localT < fallDuration) {
+      const fallFrac = localT / fallDuration
+      const cy = -30 + (targetY + 30) * fallFrac
+      drawChandelier(ctx, targetX, cy)
+    } else {
+      const flashT = localT - fallDuration
+      if (flashT < flashDuration) {
+        const radius = flashT * 4
+        const alpha = Math.max(0, 1 - flashT / flashDuration)
+        ctx.fillStyle = `rgba(255,255,255,${alpha * 0.7})`
+        ctx.beginPath()
+        ctx.arc(targetX, targetY, radius, 0, Math.PI * 2)
+        ctx.fill()
+      }
+    }
   }
 }
