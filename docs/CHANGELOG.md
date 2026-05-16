@@ -4,6 +4,41 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-05-16 — Arcade iPhone controls + canvas layout (6-commit incremental fix arc)
+
+**Scope:** driver-app only, no migration, no game logic. Six commits over a single iPhone-testing session addressing on-device usability of the three arcade games. Final state confirmed working by Darren after `b7798bf`.
+
+**Commits (in order)**
+
+- `78c46c1` — **iOS 18 Writing Tools popup + lost holds + off-screen controls.** All three games + `src/app/training/arcade/layout.tsx`. Suppress the iOS callout menu on every game button and the canvas (`WebkitTouchCallout: 'none'`, `WebkitUserSelect: 'none'`, `onContextMenu={(e) => e.preventDefault()}`, `tabIndex={-1}`). Add `onTouchCancel` to every button so an OS-cancelled touch releases held state (Party Kong DpadBtn calls onRelease on cancel — without this, a dropped touch strands the held direction in `keys[]` and the player walks into walls). Outer wrappers `minHeight: 100vh → 100dvh` so dynamic viewport excludes the Safari toolbar. Arcade layout adds `apple-mobile-web-app-capable + status-bar-style: black-translucent` metadata.
+
+- `d51e721` — **Cap canvas height so controls are always above the fold.** All three games. New shell per game: outer `height: 100dvh + overflow: hidden`, top bar `flexShrink: 0`, new `flex: 1` canvas area with an aspect-ratio-capped inner wrapper, controls `flexShrink: 0` with `paddingBottom: calc(... + env(safe-area-inset-bottom))`. Pure CSS — no useEffect, no canvas attribute changes. The previous layout used `minHeight: 100vh` + natural sizing, which let the canvas pin at its native 720 height and push the D-pad / JUMP off the iPhone screen.
+
+- `bb4f340` — **Stop locking canvas display size to native W×H.** PartyKong + RouteRush init useEffect was setting `canvas.style.width = ${W}px; canvas.style.height = ${H}px` post-mount, overriding the JSX's `width/height: 100%` and forcing the canvas to overflow the new shrunk wrapper from the top-left — which the wrapper's `overflow: hidden` clipped, hiding the truck (y=580) and ground floor (y=560). Dropped those two style assignments per game; the canvas now takes display size from CSS. Bitmap (`canvas.width = W*dpr`, `canvas.height = H*dpr`) and `ctx.setTransform(dpr, ...)` unchanged — game coordinate space intact. Tent Tetris was symmetrically broken but left untouched per user spec (its lowest content row sits high enough that the clip didn't reach gameplay-critical pixels).
+
+- `1b259da` — **Tighten Party Kong canvas-to-controls gap.** Canvas area `padding: '0 16px' → padding: 0`. Controls drop `marginTop: 12`, switch to explicit padding longhand (top 8, sides 16, bottom `env(safe-area-inset-bottom)`). Net ~24px reclaimed for the canvas wrapper. PartyKong-only.
+
+- `891adf4` — **CSS-crop Party Kong canvas to gameplay area.** New top-level `VISIBLE_H = 600` constant. Wrapper aspectRatio `${W}/${H}` → `${W}/${VISIBLE_H}`. Canvas style adds `aspectRatio: ${W}/${H}` + `height: auto` so the canvas keeps native 390/720 aspect and overflows wrapper bottom by ~17% — exactly the empty back-wall + floor-strip texture below the ground platform (y=560 → 720), which the wrapper's existing `overflow: hidden` clips. Zero game logic touched. `H` constant stays 720, drawing code unchanged (clearRect, H*0.92 floor-strip math, despawn checks `h.y < H + 80`, etc.).
+
+- `b7798bf` — **Preserve canvas aspect on short viewports.** The 891adf4 wrapper config (`aspectRatio + width: 100% + maxHeight: 100%`) silently broke aspect when the parent canvas area was shorter than the aspect-derived height — `width: 100%` won over aspect-ratio's height derivation, height clamped, wrapper went squat (e.g. 390×537 instead of 390×600), canvas overflowed by 200+ CSS px and `overflow: hidden` clipped everything below the player's hat brim ("barely see the top of the guy's head"). Fix: switch wrapper to height-driven sizing — `height: 100%, width: auto, aspectRatio: W/VISIBLE_H, maxHeight: VISIBLE_H, maxWidth: W`. On phones, height: 100% binds, width auto-derives from aspect (~382×588 on iPhone 14 Pro). On desktop, maxHeight: 600 caps height, maxWidth: 390 caps the derived width (390×600 native). Aspect preserved on both ends.
+
+**Files touched across the arc**
+- `src/components/arcade/PartyKongGame.tsx` — all six commits
+- `src/components/arcade/RouteRushGame.tsx` — first three commits (iOS guards + shell + bitmap-vs-CSS fix)
+- `src/components/arcade/TentTetrisGame.tsx` — first two commits only (iOS guards + shell). Canvas-display-lock and crop intentionally skipped per spec.
+- `src/app/training/arcade/layout.tsx` — first commit (iOS app metadata)
+- `src/app/training/arcade/{party-kong,route-rush,tent-tetris}/page.tsx` — first commit (`minHeight: 100vh → 100dvh` on pageStyle)
+
+**Verification.** Darren confirmed all working on iPhone after the final commit. Player visible on ground platform with small cushion below, D-pad and JUMP immediately under the canvas, controls fully visible without scrolling.
+
+**Out of scope (intentional).**
+- Route Rush + Tent Tetris canvas crops (their visual layouts don't have the empty-bottom problem the way Party Kong did; user explicitly scoped the crop work to Party Kong only).
+- A real "active stop active controls" mode or pause menu.
+- Sound effects (still silent arcade except Party Kong's existing sfx engine).
+- Native shell / Capacitor wrapper to escape Safari toolbar behavior entirely (would also solve the background-geofencing item in Phase 2.5C).
+
+---
+
 ## 2026-05-16 — Party Kong v3 Session D (L4 Grand Ballroom — chain-pull finale)
 
 **Scope:** the v3 finale. L4 gets its true layout, mechanic, and win sequence. Party Kong v3 is now complete — all four stages have distinct geometry, hazards, and win conditions.

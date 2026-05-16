@@ -160,6 +160,57 @@ If either line is the CLI's narration, strip it before committing. Or pipe throu
 
 ---
 
+## CSS `aspect-ratio + width: 100% + max-height: 100%` silently breaks aspect when the parent is shorter than the aspect-derived height.
+
+**Why:** Party Kong's canvas wrapper (2026-05-16 mobile fix arc) used `aspectRatio: W/H + maxWidth: W + maxHeight: 100% + width: 100% + height: auto` to size itself inside a `flex: 1` parent. Intent: "fit inside parent, preserve aspect ratio." Reality on iPhone 14 Pro (parent shorter than the aspect-derived height): browser computes `width: 100%` first (binding constraint, explicit), then `height: auto` via aspect = `width * (H/W) = 720`, then `maxHeight: 100%` clamps to 537. Per CSS spec, aspect-ratio is "preferred" but can be violated by explicit dims — width stays explicit at the clamped 100% value, height stays clamped, aspect-ratio is silently abandoned. Wrapper becomes 390x537 (not aspect-correct). Anything inside that's sized by its own aspect (canvas at 390/720 ratio) then overflows by hundreds of pixels and the wrapper's `overflow: hidden` clips through the visible game area — surfaced as "barely see the top of the guy's head" on commit `891adf4`. Fixed in `b7798bf`.
+
+**How to apply:** When you need a box to fit-and-shrink inside a flex parent while preserving aspect-ratio, drive sizing from the **scarce** dimension. On phones the scarce dim is height, so use `height: 100%, width: auto, aspectRatio: A/B, maxWidth: <px>, maxHeight: <px>`. The browser then uses aspect-ratio to derive width from the height-100% explicit value, and maxWidth/maxHeight cap each end on different viewport sizes (phone → height-bound, desktop → width-bound at maxWidth, derived height capped at maxHeight). The combo of `width: 100% + maxHeight: 100%` is an anti-pattern when both constraints can bind — it works when width is scarce, silently fails when height is scarce.
+
+**Test plan when you set aspect-ratio + max-height on a flex item:** simulate a parent that's both **wider than the aspect-derived width** AND **shorter than the aspect-derived height**. If the box doesn't preserve aspect under that pair, the CSS will fail on some phones. The canonical example: a 390/720-aspect box inside an iPhone-14-Pro-shaped parent (393×537 after toolbars and chrome).
+
+---
+
+## iOS 18 Writing Tools fires on long-press of any button — held controls drop unless suppressed.
+
+**Why:** iOS 18 introduced a system "Writing Tools" callout triggered by long-pressing any focusable interactive element including `<button>`. On Party Kong (2026-05-16 mobile fix), holding a D-pad direction for more than ~1s popped the callout, intercepted the touch, and fired `touchcancel` — which the button's `onTouchEnd` doesn't observe, so the held direction stayed pressed in `keys[]` state and the player walked into walls forever. Same shape on Route Rush + Tent Tetris controls. Caught during on-device testing; fixed in `78c46c1` across all three games + the arcade layout.
+
+**How to apply:** Every game control button needs these defenses (and the parent controls container needs 1+2+3 too, since long-pressing in the negative space between buttons also triggers the callout):
+1. `WebkitTouchCallout: 'none'` — suppresses the iOS callout menu (copy/paste/Writing Tools).
+2. `WebkitUserSelect: 'none'` + `userSelect: 'none'` — prevents text selection on long-press.
+3. `onContextMenu={(e) => e.preventDefault()}` — kills the right-click + long-press context menu surface.
+4. `tabIndex={-1}` — keeps iOS from treating the button as a text-input target for the callout.
+5. `onTouchCancel` paired with the same handler as `onTouchEnd` (release the held key) — an OS-cancelled touch doesn't strand state. For tap-only buttons (RouteRush ControlBtn, TentTetris ControlBtn) it's just `preventDefault`; for held buttons (Party Kong DpadBtn) it MUST call `onRelease`.
+
+The canvas itself needs `touch-action: none` (already standard for games) plus `onContextMenu preventDefault` to suppress callout on the play surface. The page-level wrapper benefits from `apple-mobile-web-app-capable + status-bar-style: black-translucent` metadata so the OS treats the page as a game context, not a document.
+
+---
+
+## Canvas internal bitmap (`.width / .height` attributes) and CSS display size are independent — never set inline `canvas.style.width/height` to the bitmap's native dims.
+
+**Why:** Every arcade game's init useEffect did:
+```ts
+canvas.width  = Math.floor(W * dpr)      // bitmap resolution — correct
+canvas.height = Math.floor(H * dpr)      // bitmap resolution — correct
+canvas.style.width  = `${W}px`           // ← forces CSS display to native W
+canvas.style.height = `${H}px`           // ← forces CSS display to native H
+ctx.setTransform(dpr, 0, 0, dpr, 0, 0)   // logical coord space at W×H
+```
+The last two lines ran post-mount and overrode the JSX's `width: 100%; height: 100%` (since useEffect runs after React's initial render and React doesn't re-set a style prop that hasn't changed). On 2026-05-16 the canvas wrapper layout was changed to fit short iPhone viewports — but the canvas kept pinning at 390×720 CSS, overflowed the now-shorter wrapper, and `overflow: hidden` clipped the truck (RouteRush y=580) and the ground floor (PartyKong y=560) from the bottom-of-canvas inward. Fixed in `bb4f340` by dropping the two `style.width/height` assignments — React's `width/height: 100%` now drives display size, parent caps via aspect-ratio + max-height.
+
+**How to apply:** The canvas attributes (`.width`, `.height`) define the bitmap pixel resolution — set them ONCE at init to `W*dpr × H*dpr` for sharp retina rendering, pair with `ctx.setTransform(dpr, 0, 0, dpr, 0, 0)` so game code draws to the logical 0..W × 0..H coordinate space. The canvas CSS size defines the display area the bitmap renders into — let it come from the parent layout (`width: 100%, height: 100%` on the canvas, parent constrains via aspect-ratio + max-height). The browser scales the bitmap to fit the CSS rect. If you find yourself writing `canvas.style.height = '720px'` to "make the canvas the right size," delete that line — your CSS layout is the source of truth for display size, not the JS. Game coordinates work in logical space regardless of display size, because `ctx.setTransform(dpr, ...)` already separates the two.
+
+---
+
+## "Lots of padding" can mean empty pixels inside the canvas — not a CSS margin.
+
+**Why:** After fixing the iPhone controls and tightening every CSS gap (2026-05-16 commits `78c46c1` → `1b259da`), Darren reported "excessive padding between the canvas bottom and the controls." The instinct was to keep trimming margins/paddings. But there was nothing left to trim — the gap was the bottom 22% of the 720-tall Party Kong canvas (logical y=560 → y=720), which the game's renderers paint as warehouse back-wall + floor-strip texture below the ground platform line. From outside the canvas it reads as "wasted space." From inside the renderer it's drawn pixels. CSS knew nothing about it. The real fix (commit `891adf4`) was to crop the canvas via a wrapper with a shorter aspect-ratio + `overflow: hidden` — not to trim more CSS.
+
+**How to apply:** When a user says "there's empty space between X and Y," verify the space is actually CSS (margin/padding/gap on an element you can inspect) before re-trimming. Open dev tools, inspect the element, confirm the box model shows the gap. If the element's box ends right at the visible boundary AND the next element starts right after, the gap is **inside the rendered content** — either an image with whitespace, a canvas with empty pixels, or a child positioned inside a larger parent. The fix is one of: (a) shrink the source content to crop the empty area; (b) wrap in a smaller container with `overflow: hidden` to clip; (c) if it's a game canvas, leave the bitmap alone and add a CSS crop wrapper as in approach (b).
+
+**Forcing question:** "If I set the parent's background to red, would the user's reported gap turn red?" If yes, it's a CSS gap and trimming margins helps. If no, it's inside the rendered content and you need a crop, not a trim.
+
+---
+
 ## When restructuring a UI surface, a working route demoted to a footer pointer is a regression — not a refactor.
 
 **Why:** v1 of the Tools/Training hub restructure (2026-05-14, commit `f64d5bb`) moved `/tools/weather` and `/reference/library` from first-class tiles in the old `ToolsScreen.TOOLS` grid into a muted "Weather · Reference library also in Tools" footer pointer line. Both routes were live and working — drivers were already using them. The structural argument was honest (the new spec didn't list them as category tiles), but the user-facing effect was: a feature drivers reach by tapping a tile became a feature drivers reach by reading a sentence and somehow guessing how to navigate there. v2 (`288d120`, same evening) had to add them back as Live-badged tiles. The spec correction was unambiguous: "Weather and Equipment Guides are already live with working functionality — restore them in the new theme, wired to their existing routes. Do not break anything that is currently working."
