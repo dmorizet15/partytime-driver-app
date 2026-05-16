@@ -411,17 +411,14 @@ export default function TentTetrisGame() {
   return (
     <div
       style={{
-        minHeight: '100dvh',
+        height: '100dvh',
         background: '#04040A',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        paddingBottom: 'calc(24px + env(safe-area-inset-bottom))',
         color: '#fff',
         fontFamily: 'inherit',
-        overflowY: 'auto',
-        overflowX: 'hidden',
-        WebkitOverflowScrolling: 'touch',
+        overflow: 'hidden',
         WebkitUserSelect: 'none',
         userSelect: 'none',
         WebkitTouchCallout: 'none',
@@ -437,6 +434,7 @@ export default function TentTetrisGame() {
           justifyContent: 'space-between',
           padding: '14px 16px 10px',
           boxSizing: 'border-box',
+          flexShrink: 0,
         }}
       >
         <button
@@ -466,10 +464,24 @@ export default function TentTetrisGame() {
 
       <div
         style={{
+          flex: 1,
+          minHeight: 0,
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '0 16px',
+          boxSizing: 'border-box',
+        }}
+      >
+      <div
+        style={{
           position: 'relative',
-          width: W,
-          maxWidth: '100%',
           aspectRatio: `${W} / ${H}`,
+          maxWidth: W,
+          maxHeight: '100%',
+          width: '100%',
+          height: 'auto',
           borderRadius: 16,
           overflow: 'hidden',
           boxShadow: '0 24px 80px -30px rgba(0,0,0,0.8)',
@@ -511,19 +523,21 @@ export default function TentTetrisGame() {
           <HudPills score={scoreD} level={levelD} levelColor={currentColor} lines={linesD} />
         )}
       </div>
+      </div>
 
       {/* On-screen controls */}
       <div
         style={{
-          marginTop: 16,
+          marginTop: 12,
           display: 'grid',
           gridTemplateColumns: '1fr 1fr 1fr 1.4fr',
           gap: 10,
           width: W,
           maxWidth: '100%',
           padding: '0 16px',
-          paddingBottom: 'calc(8px + env(safe-area-inset-bottom))',
+          paddingBottom: 'calc(12px + env(safe-area-inset-bottom))',
           boxSizing: 'border-box',
+          flexShrink: 0,
           WebkitUserSelect: 'none',
           userSelect: 'none',
           WebkitTouchCallout: 'none',
