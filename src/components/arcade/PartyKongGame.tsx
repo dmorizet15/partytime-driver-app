@@ -109,6 +109,12 @@ const sfxGameOver = () => seq([
 // ─── Canvas ──────────────────────────────────────────────────────────────────
 const W = 390
 const H = 720
+// Logical y-extent the player ever sees content in (ground at y=560,
+// some breathing room below). The bottom of the 720-tall canvas is empty
+// back-wall + floor-strip texture that visually reads as wasted padding
+// between the ground and the on-screen controls — CSS-crop it via the
+// wrapper's aspect-ratio. Drawing code still works in the full 0..H space.
+const VISIBLE_H = 600
 
 const MAX_LIVES = 5
 const BONUS_LIFE_SCORE_1 = 5000
@@ -1150,7 +1156,7 @@ export default function PartyKongGame() {
       <div
         style={{
           position: 'relative',
-          aspectRatio: `${W} / ${H}`,
+          aspectRatio: `${W} / ${VISIBLE_H}`,
           maxWidth: W,
           maxHeight: '100%',
           width: '100%',
@@ -1168,7 +1174,8 @@ export default function PartyKongGame() {
           style={{
             display: 'block',
             width: '100%',
-            height: '100%',
+            height: 'auto',
+            aspectRatio: `${W} / ${H}`,
             touchAction: 'none',
             WebkitUserSelect: 'none',
             userSelect: 'none',
