@@ -1142,7 +1142,8 @@ export default function PartyKongGame() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          padding: '0 16px',
+          padding: 0,
+          margin: 0,
           boxSizing: 'border-box',
         }}
       >
@@ -1213,11 +1214,12 @@ export default function PartyKongGame() {
       {/* On-screen controls: D-pad + jump */}
       <div
         style={{
-          marginTop: 12,
           width: W,
           maxWidth: '100%',
-          padding: '0 16px',
-          paddingBottom: 'calc(12px + env(safe-area-inset-bottom))',
+          paddingTop: 8,
+          paddingRight: 16,
+          paddingBottom: 'env(safe-area-inset-bottom)',
+          paddingLeft: 16,
           boxSizing: 'border-box',
           display: 'grid',
           gridTemplateColumns: '1fr 1fr',
