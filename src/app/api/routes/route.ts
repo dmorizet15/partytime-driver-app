@@ -3,13 +3,25 @@
 // (partytime-east) — the same source of truth Melissa writes to from the
 // dashboard. Service-role key never reaches the browser.
 //
-// Driver-scope: if the caller is authenticated and has at least one
-// `route_assignments` row for the requested date, the response is narrowed
-// to those routes only (Bugs 1+2 — May 14, 2026). Without an assignment,
-// or for unauthenticated callers, the endpoint returns every route on the
-// day so dispatcher tooling / unassigned super_admins can still load the
-// full board. Super_admin gets the same driver-style narrowing per spec —
-// the driver app is the driver's tool, the dashboard is the god view.
+// Driver-scope: the response is narrowed to the caller's `route_assignments`
+// for the requested date. If the caller is authenticated but has no
+// assignment, the endpoint returns an empty result — the driver app is the
+// driver's tool, the dashboard is the god view, and a super_admin who is
+// also a driver should see nothing on a day they aren't assigned (rather
+// than the full board of other drivers' routes dimmed by the inspection
+// gate). Unauthenticated callers also receive an empty result; production
+// callers always carry a session cookie via the app middleware.
+//
+// Soft-fail exception: if the `route_assignments` lookup itself errors
+// (transient Postgres / RLS hiccup), fall through to the unscoped query so
+// a real driver isn't locked out of their route by a flaky read.
+//
+// History: the original May 14, 2026 fix (commit ff006c6) added the scope
+// filter but kept an unscoped fallback for the no-assignment case "to
+// preserve dispatcher tooling." Dispatchers don't hit this endpoint — they
+// live in the dashboard repo — so the fallback was load-bearing only as a
+// latent bug. Tightened 2026-05-16 after the bug surfaced for an unassigned
+// super_admin on a day with two active drivers' routes.
 //
 // Auth: session cookie identifies the caller (`user.id` can't be spoofed).
 // The actual reads run through a service-role client to sidestep RLS
@@ -72,13 +84,20 @@ export async function GET(req: NextRequest) {
   })
 
   // ── Driver scope lookup ─────────────────────────────────────────────────
-  // Identify caller via session cookie. If they have a route_assignments row
-  // for this date, narrow routeIds to those. Service-role reads do the actual
+  // Identify caller via session cookie. Narrow routeIds to the caller's
+  // route_assignments rows for this date. Service-role reads do the actual
   // join (RLS-bypass).
+  //
+  // `assignedRouteIds`:
+  //   - string[] (possibly empty)  → use as the .in() filter
+  //   - null                       → assignment lookup errored; soft-fail
+  //                                  through to the unscoped query so a
+  //                                  driver isn't locked out by a transient
+  //                                  read failure.
   const session = getSessionClient()
   const { data: { user } } = await session.auth.getUser()
 
-  let assignedRouteIds: string[] | null = null
+  let assignedRouteIds: string[] | null = []
   if (user) {
     const assignRes = await supabase
       .from('route_assignments')
@@ -87,13 +106,24 @@ export async function GET(req: NextRequest) {
       .eq('routes.route_date', date)
 
     if (assignRes.error) {
-      // Non-fatal: log and fall through to the unscoped path so the driver
-      // still sees something. Worst case is they see the full day's routes
-      // until the assignment lookup recovers.
       console.warn('[/api/routes] assignment lookup failed (non-fatal):', assignRes.error.message)
-    } else if ((assignRes.data ?? []).length > 0) {
+      assignedRouteIds = null
+    } else {
       assignedRouteIds = (assignRes.data ?? []).map((r) => r.route_id as string)
     }
+  }
+  // else: unauthenticated → assignedRouteIds stays []. Production callers
+  // always carry a session via middleware-gated screens; an unauth hit on
+  // this endpoint is either dev-tools poking or a logged-out tab, neither
+  // of which has any business receiving the full day's routes.
+
+  // Empty assignment set → return immediately. No need to query routes /
+  // stops for a user we're going to show nothing to.
+  if (Array.isArray(assignedRouteIds) && assignedRouteIds.length === 0) {
+    return NextResponse.json(
+      { routes: [], stops: [], date },
+      { status: 200, headers: { 'Cache-Control': 'private, no-store' } }
+    )
   }
 
   // Routes for the day, joined twice to trucks (primary + secondary). Aliases
