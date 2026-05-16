@@ -188,6 +188,44 @@ interface Ladder {
   tpi: number  // top    platform index
 }
 
+// ─── Elevators (tent-pole platforms) ─────────────────────────────────────────
+// Moving vertical platforms used on L3. Each carries the player between two
+// y-positions, reversing direction at endpoints. Treated as a temporary
+// platform for landing + step-off purposes.
+const ELEVATOR_HALF_W = 20
+const ELEVATOR_HEIGHT = 10
+const NO_MOUNT_COOLDOWN = 18
+
+// Static geometry — what LevelConfig declares.
+interface ElevatorDef {
+  x:           number
+  yTop:        number   // smaller y (higher on screen)
+  yBottom:     number   // larger y (lower on screen)
+  speed:       number   // px / 60fps-frame
+  initialY?:   number
+  initialDir?: -1 | 1
+}
+
+// Per-game runtime state — cloned from def on level load.
+interface Elevator {
+  x:       number
+  yTop:    number
+  yBottom: number
+  speed:   number
+  y:       number
+  dir:     -1 | 1   // +1 = moving down (toward yBottom), -1 = moving up
+}
+
+// Wind gust state — present on every game state but only ticks when the
+// level config has a windPattern. Direction alternates each gust.
+interface WindState {
+  active:          boolean
+  framesLeft:      number
+  framesUntilNext: number
+  dir:             -1 | 1
+  vx:              number
+}
+
 // ─── Hazards (discriminated union) ───────────────────────────────────────────
 // HazardType lists every variant the engine knows about. Only the first two
 // are populated today; the rest are stubs for Sessions B/C/D so the type
@@ -288,6 +326,13 @@ interface LevelConfig {
   background:      BackgroundKind
   initialHazards:  Hazard[]
   conveyors?:      ConveyorSegment[]
+  // L3+ — moving tent-pole platforms.
+  elevators?:      ElevatorDef[]
+  // L3 — independent timer; spawns falling stakes from above.
+  stakePattern?:   { intervalMinFrames: number; intervalMaxFrames: number; vy: number }
+  // L3 — independent timer; pushes the player horizontally for durationFrames
+  // every intervalFrames. Direction alternates each gust.
+  windPattern?:    { intervalFrames: number; durationFrames: number; vx: number }
 }
 
 // L1 geometry — byte-identical to the pre-v3 PLATFORMS/LADDERS/WIN_X constants.
@@ -337,6 +382,38 @@ const L2_CONVEYORS: ConveyorSegment[] = [
   { platformIdx: 2, x1: 150, x2: 310, dir:  1, speed: 1.2 },
 ]
 
+// ─── L3 — Outdoor Tent Setup ─────────────────────────────────────────────────
+// 7 platforms, no ladders. 3 moving tent-pole elevators bridge the gaps.
+// Hazards are falling stakes from above and lateral wind gusts; Kong is
+// decorative on this stage (throw timer is a no-op — stakes and wind run
+// on their own per-level timers).
+//
+// Reachability note: P6 (y=100) sits 100px above P5 (y=200). The shipped
+// jump arc tops out at ~80px, so reaching P6 from P5 with a straight jump
+// is at the edge of the physics envelope. This is left as-spec; if smoke
+// testing shows P6 unreachable, lift P5 or add a fourth elevator.
+const L3_PLATFORMS: Platform[] = [
+  { x1: 0,   y1: 560, x2: 390, y2: 560 },  // P0 ground
+  { x1: 20,  y1: 450, x2: 140, y2: 450 },  // P1 left shelf
+  { x1: 250, y1: 450, x2: 370, y2: 450 },  // P2 right shelf
+  { x1: 100, y1: 320, x2: 230, y2: 320 },  // P3 center mid
+  { x1: 20,  y1: 200, x2: 140, y2: 200 },  // P4 left high
+  { x1: 250, y1: 200, x2: 370, y2: 200 },  // P5 right high (Kong perch)
+  { x1: 130, y1: 100, x2: 260, y2: 100 },  // P6 top (win)
+]
+const L3_PLAYER_SPAWN = { x: 30, y: 560 }
+const L3_KONG_SPAWN   = { bx: 340, by: 200 }   // P5 right side
+// Win: feet on P6's x-range, y within 5px of P6's surface.
+const L3_WIN_CONDITION: (pl: PlayerState) => boolean =
+  (pl) => pl.x >= 130 && pl.x <= 260 && Math.abs(pl.y - 100) <= 5
+const L3_ELEVATORS: ElevatorDef[] = [
+  { x: 60,  yTop: 450, yBottom: 560, speed: 1.0, initialY: 560, initialDir: -1 },
+  { x: 190, yTop: 320, yBottom: 450, speed: 1.2, initialY: 450, initialDir: -1 },
+  { x: 310, yTop: 200, yBottom: 320, speed: 0.9, initialY: 320, initialDir: -1 },
+]
+const L3_STAKE_PATTERN = { intervalMinFrames: 180, intervalMaxFrames: 240, vy: 3.5 }
+const L3_WIND_PATTERN  = { intervalFrames: 480, durationFrames: 90, vx: 0.9 }
+
 const LEVEL_CONFIGS: LevelConfig[] = [
   {
     num:             1,
@@ -368,15 +445,18 @@ const LEVEL_CONFIGS: LevelConfig[] = [
   {
     num:             3,
     name:            'Outdoor Tent Setup',
-    platforms:       L1_PLATFORMS,
-    ladders:         L1_LADDERS,
-    playerSpawn:     L1_PLAYER_SPAWN,
-    kongSpawn:       L1_KONG_SPAWN,
-    winCondition:    L1_WIN_CONDITION,
-    throwDelayBase:  195,
-    throwDelayFloor: 95,
+    platforms:       L3_PLATFORMS,
+    ladders:         [],                  // No ladders; elevators replace them.
+    playerSpawn:     L3_PLAYER_SPAWN,
+    kongSpawn:       L3_KONG_SPAWN,
+    winCondition:    L3_WIN_CONDITION,
+    throwDelayBase:  180,
+    throwDelayFloor: 80,
     background:      'outdoor_tent',
-    initialHazards:  DOLLY_SEED,
+    initialHazards:  [],
+    elevators:       L3_ELEVATORS,
+    stakePattern:    L3_STAKE_PATTERN,
+    windPattern:     L3_WIND_PATTERN,
   },
   {
     num:             4,
@@ -401,6 +481,13 @@ type Player = {
   onPlatform: number | null
   onLadder: boolean
   ladderIdx: number | null
+  // Index into GameState.elevators when riding one, else null. Mutually
+  // exclusive with onPlatform / onLadder.
+  onElevator: number | null
+  // After stepping off an elevator onto a platform, suppresses the
+  // platform→elevator transfer check for this many frames so the player
+  // can walk away without being re-captured by the still-aligned elevator.
+  noMountCooldown: number
   facing: 1 | -1
   walking: boolean
   jumpCooldown: number
@@ -420,6 +507,11 @@ type BonusLifeAwarded = { [k: number]: boolean }
 type GameState = {
   player:        Player
   hazards:       Hazard[]
+  elevators:     Elevator[]
+  wind:          WindState
+  // Countdown until the next falling stake. Frame-based; only ticks when
+  // the active level config declares a stakePattern.
+  stakeTimer:    number
   score:         number
   lives:         number
   level:         Level
@@ -448,6 +540,8 @@ function makeFreshPlayer(cfg: LevelConfig): Player {
     onPlatform: 0,
     onLadder: false,
     ladderIdx: null,
+    onElevator: null,
+    noMountCooldown: 0,
     facing: 1,
     walking: false,
     jumpCooldown: 0,
@@ -476,6 +570,24 @@ function makeFreshState(
   return {
     player: makeFreshPlayer(cfg),
     hazards: cloneHazards(cfg.initialHazards),
+    elevators: (cfg.elevators ?? []).map((d) => ({
+      x:       d.x,
+      yTop:    d.yTop,
+      yBottom: d.yBottom,
+      speed:   d.speed,
+      y:       d.initialY   ?? d.yBottom,
+      dir:     d.initialDir ?? -1,
+    })),
+    wind: {
+      active:          false,
+      framesLeft:      0,
+      framesUntilNext: cfg.windPattern?.intervalFrames ?? Infinity,
+      dir:             1,
+      vx:              0,
+    },
+    stakeTimer: cfg.stakePattern
+      ? cfg.stakePattern.intervalMinFrames + Math.random() * (cfg.stakePattern.intervalMaxFrames - cfg.stakePattern.intervalMinFrames)
+      : Infinity,
     score,
     lives,
     level,
@@ -1471,10 +1583,49 @@ function step(s: GameState, u: number) {
   const platforms = cfg.platforms
   const ladders = cfg.ladders
 
+  // ── Elevators ────────────────────────────────────────────────────────────
+  // Move each elevator; reverse direction at endpoints. A player riding an
+  // elevator is snapped to its y inside the player branch below, so this
+  // also "carries" them vertically every frame.
+  for (const e of s.elevators) {
+    e.y += e.dir * e.speed * u
+    if (e.y <= e.yTop)    { e.y = e.yTop;    e.dir =  1 }
+    if (e.y >= e.yBottom) { e.y = e.yBottom; e.dir = -1 }
+  }
+
   // ── Player ───────────────────────────────────────────────────────────────
   const p = s.player
   if (p.invincible > 0) p.invincible = Math.max(0, p.invincible - u)
   if (p.jumpCooldown > 0) p.jumpCooldown = Math.max(0, p.jumpCooldown - u)
+  if (p.noMountCooldown > 0) p.noMountCooldown = Math.max(0, p.noMountCooldown - u)
+
+  // Platform → elevator transfer. When the player is standing on a platform
+  // and an elevator's top surface aligns with the platform at the player's x,
+  // step onto the elevator. The noMountCooldown prevents an immediate
+  // re-capture right after stepping off (otherwise walking one pixel past the
+  // edge of an elevator-aligned platform would loop back on every frame).
+  if (
+    !p.onLadder &&
+    p.onElevator == null &&
+    p.onPlatform != null &&
+    p.noMountCooldown === 0 &&
+    s.elevators.length > 0
+  ) {
+    const pp = platforms[p.onPlatform]
+    const psurf = psy(pp, p.x)
+    for (let ei = 0; ei < s.elevators.length; ei++) {
+      const e = s.elevators[ei]
+      if (Math.abs(p.x - e.x) > ELEVATOR_HALF_W) continue
+      if (Math.abs(e.y - psurf) <= 2) {
+        p.onElevator = ei
+        p.onPlatform = null
+        p.y = e.y
+        p.vx = 0
+        p.vy = 0
+        break
+      }
+    }
+  }
 
   // Ladder grab attempts. ladderIdx is the array index into cfg.ladders.
   if (!p.onLadder && p.onPlatform != null) {
@@ -1524,6 +1675,53 @@ function step(s: GameState, u: number) {
       p.onPlatform = lad.bpi
       p.vy = 0
     }
+  } else if (p.onElevator != null) {
+    // Riding an elevator. The pole carries the player vertically; horizontal
+    // motion comes from input. Stepping off the side snaps to an adjacent
+    // platform when one aligns with the elevator's current top y.
+    const e = s.elevators[p.onElevator]
+    p.y = e.y
+    let wantVx = 0
+    if (s.input.left)  { wantVx -= WALK_SPEED; p.facing = -1 }
+    if (s.input.right) { wantVx += WALK_SPEED; p.facing =  1 }
+    p.walking = wantVx !== 0
+    p.vx = wantVx
+    p.vy = 0
+    p.x += p.vx * u
+
+    // Jump off the elevator.
+    if (s.jumpQueued && p.jumpCooldown === 0) {
+      s.jumpQueued = false
+      p.vy = -JUMP_SPEED
+      p.jumpCooldown = JUMP_COOLDOWN_FRAMES
+      p.onElevator = null
+      s.score += 5
+      sfxJump()
+    } else if (p.x < e.x - ELEVATOR_HALF_W || p.x > e.x + ELEVATOR_HALF_W) {
+      // Walked off the elevator. Try to land on an adjacent platform at the
+      // current y (only succeeds when the elevator is at endpoints or
+      // momentarily flush with a shelf).
+      let snapped = false
+      for (let i = 0; i < platforms.length; i++) {
+        const pl = platforms[i]
+        if (p.x < pl.x1 || p.x > pl.x2) continue
+        const surf = psy(pl, p.x)
+        if (Math.abs(surf - p.y) <= 3) {
+          p.onElevator = null
+          p.onPlatform = i
+          p.y = surf
+          p.noMountCooldown = NO_MOUNT_COOLDOWN
+          snapped = true
+          break
+        }
+      }
+      if (!snapped) {
+        // No platform at this y. Drop — airborne physics next frame.
+        p.onElevator = null
+      }
+    }
+
+    p.walkAnim += Math.abs(p.vx) * u * 0.18
   } else {
     // On platform or airborne
     let wantVx = 0
@@ -1592,6 +1790,21 @@ function step(s: GameState, u: number) {
           p.vy = 0
           p.vx = 0
           sfxLand()
+        } else if (s.elevators.length > 0) {
+          // Didn't land on a platform; check elevators. Treat each as a
+          // narrow temporary platform at e.y with x ∈ [e.x±ELEVATOR_HALF_W].
+          for (let i = 0; i < s.elevators.length; i++) {
+            const e = s.elevators[i]
+            if (p.x < e.x - ELEVATOR_HALF_W || p.x > e.x + ELEVATOR_HALF_W) continue
+            if (oldY <= e.y + 0.5 && p.y >= e.y - 0.5) {
+              p.onElevator = i
+              p.y = e.y
+              p.vy = 0
+              p.vx = 0
+              sfxLand()
+              break
+            }
+          }
         }
       }
     }
@@ -1620,6 +1833,56 @@ function step(s: GameState, u: number) {
     s.climbSoundTimer = 0
   }
 
+  // ── Wind gust (L3) ───────────────────────────────────────────────────────
+  // Periodic horizontal push on the player; direction alternates each gust.
+  // When active, the gust may carry the player off a platform / elevator
+  // edge — the same edge checks the walk-off branches use are repeated here.
+  const wp = cfg.windPattern
+  if (wp) {
+    if (s.wind.active) {
+      s.wind.framesLeft -= u
+      if (s.wind.framesLeft <= 0) {
+        s.wind.active = false
+        s.wind.vx = 0
+        s.wind.framesUntilNext = wp.intervalFrames
+      }
+    } else {
+      s.wind.framesUntilNext -= u
+      if (s.wind.framesUntilNext <= 0) {
+        s.wind.active = true
+        s.wind.framesLeft = wp.durationFrames
+        s.wind.dir = s.wind.dir === 1 ? -1 : 1
+        s.wind.vx = s.wind.dir * wp.vx
+      }
+    }
+    if (s.wind.active && !p.onLadder) {
+      p.x += s.wind.vx * u
+      if (p.x < 6)     p.x = 6
+      if (p.x > W - 6) p.x = W - 6
+      if (p.onPlatform != null) {
+        const pp = platforms[p.onPlatform]
+        if (p.x < pp.x1 || p.x > pp.x2) p.onPlatform = null
+      }
+      if (p.onElevator != null) {
+        const e = s.elevators[p.onElevator]
+        if (p.x < e.x - ELEVATOR_HALF_W || p.x > e.x + ELEVATOR_HALF_W) p.onElevator = null
+      }
+    }
+  }
+
+  // ── Stake spawner (L3) ───────────────────────────────────────────────────
+  // Independent of Kong's throw timer. New stake every (intervalMin..Max)
+  // frames at a random x near the top of the screen, falling straight down.
+  const sp = cfg.stakePattern
+  if (sp) {
+    s.stakeTimer -= u
+    if (s.stakeTimer <= 0) {
+      const sx = 30 + Math.random() * (360 - 30)
+      s.hazards.push({ type: 'falling_stake', x: sx, y: -20, vy: sp.vy })
+      s.stakeTimer = sp.intervalMinFrames + Math.random() * (sp.intervalMaxFrames - sp.intervalMinFrames)
+    }
+  }
+
   // ── Hit detection (player vs hazards) ────────────────────────────────────
   if (p.invincible === 0) {
     for (const h of s.hazards) {
@@ -1642,8 +1905,10 @@ function step(s: GameState, u: number) {
 
   if (s.throwTimer >= s.nextThrowAt) {
     s.throwTimer = 0
-    spawnLevelHazard(s)
-    s.kongThrowFlash = 0
+    // spawnLevelHazard returns false on stages where Kong is decorative
+    // (L3 today). Only reset the arm-anim flash on actual throws so the
+    // arm doesn't pulse silently.
+    if (spawnLevelHazard(s)) s.kongThrowFlash = 0
   }
 
   // Kong arm anim: raise during last 30 frames of cycle, hold for 8, lower.
@@ -1658,17 +1923,18 @@ function step(s: GameState, u: number) {
     s.kongArm = 0
   }
 
-  // Update each hazard by type. Future hazard types (wind_gust, falling_stake,
-  // glass_shard) get their update branches added in Sessions C–D.
+  // Update each hazard by type. Future hazard types (wind_gust, glass_shard)
+  // get their update branches added in Session D.
   for (const h of s.hazards) {
     switch (h.type) {
       case 'rolling_table':   updateRollingTable(h, u, s, platforms);   break
       case 'dolly':           updateDolly(h, u, platforms);              break
       case 'conveyor_pallet': updateConveyorPallet(h, u, s, platforms); break
+      case 'falling_stake':   h.y += h.vy * u;                           break
       case 'wind_gust':
-      case 'falling_stake':
       case 'glass_shard':
-        // Stub — implemented in later v3 sessions.
+        // Stub — wind is tracked on GameState (see windPattern above);
+        // glass_shard ships in Session D.
         break
     }
   }
@@ -1677,6 +1943,9 @@ function step(s: GameState, u: number) {
   s.hazards = s.hazards.filter((h) => {
     if (h.type === 'rolling_table' || h.type === 'conveyor_pallet') {
       return h.y < H + 80 && h.x > -40 && h.x < W + 40
+    }
+    if (h.type === 'falling_stake') {
+      return h.y < H + 80
     }
     return true
   })
@@ -1719,11 +1988,18 @@ function playerHit(s: GameState) {
     s.player.onPlatform = 0
     s.player.onLadder = false
     s.player.ladderIdx = null
+    s.player.onElevator = null
+    s.player.noMountCooldown = 0
     s.player.facing = 1
     s.player.walking = false
-    // Clear in-flight projectiles (tables, pallets); keep stationary stage
-    // furniture (dollies, future per-level fixtures) so the stage stays itself.
-    s.hazards = s.hazards.filter((h) => h.type !== 'rolling_table' && h.type !== 'conveyor_pallet')
+    // Clear in-flight projectiles (tables, pallets, falling stakes); keep
+    // stationary stage furniture (dollies, future per-level fixtures) so the
+    // stage stays itself.
+    s.hazards = s.hazards.filter((h) =>
+      h.type !== 'rolling_table' &&
+      h.type !== 'conveyor_pallet' &&
+      h.type !== 'falling_stake'
+    )
     s.throwTimer = 0
     s.kongThrowFlash = 9999
     s.walkSoundTimer = 0
@@ -1742,8 +2018,9 @@ function hazardHitsPlayer(h: Hazard, p: Player): boolean {
       // the hit window over the player's torso for a fair read.
       return Math.abs(p.x - h.x) < PALLET_HIT_DX && Math.abs(p.y - h.y - 8) < PALLET_HIT_DY
     case 'falling_stake':
+      return Math.abs(p.x - h.x) < 12 && Math.abs(p.y - h.y) < 30
     case 'glass_shard':
-      // Implemented in later v3 sessions.
+      // Implemented in Session D.
       return false
     case 'wind_gust':
       // Not a hit hazard; affects player velocity instead.
@@ -1834,11 +2111,15 @@ function updateRollingTable(t: RollingTableHazard, u: number, s: GameState, plat
 }
 
 // Level-aware hazard spawner. Routes Kong's throw to the right hazard type
-// for the current level. L1: rolling tables. L2: sliding pallets. L3+: tables
-// today; replaced when later v3 sessions ship their stage mechanics.
-function spawnLevelHazard(s: GameState) {
+// for the current level. L1: rolling tables. L2: conveyor pallets. L3: Kong
+// is decorative — stakes and wind run on independent timers; returns false
+// so the caller can skip the arm-animation flash. L4: tables for now;
+// replaced by Session D.
+function spawnLevelHazard(s: GameState): boolean {
+  if (s.level === 3) return false
   if (s.level === 2) spawnConveyorPallet(s)
   else               spawnRollingTable(s)
+  return true
 }
 
 function spawnConveyorPallet(s: GameState) {
@@ -1940,9 +2221,11 @@ function drawScene(
   drawPlatforms(ctx, cfg.platforms)
   drawConveyors(ctx, s, cfg)
   drawLadders(ctx, cfg.platforms, cfg.ladders)
+  drawElevators(ctx, s)
   drawGoal(ctx, s, cfg.platforms, family)
   drawTentKong(ctx, s, cfg, family)
   drawHazards(ctx, s)
+  drawWind(ctx, s)
   drawPlayer(ctx, s, family)
   drawPopups(ctx, s, family)
   drawBonusLifeFlash(ctx, s, family)
@@ -2440,22 +2723,26 @@ function drawPlatformTile(ctx: CanvasRenderingContext2D, p: Platform, idx: numbe
     drawRivet(ctx, x1 + dx * 0.66, y1 + dy * 0.66 + 5)
   }
 
-  // Stanchions for any floating (non-top, non-ground) platform.
+  // Stanchions for any floating (non-top, non-ground) platform — skip when
+  // the platform below (by idx) sits at or above this one's surface (e.g.,
+  // L3 sibling shelves P2 and P5 share y with their idx-1 neighbor), which
+  // would otherwise render a zero- or negative-height rect at the wrong spot.
   if (idx >= 1 && idx < platforms.length - 1) {
     const below = platforms[idx - 1]
     const cx = (x1 + x2) / 2
     const topY = (y1 + y2) / 2 + height
     const botY = psy(below, cx)
-    // Stanchion gradient
-    const stG = ctx.createLinearGradient(cx - 4, 0, cx + 4, 0)
-    stG.addColorStop(0, '#3a3422')
-    stG.addColorStop(0.5, '#6a5a32')
-    stG.addColorStop(1, '#2a2418')
-    ctx.fillStyle = stG
-    ctx.fillRect(cx - 3, topY, 6, botY - topY)
-    // Foot plate
-    ctx.fillStyle = '#1a1408'
-    ctx.fillRect(cx - 8, botY - 3, 16, 3)
+    if (botY > topY + 4) {
+      const stG = ctx.createLinearGradient(cx - 4, 0, cx + 4, 0)
+      stG.addColorStop(0, '#3a3422')
+      stG.addColorStop(0.5, '#6a5a32')
+      stG.addColorStop(1, '#2a2418')
+      ctx.fillStyle = stG
+      ctx.fillRect(cx - 3, topY, 6, botY - topY)
+      // Foot plate
+      ctx.fillStyle = '#1a1408'
+      ctx.fillRect(cx - 8, botY - 3, 16, 3)
+    }
   }
 }
 
@@ -3046,12 +3333,114 @@ function drawPlayer(ctx: CanvasRenderingContext2D, s: GameState, family: string)
   ctx.fillRect(x - 8, headCy - 3, 16, 0.5)
 }
 
-// ─── Rolling tables / pallets ────────────────────────────────────────────────
+// ─── Rolling tables / pallets / stakes ───────────────────────────────────────
 function drawHazards(ctx: CanvasRenderingContext2D, s: GameState) {
   // Multi-pass so heavier hazards always read on top of stationary fixtures.
   for (const h of s.hazards) if (h.type === 'dolly')           drawDolly(ctx, h)
   for (const h of s.hazards) if (h.type === 'rolling_table')   drawRollingTable(ctx, h)
   for (const h of s.hazards) if (h.type === 'conveyor_pallet') drawConveyorPallet(ctx, h)
+  for (const h of s.hazards) if (h.type === 'falling_stake')   drawFallingStake(ctx, h)
+}
+
+// ─── Tent-pole elevators ─────────────────────────────────────────────────────
+function drawElevators(ctx: CanvasRenderingContext2D, s: GameState) {
+  for (const e of s.elevators) drawElevator(ctx, e)
+}
+
+function drawElevator(ctx: CanvasRenderingContext2D, e: Elevator) {
+  const x = e.x
+  const y = e.y
+  // Cable hanging from the ceiling down to the pole — thin gold strand.
+  ctx.strokeStyle = 'rgba(255,200,80,0.22)'
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  ctx.moveTo(x, 0)
+  ctx.lineTo(x, y)
+  ctx.stroke()
+  // Anchor dot at ceiling
+  ctx.fillStyle = 'rgba(255,184,0,0.55)'
+  ctx.beginPath(); ctx.arc(x, 1, 1.4, 0, Math.PI * 2); ctx.fill()
+  // Soft contact shadow below — no surface to land on mid-travel, but the
+  // diffuse ellipse keeps the pole grounded in the scene.
+  ctx.fillStyle = 'rgba(0,0,0,0.28)'
+  ctx.beginPath()
+  ctx.ellipse(x, y + 18, 22, 3, 0, 0, Math.PI * 2)
+  ctx.fill()
+  // Pole segment — 40w × 10h, ladder-tone gold gradient.
+  const grad = ctx.createLinearGradient(x - ELEVATOR_HALF_W, 0, x + ELEVATOR_HALF_W, 0)
+  grad.addColorStop(0,   C.LADDER_LO)
+  grad.addColorStop(0.4, C.LADDER_MID)
+  grad.addColorStop(0.6, C.LADDER_HI)
+  grad.addColorStop(1,   C.LADDER_VLO)
+  ctx.fillStyle = grad
+  ctx.fillRect(x - ELEVATOR_HALF_W, y, ELEVATOR_HALF_W * 2, ELEVATOR_HEIGHT)
+  // Top sheen
+  ctx.fillStyle = 'rgba(255,230,160,0.55)'
+  ctx.fillRect(x - ELEVATOR_HALF_W, y, ELEVATOR_HALF_W * 2, 1.4)
+  // Bottom shadow band
+  ctx.fillStyle = 'rgba(60,40,0,0.55)'
+  ctx.fillRect(x - ELEVATOR_HALF_W, y + ELEVATOR_HEIGHT - 1.4, ELEVATOR_HALF_W * 2, 1.4)
+  // End caps — darker pole tips for solidity
+  ctx.fillStyle = '#3a2400'
+  ctx.fillRect(x - ELEVATOR_HALF_W - 2, y + 2, 2, ELEVATOR_HEIGHT - 4)
+  ctx.fillRect(x + ELEVATOR_HALF_W,     y + 2, 2, ELEVATOR_HEIGHT - 4)
+  // Cable anchor bracket on top — visually ties the strand to the pole.
+  ctx.fillStyle = 'rgba(80,50,0,0.45)'
+  ctx.fillRect(x - 5, y, 10, 2.4)
+  ctx.fillStyle = 'rgba(255,225,140,0.55)'
+  ctx.fillRect(x - 5, y, 10, 0.8)
+}
+
+// ─── Wind streaks ────────────────────────────────────────────────────────────
+function drawWind(ctx: CanvasRenderingContext2D, s: GameState) {
+  if (!s.wind.active) return
+  const speed = s.wind.vx
+  ctx.fillStyle = 'rgba(180,220,255,0.15)'
+  // 5 horizontal streaks distributed across the canvas. y positions are
+  // deterministic per streak so they don't jitter; x shifts each frame.
+  for (let i = 0; i < 5; i++) {
+    const baseY = (i * 89 + 37) % H
+    const baseX = (i * 53 + 17) % W
+    const shift = s.frameN * speed * 3
+    let x = ((baseX + shift) % W + W) % W
+    const streakW = 40
+    ctx.fillRect(x, baseY, streakW, 2)
+    // Wrap to the opposite edge so the streak doesn't pop out of view.
+    if (x + streakW > W) ctx.fillRect(0, baseY, x + streakW - W, 2)
+    if (x < 0)           ctx.fillRect(W + x, baseY, -x, 2)
+  }
+}
+
+// ─── Falling stakes ──────────────────────────────────────────────────────────
+function drawFallingStake(ctx: CanvasRenderingContext2D, h: FallingStakeHazard) {
+  const x = h.x
+  const y = h.y
+  // Soft glow trail above the stake — sells the "falling fast" read.
+  ctx.fillStyle = 'rgba(255,184,0,0.18)'
+  ctx.fillRect(x - 3, y - 30, 6, 10)
+  // T-cap at the top of the shaft.
+  ctx.fillStyle = '#FFE070'
+  ctx.fillRect(x - 4, y - 22, 8, 3)
+  ctx.fillStyle = '#A87020'
+  ctx.fillRect(x - 4, y - 19, 8, 1)
+  // Shaft — gold gradient.
+  const grad = ctx.createLinearGradient(x - 2, 0, x + 2, 0)
+  grad.addColorStop(0,   '#705010')
+  grad.addColorStop(0.5, '#FFD040')
+  grad.addColorStop(1,   '#4A3008')
+  ctx.fillStyle = grad
+  ctx.fillRect(x - 2, y - 18, 4, 18)
+  // Pointed tip (triangle).
+  ctx.fillStyle = '#FFD040'
+  ctx.beginPath()
+  ctx.moveTo(x - 2, y - 1)
+  ctx.lineTo(x + 2, y - 1)
+  ctx.lineTo(x,     y + 8)
+  ctx.closePath()
+  ctx.fill()
+  // Tip highlight stripe.
+  ctx.fillStyle = '#FFF080'
+  ctx.fillRect(x - 0.5, y - 18, 1, 16)
 }
 
 function drawConveyorPallet(ctx: CanvasRenderingContext2D, t: ConveyorPalletHazard) {
