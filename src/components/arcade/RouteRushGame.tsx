@@ -104,8 +104,11 @@ export default function RouteRushGame() {
     const dpr = Math.min(window.devicePixelRatio || 1, 3)
     canvas.width  = Math.floor(W * dpr)
     canvas.height = Math.floor(H * dpr)
-    canvas.style.width  = `${W}px`
-    canvas.style.height = `${H}px`
+    // CSS display size is driven by the parent wrapper's aspect-ratio + max-height
+    // clamp; the canvas itself stays at `width: 100%; height: 100%` from the JSX
+    // style. Locking `canvas.style.{width,height}` to the native W×H here would
+    // force the canvas to overflow a shorter parent and clip the truck (y=580)
+    // from the bottom of the visible area.
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
     const family = window.getComputedStyle(canvas).fontFamily || 'system-ui, sans-serif'
