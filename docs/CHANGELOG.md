@@ -4,6 +4,35 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-05-17 — Time Window Constraints Phase 4 (driver-app integration)
+
+**Scope:** driver-app only, no migration. Dashboard Phases 1+2+3 already surfaced `constraint_confidence` + window bounds on every `dispatch_stops` row via Migration 058 trigger. This session brings that data into the driver app — read-only, three commits split by surface.
+
+**Commits**
+
+- `05b1607` — **feat(driver): stop card window badge.** New `src/lib/stopConstraints.ts` (pure read-only port of the dashboard's source-priority resolver — `dispatcher_time_override` → structured → notes — plus a driver-app-shaped `buildBadgeContent` helper producing compact labels: "Deliver by X", "Pickup after X", "Deliver 9:00 AM–11:00 AM"). New `src/components/StopWindowBadge.tsx` — amber pill with solid fill for verified/inferred/manual, dashed outline for suggested. Wired into three surfaces: StopDetailScreen (below hero address, on-dark variant), RouteListScreen stop rows (below address line), DayRouteSelectorScreen day list (both COD elevated card + inline row). Data plumbing: regen'd `src/types/supabase.ts` from `partytime-east`, extended `Stop` type + `SupabaseStopRow` + `toRealStop`, added all Phase 1/2 columns to the `/api/routes` SELECT (`constraint_confidence`, `has_any_constraint`, `delivery_window_start/end`, `pickup_window_start/end`, `event_start/end`, `notes_classification`, `dispatcher_time_override`, `dispatcher_constraint_dismissed`).
+
+- `ab0bc1e` — **feat(driver): pickup standby with live countdown.** When a driver arrives early at a pickup stop (geofence-stamped `arrived_at`, `pickup_window_start > now`), StopDetailScreen swaps the regular action card for a standby card: "On Standby" eyebrow + "You're early — pickup opens at X" headline + 44pt `HH:MM:SS` live countdown + "Navigate anyway" button. 1Hz tick via `setInterval` with auto-teardown the moment the window opens. Dismiss writes `sessionStorage` key + logs `NAVIGATION_STARTED` with `early_pickup_override: true`.
+
+- `54766d3` — **feat(driver): navigate gate for early pickup.** Pre-navigate check on the Navigate quick action: pickup + hard tier (verified/inferred/manual) + `pickup_window_start > now` + not-yet-overridden → pop `ConfirmationModal` with "This stop can't be picked up until X. You're N min early." + "I'll wait" / "Navigate anyway". Override path logs the same workflow event and unifies with the standby's sessionStorage key (`early-pickup-override:${stopId}`) so dismissing either surface suppresses both for the session. Reads `Date.now()` at click moment so displayed `minutesEarly` is fresh.
+
+**Files touched**
+- `src/lib/stopConstraints.ts` (new) — read-only resolver + badge content + countdown formatters
+- `src/components/StopWindowBadge.tsx` (new) — amber pill component, default + on-dark variants
+- `src/lib/supabaseTransform.ts` — `SupabaseStopRow` extended with all Phase 1/2 columns; `toRealStop` maps them; `narrowTier` helper
+- `src/app/api/routes/route.ts` — SELECT extended (10 new columns)
+- `src/types/index.ts` — `Stop` extended with constraint fields
+- `src/types/supabase.ts` — regen'd from `partytime-east`
+- `src/screens/StopDetailScreen.tsx` — badge + standby + gate
+- `src/screens/RouteListScreen.tsx` — badge on stop rows
+- `src/screens/DayRouteSelectorScreen.tsx` — badge on day list (COD + inline)
+
+**Verification.** Three `npx next build` passes (one per commit). Smoke-test plan in `CLAUDE.md` → "Time Window Constraints — Phase 4" section.
+
+**Hard stops respected.** No constraint columns written. No ETA recalc logic touched. Driver app is strictly a reader on Phase 1/2 data — every override merely records a workflow event; nothing reaches Postgres beyond that.
+
+---
+
 ## 2026-05-16 — Arcade iPhone controls + canvas layout (6-commit incremental fix arc)
 
 **Scope:** driver-app only, no migration, no game logic. Six commits over a single iPhone-testing session addressing on-device usability of the three arcade games. Final state confirmed working by Darren after `b7798bf`.

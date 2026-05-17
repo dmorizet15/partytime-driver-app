@@ -1,5 +1,18 @@
 # Open Tasks — partytime-driver-app
 
+## May 17, 2026 — Time Window Constraints Phase 4 (driver-app integration)
+
+- [ ] **Smoke-test the three new surfaces on production** after Vercel auto-deploys the three `main` commits (`05b1607`, `ab0bc1e`, `54766d3`). Plan in `CLAUDE.md` → "Time Window Constraints — Phase 4" → NEXT block. Five loops:
+  1. Badge renders below the address on StopDetail (on-dark), RouteListScreen rows, and DayRouteSelectorScreen day list (both COD + inline). Constraint-less stops show no badge.
+  2. Pickup stop with future `pickup_window_start` → tap Open in Maps → gate modal pops with "Navigate anyway" + "I'll wait". `I'll wait` dismisses cleanly.
+  3. Same pickup → tap Open in Maps → tap "Navigate anyway" → maps opens. Re-tap Open in Maps → no modal (override sticky for the session).
+  4. Same pickup, fresh session, drive into 150m geofence → `arrived_at` stamps → action card replaced by standby card with live HH:MM:SS countdown. Tap "Navigate anyway" → action card returns.
+  5. Suggested-tier stop → badge renders as dashed outline; no gate, no standby.
+- [ ] **Walk the visual diff against the Notion confidence-tier table** to confirm the amber palette + dashed-vs-solid treatment matches the dashboard's `StopWindowBlock` chips. Today the driver-app pill is more compact (no event-start anchor line, no ETA cushion math) — that's intentional, but the tier color contract should still match exactly.
+- [ ] **Optional: surface the "Event starts X" anchor below the badge on StopDetailScreen** (currently only the badge — the dashboard block also renders the `event_start` / `event_end` anchor as a secondary muted line). Low priority; the badge alone covers the must-deliver-by signal the spec called out as critical.
+- [ ] **Optional: persist `early_pickup_override` server-side** via a `stop_workflow_events` row (today it lives only in the `NAVIGATION_STARTED` event detail JSON). Would let the dashboard surface "driver overrode the window" on the stop card without scraping event details. Defer until a dashboard ask materializes.
+- [ ] **Long-term: mirroring discipline for `src/lib/stopConstraints.ts`.** Driver-app copy is a strict read-only subset of `partytime-dashboard/src/lib/stopConstraints.ts` (resolver + tier check + clock formatter). If dashboard's resolver changes (new source, reordered priority), mirror here in the same session. Not byte-identical today — driver app has no mutations, no React-Query glue.
+
 ## May 16, 2026 — Arcade iPhone controls + canvas layout fix arc
 
 - [x] ~~**iPhone controls + canvas layout — Party Kong.**~~ Confirmed working by Darren after `b7798bf`. Six commits: `78c46c1` (iOS 18 Writing Tools + held-input cancel), `d51e721` (canvas-area shell that pins controls above the fold), `bb4f340` (drop canvas.style.width/height inline lock so CSS drives display), `1b259da` (tighten canvas-to-controls gap), `891adf4` (CSS-crop the empty back-wall + floor-strip band below ground via `VISIBLE_H = 600`), `b7798bf` (switch wrapper to height-driven sizing so aspect-ratio doesn't break on short viewports). Game logic completely untouched. Lessons logged in `tasks/lessons.md` (four new entries).

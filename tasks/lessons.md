@@ -6,6 +6,22 @@ Format: one lesson per block. Lead with the rule, then **Why** and **How to appl
 
 ---
 
+## A driver-app feature that reads dashboard-trigger-computed columns needs a type regen FIRST, even though the columns existed when the regen happened months ago.
+
+**Why:** Phase 4 (May 17, 2026) shipped a stop-card badge driven by `constraint_confidence`, `delivery_window_start/end`, `pickup_window_start/end`, `notes_classification`, `dispatcher_time_override`, `dispatcher_constraint_dismissed`. All six columns exist on `partytime-east` since dashboard Migration 058 (mid-May). But the driver-app's local `src/types/supabase.ts` was regen'd before that migration applied — none of the new columns existed in the type yet. Trying to SELECT them in `/api/routes` and map them in `supabaseTransform` would have compiled fine (the SELECT string is untyped, the row shape was hand-rolled as `SupabaseStopRow`), but downstream code referencing `stop.constraint_confidence` would have failed type-checking. Caught by running `grep -n "constraint_confidence" src/types/supabase.ts` before writing UI code — zero matches → regen first.
+
+**How to apply:** When adding a driver-app feature that consumes columns the DASHBOARD owns (`partytime-east` is shared; either repo can write migrations), the FIRST step after writing the SELECT is `grep <new_column> src/types/supabase.ts`. Zero matches → regen via `supabase gen types typescript --project-id fumprcyavpefyupurvsv 2>/dev/null | grep -v "^A new version\|^We recommend\|^Initialising" > src/types/supabase.ts`, then re-grep to confirm the column landed. The two-repo migration coordination problem (separate lesson) means driver-app types drift silently behind dashboard reality — the regen is cheap; the silent drift is expensive.
+
+---
+
+## When the dashboard already owns a feature's logic, port the pure-functional layer; don't reimplement.
+
+**Why:** Phase 4's window-resolver tree (`dispatcher_time_override` → structured → notes) is non-trivial — six fields, two stop-type branches, an ordering that has changed once already on the dashboard side. The dashboard's `src/lib/stopConstraints.ts` is well-tested through the dispatch board. Reimplementing the priority order from the Notion spec would either match it exactly (in which case the port is the simpler artifact) or diverge subtly (in which case the bug surfaces months later when a driver-app badge says "Pickup by 5 PM" but the dashboard says the dispatcher overrode to 7 PM). The May 17 driver-app port grabbed `effectiveWindow`, `formatLocalClock`, and `isHardConstraintTier` verbatim, dropped the dashboard-specific ETA-violation + mutation glue, and added one new helper (`buildBadgeContent`) for the compact label.
+
+**How to apply:** When a feature has a working dashboard implementation and you're building the driver-app surface, scan `~/Projects/partytime-dashboard/src/lib/` and `~/Projects/partytime-dashboard/src/types/` for the helpers + types first. Port the pure-functional layer (no React, no Supabase, no React-Query) verbatim — those are the parts that need to STAY in lockstep. Drop the dashboard-specific wrappers (mutations, optimistic UI, store glue). Document the mirror in CLAUDE.md so the next session knows to update both copies when the resolver changes. This is the same discipline as the `equipmentSummary.ts` / `inflatable.ts` / `itemCategories.ts` mirror — except those helpers were originally driver-app-side and grew copies in the dashboard; `stopConstraints.ts` flows the other way.
+
+---
+
 ## `next/font/google` does not register fonts under a global name — canvas `ctx.font` cannot find them by their plain name.
 
 **Why:** Built the PartyTime Arcade games (May 15, 2026 overnight) with `Outfit` imported via `next/font/google` with a CSS variable `--font-outfit`. The React DOM rendered Outfit correctly via the wrapper layout's className. But canvas calls like `ctx.font = 'bold 9px Outfit'` or `ctx.font = 'bold 9px var(--font-outfit), system-ui'` both fell back to system-ui — because `next/font` generates a hashed font-family name (something like `'__Outfit_abc123'`), NOT the literal string `'Outfit'`, and canvas's font-shorthand parser does not resolve CSS custom properties. The hard rule in the spec was "no monospace or system fonts anywhere in the arcade." Caught the issue before push by reading the computed style off the canvas element.
