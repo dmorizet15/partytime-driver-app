@@ -20,7 +20,14 @@ import {
   effectiveWindow,
   formatCountdown,
   formatLocalClock,
+  isHardConstraintTier,
 } from '@/lib/stopConstraints'
+
+// sessionStorage key — driver chose to proceed despite the pickup window
+// not yet being open. Set by the standby card's dismiss button AND by the
+// pre-navigate gate's "Navigate anyway" button. Once set, both surfaces
+// stop gating for this stop until the session ends.
+const earlyOverrideKey = (stopId: string) => `early-pickup-override:${stopId}`
 
 interface StopDetailScreenProps { routeId: string; stopId: string }
 type PodStatus = 'idle' | 'uploading' | 'uploaded' | 'failed'
@@ -254,10 +261,14 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   // start. The driver can dismiss with "Navigate anyway" — that logs an
   // override and returns the normal action card so they can proceed.
   const [now, setNow] = useState<Date>(() => new Date())
-  const [standbyDismissed, setStandbyDismissed] = useState<boolean>(() => {
+  const [earlyOverride, setEarlyOverride] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false
-    return sessionStorage.getItem(`standby-dismissed:${stopId}`) === '1'
+    return sessionStorage.getItem(earlyOverrideKey(stopId)) === '1'
   })
+  // Pre-navigate gate modal. Surfaces when the driver taps Navigate on a
+  // hard-tier pickup stop before its window opens. "I'll wait" dismisses.
+  // "Navigate anyway" sets the override and proceeds.
+  const [showEarlyPickupGate, setShowEarlyPickupGate] = useState(false)
 
   useEffect(() => {
     if (stop) logEvent('STOP_VIEWED', routeId, stopId, stop.order_id)
@@ -364,11 +375,22 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   // pickup window has opened we tear the interval down on the next tick.
   const pickupWindow = stop ? effectiveWindow(stop) : null
   const pickupOpensAt =
-    stop && stop.stop_type === 'pickup' && stop.arrived_at && !standbyDismissed
+    stop && stop.stop_type === 'pickup' && stop.arrived_at && !earlyOverride
       ? pickupWindow?.startsAt ?? null
       : null
   const isOnStandby =
     !!pickupOpensAt && new Date(pickupOpensAt).getTime() > now.getTime()
+
+  // Pre-navigate gate: pickup, hard tier (verified / inferred / manual), not
+  // yet open, and the driver hasn't already chosen to override this session.
+  // Suggested tier never gates — the badge alone is the awareness surface.
+  // `pickupWindowStart` + `minutesEarly` are also consumed by the modal's
+  // message; `now` is recomputed at the click moment in handleNavigateRequest
+  // so the displayed minutes stay fresh.
+  const pickupWindowStart = pickupWindow?.startsAt ?? null
+  const minutesEarly = pickupWindowStart
+    ? Math.max(0, Math.round((new Date(pickupWindowStart).getTime() - now.getTime()) / 60_000))
+    : 0
 
   useEffect(() => {
     if (!pickupOpensAt) return
@@ -378,18 +400,24 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     return () => clearInterval(t)
   }, [pickupOpensAt])
 
-  function handleDismissStandby() {
-    setStandbyDismissed(true)
+  function persistEarlyOverride(source: 'standby' | 'navigate_gate') {
+    setEarlyOverride(true)
     if (typeof window !== 'undefined') {
-      sessionStorage.setItem(`standby-dismissed:${stopId}`, '1')
+      sessionStorage.setItem(earlyOverrideKey(stopId), '1')
     }
+    const startIso = pickupOpensAt ?? pickupWindowStart ?? null
     logEvent('NAVIGATION_STARTED', routeId, stopId, stop?.order_id, {
       early_pickup_override: true,
-      pickup_opens_at:       pickupOpensAt ?? null,
-      minutes_early:         pickupOpensAt
-        ? Math.max(0, Math.round((new Date(pickupOpensAt).getTime() - Date.now()) / 60_000))
+      override_source:       source,
+      pickup_opens_at:       startIso,
+      minutes_early:         startIso
+        ? Math.max(0, Math.round((new Date(startIso).getTime() - Date.now()) / 60_000))
         : null,
     })
+  }
+
+  function handleDismissStandby() {
+    persistEarlyOverride('standby')
   }
 
   // ── Stop not found ──────────────────────────────────────────────────────────
@@ -467,6 +495,35 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   const items = stop.items ?? []
   const etaSentTime     = stop.on_the_way_sent_at ? formatSentAt(stop.on_the_way_sent_at) : null
   const etaQuotedSnippet = etaRange ? `We're ${etaRange} out.` : null
+
+  // Pre-navigate gate (Phase 4). Intercepts taps on the Navigate quick
+  // action when the stop is a hard-tier pickup with an unopened window.
+  // The gate is advisory — it surfaces the constraint and lets the driver
+  // choose to wait or override. Override sticks for the session. We re-
+  // evaluate against Date.now() here so the gate uses fresh time even
+  // when the screen's `now` state hasn't ticked recently.
+  function handleNavigateRequest() {
+    if (!stop || navLoading) return
+    const nowMs = Date.now()
+    const shouldGate =
+      stop.stop_type === 'pickup'
+      && isHardConstraintTier(stop.constraint_confidence)
+      && !earlyOverride
+      && !!pickupWindowStart
+      && new Date(pickupWindowStart).getTime() > nowMs
+    if (shouldGate) {
+      setNow(new Date(nowMs))
+      setShowEarlyPickupGate(true)
+      return
+    }
+    void handleNavigate()
+  }
+
+  function handleConfirmEarlyNavigate() {
+    setShowEarlyPickupGate(false)
+    persistEarlyOverride('navigate_gate')
+    void handleNavigate()
+  }
 
   async function handleNavigate() {
     if (!stop || navLoading) return
@@ -1723,7 +1780,7 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
                   <QuickAction
                     icon={<NavigateIcon size={22} color={C.ink}/>}
                     label={navLoading ? 'Opening…' : 'Open in Maps'}
-                    onClick={handleNavigate}
+                    onClick={handleNavigateRequest}
                     loading={navLoading}
                   />
                   <QuickAction
@@ -1847,6 +1904,17 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
           onConfirm={handleConfirmComplete}
           onCancel={() => setShowCompleteModal(false)}
           isLoading={completeLoading}
+        />
+      )}
+
+      {showEarlyPickupGate && pickupWindowStart && (
+        <ConfirmationModal
+          title="Too early for pickup"
+          message={`This stop can't be picked up until ${formatLocalClock(pickupWindowStart)}. You're ${minutesEarly} min early.`}
+          confirmLabel="Navigate anyway"
+          cancelLabel="I'll wait"
+          onConfirm={handleConfirmEarlyNavigate}
+          onCancel={() => setShowEarlyPickupGate(false)}
         />
       )}
 
