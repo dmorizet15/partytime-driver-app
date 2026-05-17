@@ -16,6 +16,11 @@ import { HAS_STOP_LEVEL_BADGES } from '@/lib/weather/thresholds'
 import { formatEta } from '@/lib/formatEta'
 import { useArrivalGeofence } from '@/hooks/useArrivalGeofence'
 import StopWindowBadge from '@/components/StopWindowBadge'
+import {
+  effectiveWindow,
+  formatCountdown,
+  formatLocalClock,
+} from '@/lib/stopConstraints'
 
 interface StopDetailScreenProps { routeId: string; stopId: string }
 type PodStatus = 'idle' | 'uploading' | 'uploaded' | 'failed'
@@ -243,6 +248,17 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   const [showDispatcherNoteModal, setShowDispatcherNoteModal] = useState(false)
   const dispatcherNoteAutoShownRef = useRef(false)
 
+  // ── Pickup-window standby (Phase 4) ───────────────────────────────────────
+  // When a driver arrives at a pickup stop before its time window opens, we
+  // surface a standby card with a live HH:MM:SS countdown to the window's
+  // start. The driver can dismiss with "Navigate anyway" — that logs an
+  // override and returns the normal action card so they can proceed.
+  const [now, setNow] = useState<Date>(() => new Date())
+  const [standbyDismissed, setStandbyDismissed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    return sessionStorage.getItem(`standby-dismissed:${stopId}`) === '1'
+  })
+
   useEffect(() => {
     if (stop) logEvent('STOP_VIEWED', routeId, stopId, stop.order_id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -341,6 +357,40 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     enabled:   geofenceEnabled,
     onArrive:  (arrivedAt) => markArrived(stopId, arrivedAt),
   })
+
+  // ── Standby tick ──────────────────────────────────────────────────────────
+  // Drives the live countdown when the driver has arrived early at a pickup
+  // stop. Only runs while standby could conceivably be showing — once the
+  // pickup window has opened we tear the interval down on the next tick.
+  const pickupWindow = stop ? effectiveWindow(stop) : null
+  const pickupOpensAt =
+    stop && stop.stop_type === 'pickup' && stop.arrived_at && !standbyDismissed
+      ? pickupWindow?.startsAt ?? null
+      : null
+  const isOnStandby =
+    !!pickupOpensAt && new Date(pickupOpensAt).getTime() > now.getTime()
+
+  useEffect(() => {
+    if (!pickupOpensAt) return
+    // Stop ticking once the window opens — no need to spin every second after.
+    if (new Date(pickupOpensAt).getTime() <= Date.now()) return
+    const t = setInterval(() => setNow(new Date()), 1000)
+    return () => clearInterval(t)
+  }, [pickupOpensAt])
+
+  function handleDismissStandby() {
+    setStandbyDismissed(true)
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem(`standby-dismissed:${stopId}`, '1')
+    }
+    logEvent('NAVIGATION_STARTED', routeId, stopId, stop?.order_id, {
+      early_pickup_override: true,
+      pickup_opens_at:       pickupOpensAt ?? null,
+      minutes_early:         pickupOpensAt
+        ? Math.max(0, Math.round((new Date(pickupOpensAt).getTime() - Date.now()) / 60_000))
+        : null,
+    })
+  }
 
   // ── Stop not found ──────────────────────────────────────────────────────────
   if (!stop || !route) {
@@ -1529,7 +1579,73 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
               </div>
             )}
 
-            {/* ACTION CARD — Mark Arrived + 3 quick actions */}
+            {/* STANDBY CARD — appears when the driver has arrived early at a
+                pickup stop and the window hasn't opened yet. Replaces the
+                normal action card until the window opens or the driver
+                dismisses with "Navigate anyway". */}
+            {isOnStandby && pickupOpensAt ? (
+              <div style={{ padding: '16px 18px 0' }}>
+                <div style={{
+                  background: C.paper,
+                  border: `1.5px solid ${C.ink}`,
+                  borderRadius: 22,
+                  padding: '18px 18px 16px',
+                  boxShadow: `5px 5px 0 ${C.gold}`,
+                  textAlign: 'center',
+                }}>
+                  <div style={{
+                    fontSize: 10.5, fontWeight: 900,
+                    letterSpacing: '0.22em', color: C.goldDeep,
+                    textTransform: 'uppercase',
+                  }}>
+                    On Standby
+                  </div>
+                  <div style={{
+                    marginTop: 6,
+                    fontFamily: FONT_DISPLAY,
+                    fontSize: 22, fontWeight: 900,
+                    color: C.ink, lineHeight: 1.15,
+                    letterSpacing: '-0.02em',
+                  }}>
+                    You&apos;re early — pickup opens at {formatLocalClock(pickupOpensAt)}
+                  </div>
+                  <div style={{
+                    marginTop: 14,
+                    fontFamily: FONT_DISPLAY,
+                    fontSize: 44, fontWeight: 900,
+                    color: C.ink, lineHeight: 1.0,
+                    letterSpacing: '-0.03em',
+                    fontVariantNumeric: 'tabular-nums',
+                  }}>
+                    {formatCountdown(pickupOpensAt, now)}
+                  </div>
+                  <div style={{
+                    marginTop: 6, fontSize: 11.5,
+                    color: C.muted, letterSpacing: '0.04em',
+                    textTransform: 'uppercase', fontWeight: 700,
+                  }}>
+                    until pickup window opens
+                  </div>
+                  <button
+                    onClick={handleDismissStandby}
+                    style={{
+                      marginTop: 18,
+                      width: '100%', height: 52, borderRadius: 999,
+                      background: C.ink, color: '#fff',
+                      border: 0, cursor: 'pointer',
+                      fontSize: 14, fontWeight: 900, fontFamily: FONT_DISPLAY,
+                      letterSpacing: '0.02em',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                    }}
+                  >
+                    <NavigateIcon size={16} color={C.gold} />
+                    Navigate anyway
+                  </button>
+                </div>
+              </div>
+            ) : (
+
+            /* ACTION CARD — Mark Arrived + 3 quick actions */
             <div style={{ padding: '16px 18px 0' }}>
               <div style={{
                 background: C.paper,
@@ -1638,6 +1754,7 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
 
               {navMessage && <InlinePill tone="muted">{navMessage}</InlinePill>}
             </div>
+            )}
           </>
         )}
 
