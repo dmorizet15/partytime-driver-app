@@ -1,4 +1,9 @@
 import type { PaymentState, Route, Stop, StopStatus } from '@/types'
+import type {
+  ConstraintTier,
+  DispatcherTimeOverride,
+  NotesClassification,
+} from './stopConstraints'
 import { buildEquipmentSummary } from './equipmentSummary'
 
 // ─── Row shapes returned by the Supabase queries ─────────────────────────────
@@ -66,6 +71,22 @@ export interface SupabaseStopRow {
   completed_at:          string | null
   arrived_at:            string | null
   tapgoods_order_token:  string | null
+  // Time-window constraint columns (Phase 1/2 of the dashboard rollout —
+  // driver app reads only, never writes). `constraint_confidence` is set
+  // by the dashboard's Migration 058 trigger; the window bounds come from
+  // TapGoods structured schedule, the dispatcher's manual override, or
+  // the LLM notes classifier per the source-priority tree.
+  constraint_confidence:           string | null
+  has_any_constraint:              boolean | null
+  delivery_window_start:           string | null
+  delivery_window_end:             string | null
+  pickup_window_start:             string | null
+  pickup_window_end:               string | null
+  event_start:                     string | null
+  event_end:                       string | null
+  notes_classification:            unknown | null
+  dispatcher_time_override:        unknown | null
+  dispatcher_constraint_dismissed: boolean | null
 }
 
 // Local alias — the items[] row shape coming back from dispatch_stops.
@@ -128,7 +149,23 @@ function toRealStop(s: SupabaseStopRow, routeId: string, seq: number): Stop {
     on_the_way_sent_at: undefined,
     completed_at:       s.completed_at ?? undefined,
     arrived_at:         s.arrived_at ?? undefined,
+    constraint_confidence:           narrowTier(s.constraint_confidence),
+    has_any_constraint:              s.has_any_constraint ?? false,
+    delivery_window_start:           s.delivery_window_start,
+    delivery_window_end:             s.delivery_window_end,
+    pickup_window_start:             s.pickup_window_start,
+    pickup_window_end:               s.pickup_window_end,
+    event_start:                     s.event_start,
+    event_end:                       s.event_end,
+    notes_classification:            s.notes_classification as NotesClassification | null,
+    dispatcher_time_override:        s.dispatcher_time_override as DispatcherTimeOverride | null,
+    dispatcher_constraint_dismissed: s.dispatcher_constraint_dismissed ?? false,
   }
+}
+
+function narrowTier(raw: string | null): ConstraintTier | null {
+  if (raw === 'verified' || raw === 'inferred' || raw === 'suggested' || raw === 'manual') return raw
+  return null
 }
 
 // Synthesize a Stop for a warehouse break block (Path A). The driver list

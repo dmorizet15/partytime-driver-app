@@ -15,6 +15,7 @@ import StopWeatherModule from '@/components/weather/StopWeatherModule'
 import { HAS_STOP_LEVEL_BADGES } from '@/lib/weather/thresholds'
 import { formatEta } from '@/lib/formatEta'
 import { useArrivalGeofence } from '@/hooks/useArrivalGeofence'
+import StopWindowBadge from '@/components/StopWindowBadge'
 
 interface StopDetailScreenProps { routeId: string; stopId: string }
 type PodStatus = 'idle' | 'uploading' | 'uploaded' | 'failed'
@@ -1033,6 +1034,14 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
             position: 'relative',
           }}>
             {heroAddress}
+          </div>
+        )}
+
+        {/* Time-window constraint badge (Phase 4). on-dark variant so the
+            amber stays legible against the blue hero. */}
+        {stop.constraint_confidence && (
+          <div style={{ marginTop: 10 }}>
+            <StopWindowBadge stop={stop} size="md" variant="on-dark" />
           </div>
         )}
 

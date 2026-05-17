@@ -8,6 +8,7 @@ import { useInspectionStatus }          from '@/hooks/useInspectionStatus'
 import type { Stop }                    from '@/types'
 import BottomNav                        from '@/components/BottomNav'
 import PostTripDefectCard               from '@/components/PostTripDefectCard'
+import StopWindowBadge                  from '@/components/StopWindowBadge'
 
 // ─── Direction 03 (Editorial) tokens ──────────────────────────────────────────
 const C = {
@@ -882,6 +883,13 @@ export default function DayRouteSelectorScreen() {
                         }}>
                           {headline}
                         </div>
+                        {/* Time-window constraint badge (Phase 4) — sits between the
+                            headline and the address/pill row. */}
+                        {stop.constraint_confidence && (
+                          <div style={{ marginTop: 6 }}>
+                            <StopWindowBadge stop={stop} size="sm" />
+                          </div>
+                        )}
                         <div style={{
                           marginTop: 4,
                           display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
@@ -939,6 +947,12 @@ export default function DayRouteSelectorScreen() {
                         }}>
                           {headline}
                         </div>
+                        {/* Time-window constraint badge (Phase 4). */}
+                        {stop.constraint_confidence && (
+                          <div style={{ marginTop: 4 }}>
+                            <StopWindowBadge stop={stop} size="sm" />
+                          </div>
+                        )}
                         <div style={{
                           marginTop: 2,
                           display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,

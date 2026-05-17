@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       audit_log: {
@@ -175,16 +150,25 @@ export type Database = {
           cod_acknowledged_by: string | null
           company_name: string | null
           completed_at: string | null
+          constraint_confidence: string | null
           created_at: string
           customer_cell: string | null
           customer_name: string
           customer_phone: string | null
+          delivery_window_end: string | null
+          delivery_window_start: string | null
           dispatch_status: Database["public"]["Enums"]["dispatch_status_enum"]
+          dispatcher_constraint_dismissed: boolean
           dispatcher_notes: string | null
+          dispatcher_time_override: Json | null
           duplicate_type: string | null
           estimated_minutes: number | null
+          event_end: string | null
+          event_start: string | null
           geocode_attempted_at: string | null
           geocoded_at: string | null
+          has_any_constraint: boolean
+          has_structured_constraints: boolean
           id: string
           items: Json | null
           linked_stop_id: string | null
@@ -192,10 +176,24 @@ export type Database = {
           loaded_by: string | null
           no_pickup_needed: boolean
           notes: string | null
+          notes_additional_delivery: string | null
+          notes_additional_order: string | null
+          notes_classification: Json | null
+          notes_classification_at: string | null
+          notes_classification_version: string | null
+          notes_employee_authored: string | null
+          notes_flip: string | null
+          notes_hash: string | null
+          notes_preferred_delivery: Json | null
+          notes_preferred_pickup: Json | null
+          notes_set_by_time: string | null
+          notes_strike_time: string | null
           order_end_date: string | null
           order_start_date: string | null
           order_status: string | null
           payment_state: Database["public"]["Enums"]["payment_state_enum"]
+          pickup_window_end: string | null
+          pickup_window_start: string | null
           required_pickup_count: number
           reservation_id: string
           route_id: string | null
@@ -226,16 +224,25 @@ export type Database = {
           cod_acknowledged_by?: string | null
           company_name?: string | null
           completed_at?: string | null
+          constraint_confidence?: string | null
           created_at?: string
           customer_cell?: string | null
           customer_name: string
           customer_phone?: string | null
+          delivery_window_end?: string | null
+          delivery_window_start?: string | null
           dispatch_status?: Database["public"]["Enums"]["dispatch_status_enum"]
+          dispatcher_constraint_dismissed?: boolean
           dispatcher_notes?: string | null
+          dispatcher_time_override?: Json | null
           duplicate_type?: string | null
           estimated_minutes?: number | null
+          event_end?: string | null
+          event_start?: string | null
           geocode_attempted_at?: string | null
           geocoded_at?: string | null
+          has_any_constraint?: boolean
+          has_structured_constraints?: boolean
           id?: string
           items?: Json | null
           linked_stop_id?: string | null
@@ -243,10 +250,24 @@ export type Database = {
           loaded_by?: string | null
           no_pickup_needed?: boolean
           notes?: string | null
+          notes_additional_delivery?: string | null
+          notes_additional_order?: string | null
+          notes_classification?: Json | null
+          notes_classification_at?: string | null
+          notes_classification_version?: string | null
+          notes_employee_authored?: string | null
+          notes_flip?: string | null
+          notes_hash?: string | null
+          notes_preferred_delivery?: Json | null
+          notes_preferred_pickup?: Json | null
+          notes_set_by_time?: string | null
+          notes_strike_time?: string | null
           order_end_date?: string | null
           order_start_date?: string | null
           order_status?: string | null
           payment_state: Database["public"]["Enums"]["payment_state_enum"]
+          pickup_window_end?: string | null
+          pickup_window_start?: string | null
           required_pickup_count?: number
           reservation_id: string
           route_id?: string | null
@@ -277,16 +298,25 @@ export type Database = {
           cod_acknowledged_by?: string | null
           company_name?: string | null
           completed_at?: string | null
+          constraint_confidence?: string | null
           created_at?: string
           customer_cell?: string | null
           customer_name?: string
           customer_phone?: string | null
+          delivery_window_end?: string | null
+          delivery_window_start?: string | null
           dispatch_status?: Database["public"]["Enums"]["dispatch_status_enum"]
+          dispatcher_constraint_dismissed?: boolean
           dispatcher_notes?: string | null
+          dispatcher_time_override?: Json | null
           duplicate_type?: string | null
           estimated_minutes?: number | null
+          event_end?: string | null
+          event_start?: string | null
           geocode_attempted_at?: string | null
           geocoded_at?: string | null
+          has_any_constraint?: boolean
+          has_structured_constraints?: boolean
           id?: string
           items?: Json | null
           linked_stop_id?: string | null
@@ -294,10 +324,24 @@ export type Database = {
           loaded_by?: string | null
           no_pickup_needed?: boolean
           notes?: string | null
+          notes_additional_delivery?: string | null
+          notes_additional_order?: string | null
+          notes_classification?: Json | null
+          notes_classification_at?: string | null
+          notes_classification_version?: string | null
+          notes_employee_authored?: string | null
+          notes_flip?: string | null
+          notes_hash?: string | null
+          notes_preferred_delivery?: Json | null
+          notes_preferred_pickup?: Json | null
+          notes_set_by_time?: string | null
+          notes_strike_time?: string | null
           order_end_date?: string | null
           order_start_date?: string | null
           order_status?: string | null
           payment_state?: Database["public"]["Enums"]["payment_state_enum"]
+          pickup_window_end?: string | null
+          pickup_window_start?: string | null
           required_pickup_count?: number
           reservation_id?: string
           route_id?: string | null
@@ -1645,9 +1689,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {
       dispatch_status_enum: [

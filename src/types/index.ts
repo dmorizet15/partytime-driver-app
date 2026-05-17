@@ -32,6 +32,13 @@ export interface EquipmentSummary {
   tier2: string[]
 }
 
+// ─── Time-window constraint (Phase 4 — driver-app read-only) ────────────────
+import type {
+  ConstraintTier,
+  NotesClassification,
+  DispatcherTimeOverride,
+} from '@/lib/stopConstraints'
+
 // ─── Stop ────────────────────────────────────────────────────────────────────
 export interface Stop {
   stop_id: string
@@ -67,6 +74,23 @@ export interface Stop {
   completed_at?: string
   arrived_at?: string         // GPS auto-arrival timestamp; set once on first
                               //   150m-geofence trigger and never overwritten.
+  // Time-window constraint (Phase 4). Read-only on the driver app — written
+  // by the dashboard's Migration 058 trigger + the dispatcher's override
+  // controls. `constraint_confidence` is the headline tier; the underlying
+  // window bounds come from `*_window_start/end`, `notes_classification`, or
+  // `dispatcher_time_override` per the source-priority tree in
+  // src/lib/stopConstraints.ts.
+  constraint_confidence?:           ConstraintTier | null
+  has_any_constraint?:              boolean
+  delivery_window_start?:           string | null
+  delivery_window_end?:             string | null
+  pickup_window_start?:             string | null
+  pickup_window_end?:               string | null
+  event_start?:                     string | null
+  event_end?:                       string | null
+  notes_classification?:            NotesClassification | null
+  dispatcher_time_override?:        DispatcherTimeOverride | null
+  dispatcher_constraint_dismissed?: boolean
 }
 
 // ─── Workflow event ───────────────────────────────────────────────────────────

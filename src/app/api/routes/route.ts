@@ -178,7 +178,13 @@ export async function GET(req: NextRequest) {
         calculated_eta,
         stop_status, completed_at,
         arrived_at,
-        tapgoods_order_token
+        tapgoods_order_token,
+        constraint_confidence, has_any_constraint,
+        delivery_window_start, delivery_window_end,
+        pickup_window_start, pickup_window_end,
+        event_start, event_end,
+        notes_classification,
+        dispatcher_time_override, dispatcher_constraint_dismissed
       `)
       .in('route_id', routeIds)
       // Dashboard Migration 035 (2026-05-08) installed a trigger that holds

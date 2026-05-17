@@ -9,6 +9,7 @@ import { Stop, PaymentState } from '@/types'
 import Image from 'next/image'
 import BottomNav from '@/components/BottomNav'
 import WeekScheduleView from '@/components/WeekScheduleView'
+import StopWindowBadge from '@/components/StopWindowBadge'
 import { formatEta } from '@/lib/formatEta'
 
 // Persisted per session — sessionStorage clears on cold app start, so the
@@ -473,6 +474,15 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
                         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                       }}>
                         {addressLine}
+                      </div>
+                    )}
+
+                    {/* Time-window constraint badge (Phase 4). Compact pill below
+                        the address line; only renders when the dashboard has
+                        attached a tier to this stop. */}
+                    {stop.constraint_confidence && (
+                      <div style={{ marginTop: 4 }}>
+                        <StopWindowBadge stop={stop} size="sm" />
                       </div>
                     )}
 
