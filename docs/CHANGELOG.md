@@ -4,6 +4,50 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-05-19 — Bug-fix session: super_admin route visibility + tenting sub-hub
+
+**Scope:** driver-app only, no migration. Two unrelated bugs surfaced by Darren on post-Phase-4 smoke testing. Both smoke-tested and confirmed fixed before session close.
+
+**Bug 1 — super_admin could not see the weekly route schedule (and saw dimmed stops on Home)**
+
+Root cause: Two separate problems introduced by two separate prior commits.
+
+- `288d120` (2026-05-14, Tools hub v2) removed the path from the Tools/nav to the weekly schedule for unassigned super_admin — the Routes tab fell back to `/` (Home) when no assignment existed, and no nav item pointed at `/schedule`.
+- `6e1484e` (2026-05-16, assignment-scope tightening) was correct for the day-view (unassigned super_admin now sees an empty Home instead of every driver's dimmed stops) but left the week board unreachable from the nav.
+
+Investigation initially overcorrected: commit `406ed82` gave super_admin an unscoped `/api/routes` response, which brought all the dimmed stops back to Home. Two-commit correction in `b49e6e1`:
+
+1. Reverted the unscoped `/api/routes` change — day-view stays assignment-scoped for everyone including super_admin.
+2. Updated `BottomNav.tsx`: when super_admin has no route assignment for today, Routes tab now resolves to `/schedule` (WeekScheduleView, full board) instead of falling back to `/`. Drivers without an assignment still fall back to `/` (empty Home). `isActive` updated to highlight the Routes tab on `/schedule`.
+
+Net result: super_admin with no assignment sees an empty day on Home (correct) but has a one-tap path to the full week board via the Routes tab (correct). Drivers are unaffected.
+
+**Bug 2 — Tenting tile in Tools hub only reached the calculator**
+
+Root cause: `288d120` (2026-05-14) set the Tenting card's `href` to `/tools/tent-squaring` directly, bypassing any sub-hub. The card's own subtitle ("Calcs · Drawings · Certs") and badge ("3 live") correctly described three live features, but only one was reachable. `/reference/tents` (drawings + flame certs) was fully live but invisible from the Tools tab for all users.
+
+Fix (commit `406ed82`):
+- New `src/screens/TentingHubScreen.tsx` — dark Editorial sub-hub matching the ToolsScreen palette, 2-column grid with two Live-badged tiles: Tent calculator (→ `/tools/tent-squaring`) and Drawings & certs (→ `/reference/tents`).
+- New `src/app/tools/tenting/page.tsx` — thin auth-gated shell (same pattern as other tool pages, allows driver / super_admin / tools_only).
+- `src/screens/ToolsScreen.tsx` — Tenting card `href` changed from `/tools/tent-squaring` to `/tools/tenting`.
+
+**Commits**
+- `406ed82` — fix: restore super_admin route visibility + tenting sub-hub *(overcorrected on the route-scope; tenting sub-hub is correct)*
+- `b49e6e1` — fix: revert super_admin day-scope + Routes tab → /schedule when unassigned *(correct final state)*
+
+**Files touched**
+- `src/app/api/routes/route.ts` — comment update only (scoping rules unchanged from 6e1484e)
+- `src/components/BottomNav.tsx` — Routes tab fallback for unassigned super_admin → `/schedule`; `isActive` includes `/schedule`
+- `src/screens/ToolsScreen.tsx` — Tenting card href → `/tools/tenting`
+- `src/screens/TentingHubScreen.tsx` (new)
+- `src/app/tools/tenting/page.tsx` (new)
+
+**Lessons logged**
+- Scope fix blast-radius: enumerate every persona + every surface before tightening a scope rule.
+- Day-view vs. week-view: they have independent scoping contracts; "can't see the schedule" requires identifying which schedule before touching any endpoint.
+
+---
+
 ## 2026-05-17 — Time Window Constraints Phase 4 (driver-app integration)
 
 **Scope:** driver-app only, no migration. Dashboard Phases 1+2+3 already surfaced `constraint_confidence` + window bounds on every `dispatch_stops` row via Migration 058 trigger. This session brings that data into the driver app — read-only, three commits split by surface.
