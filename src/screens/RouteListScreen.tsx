@@ -147,12 +147,33 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
   const inspection = useInspectionStatus(route?.route_id, route?.truck_id)
   const inspected  = inspection !== null
 
-  // ── Route not found ────────────────────────────────────────────────────────
+  // Week view is reachable regardless of route assignment — the toggle must
+  // never short-circuit just because this driver has no route on the URL.
+  // Same surface chrome (toggle + BottomNav) but the body is WeekScheduleView.
+  if (view === 'week') {
+    return (
+      <div className="screen" style={{ background: C.cream, fontFamily: FONT_BODY, color: C.ink }}>
+        <ViewToggle view={view} onChange={setViewPersisted} />
+        <div style={{ flex: 1, overflowY: 'auto' }}>
+          <WeekScheduleView
+            currentUserId={user?.id ?? null}
+            currentUserRole={roles?.includes('super_admin') ? 'super_admin' : (roles?.includes('driver') ? 'driver' : null)}
+          />
+        </div>
+        <BottomNav />
+      </div>
+    )
+  }
+
+  // ── My Route tab, no route assigned ───────────────────────────────────────
+  // Toggle stays visible so the driver can still flip to Week Schedule.
   if (!route) {
     return (
       <div className="screen" style={{ background: C.cream, fontFamily: FONT_BODY, color: C.ink }}>
+        <ViewToggle view={view} onChange={setViewPersisted} />
         <div style={{
-          padding: '48px 22px', flex: 1,
+          flex: 1, overflowY: 'auto',
+          padding: '48px 22px',
           display: 'flex', flexDirection: 'column', justifyContent: 'center',
         }}>
           <div style={{
@@ -216,23 +237,6 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
     // below (40% opacity + pointer-events: none) handles affordance.
     if (!inspected) return
     router.push(`/route/${routeId}/stop/${stop.stop_id}`)
-  }
-
-  // Week view short-circuits the Today render entirely — same surface chrome
-  // (toggle + BottomNav) but the body is the shared WeekScheduleView.
-  if (view === 'week') {
-    return (
-      <div className="screen" style={{ background: C.cream, fontFamily: FONT_BODY, color: C.ink }}>
-        <ViewToggle view={view} onChange={setViewPersisted} />
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-          <WeekScheduleView
-            currentUserId={user?.id ?? null}
-            currentUserRole={roles?.includes('super_admin') ? 'super_admin' : (roles?.includes('driver') ? 'driver' : null)}
-          />
-        </div>
-        <BottomNav />
-      </div>
-    )
   }
 
   return (
