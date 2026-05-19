@@ -4,13 +4,13 @@
 // dashboard. Service-role key never reaches the browser.
 //
 // Driver-scope: the response is narrowed to the caller's `route_assignments`
-// for the requested date. Unauthenticated callers receive an empty result.
-//
-// super_admin exception: a caller with `super_admin` in their profiles.roles
-// skips the assignment scope entirely and receives all routes for the day —
-// the same full-board view that was the original pre-May-14 behaviour for
-// admins. This restores visibility after the 2026-05-16 over-tightening that
-// treated super_admin identically to an unassigned driver.
+// for the requested date. If the caller is authenticated but has no
+// assignment, the endpoint returns an empty result — the driver app is the
+// driver's tool, this day-view endpoint is always assignment-scoped for
+// everyone including super_admin. An unassigned super_admin should see
+// nothing here (same empty state as an unassigned driver), and should use
+// GET /api/schedule/week (WeekScheduleView, /schedule route) for the full
+// board. Unauthenticated callers also receive an empty result.
 //
 // Soft-fail exception: if the `route_assignments` lookup itself errors
 // (transient Postgres / RLS hiccup), fall through to the unscoped query so
@@ -82,39 +82,27 @@ export async function GET(req: NextRequest) {
   // join (RLS-bypass).
   //
   // `assignedRouteIds`:
-  //   - string[] (possibly empty)  → use as the .in() filter; empty → early
-  //                                  return with no routes for unassigned drivers
-  //   - null                       → super_admin (full board) OR assignment
-  //                                  lookup errored (soft-fail); either way
-  //                                  fall through to the unscoped query
+  //   - string[] (possibly empty)  → use as the .in() filter
+  //   - null                       → assignment lookup errored; soft-fail
+  //                                  through to the unscoped query so a
+  //                                  driver isn't locked out by a transient
+  //                                  read failure.
   const session = getSessionClient()
   const { data: { user } } = await session.auth.getUser()
 
   let assignedRouteIds: string[] | null = []
   if (user) {
-    // super_admin sees the full day's board unscoped.
-    const profileRes = await supabase
-      .from('profiles')
-      .select('roles')
-      .eq('id', user.id)
-      .single()
-    const isSuperAdmin = (profileRes.data?.roles as string[] | null)?.includes('super_admin') ?? false
+    const assignRes = await supabase
+      .from('route_assignments')
+      .select('route_id, routes!inner(route_date)')
+      .eq('user_id', user.id)
+      .eq('routes.route_date', date)
 
-    if (isSuperAdmin) {
-      assignedRouteIds = null // null → fall through to unscoped query
+    if (assignRes.error) {
+      console.warn('[/api/routes] assignment lookup failed (non-fatal):', assignRes.error.message)
+      assignedRouteIds = null
     } else {
-      const assignRes = await supabase
-        .from('route_assignments')
-        .select('route_id, routes!inner(route_date)')
-        .eq('user_id', user.id)
-        .eq('routes.route_date', date)
-
-      if (assignRes.error) {
-        console.warn('[/api/routes] assignment lookup failed (non-fatal):', assignRes.error.message)
-        assignedRouteIds = null
-      } else {
-        assignedRouteIds = (assignRes.data ?? []).map((r) => r.route_id as string)
-      }
+      assignedRouteIds = (assignRes.data ?? []).map((r) => r.route_id as string)
     }
   }
   // else: unauthenticated → assignedRouteIds stays []. Production callers
@@ -122,7 +110,8 @@ export async function GET(req: NextRequest) {
   // this endpoint is either dev-tools poking or a logged-out tab, neither
   // of which has any business receiving the full day's routes.
 
-  // Empty assignment set → unassigned driver; return immediately.
+  // Empty assignment set → return immediately. No need to query routes /
+  // stops for a user with no assignment today.
   if (Array.isArray(assignedRouteIds) && assignedRouteIds.length === 0) {
     return NextResponse.json(
       { routes: [], stops: [], date },

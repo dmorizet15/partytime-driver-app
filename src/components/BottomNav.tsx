@@ -96,7 +96,7 @@ type Tab = {
 // see them.
 const TABS: Tab[] = [
   { id: 'home',     label: 'Home',     href: '/',         isActive: (p) => p === '/',                  Icon: HomeIcon, rolesAllowed: ['driver', 'super_admin', 'tools_only'] },
-  { id: 'routes',   label: 'Routes',   href: '/',         isActive: (p) => p.startsWith('/route'),     Icon: RoutesIcon, rolesAllowed: ['driver', 'super_admin'] },
+  { id: 'routes',   label: 'Routes',   href: '/',         isActive: (p) => p.startsWith('/route') || p === '/schedule', Icon: RoutesIcon, rolesAllowed: ['driver', 'super_admin'] },
   { id: 'tools',    label: 'Tools',    href: '/tools',    isActive: (p) => p.startsWith('/tools'),     Icon: ToolsIcon },
   { id: 'training', label: 'Training', href: '/training', isActive: (p) => p.startsWith('/training'),  Icon: TrainingIcon },
   { id: 'profile',  label: 'Profile',  href: '/profile',  isActive: (p) => p.startsWith('/profile'),   Icon: ProfileIcon },
@@ -112,14 +112,19 @@ export default function BottomNav() {
   // Routes tab destination resolves at render time. Reads whatever AppState
   // currently has — Home triggers loadDay on mount, so by the time the driver
   // taps tabs the cache is populated. Deep-link entry (e.g. notification land
-  // on /tools first) means routes is empty here and the tab falls back to /,
-  // which is fine: driver lands on Home, sees the no-assignment state.
+  // on /tools first) means routes is empty here and falls through to the
+  // unassigned path.
+  //
+  // Unassigned routing: super_admin → /schedule (full week board); driver → /
+  // (Home, shows empty-day state). When assigned, both roles go to the route
+  // detail view.
   const today = (() => {
     const d = new Date()
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   })()
-  const primaryRouteId = getRoutesForDate(today)[0]?.route_id
-  const routesHref     = primaryRouteId ? `/route/${primaryRouteId}` : '/'
+  const primaryRouteId  = getRoutesForDate(today)[0]?.route_id
+  const isSuperAdmin    = !!roles && roles.includes('super_admin')
+  const routesHref      = primaryRouteId ? `/route/${primaryRouteId}` : isSuperAdmin ? '/schedule' : '/'
 
   const visibleTabs = TABS.filter((t) => {
     if (!t.rolesAllowed) return true
