@@ -6,7 +6,7 @@ Next.js 14 PWA for the driver mobile workflow. Downstream of `partytime-dashboar
 
 ## Current build state
 
-- **Active feature:** None — session 2026-05-19 was a bug-fix session (super_admin route visibility + tenting sub-hub). Next active feature: TBD (Arcade Party Kong v3 Sessions B/C/D still pending if no new priority lands).
+- **Active feature:** None — 2026-05-19 was a bug-fix day. Two arcs landed: morning (super_admin route visibility + tenting sub-hub, commits `406ed82` `b49e6e1` `c0bffa5`), evening (Routes-tab toggle for unassigned drivers + `/schedule` scroll/BottomNav fix, commits `ebaebc2` `ced6aa1` `d1b1910`). Next active feature: TBD (Arcade Party Kong v3 Sessions B/C/D still pending if no new priority lands).
 - **Latest migration:** **053** (`game_scores`, 2026-05-15). Local directory in lockstep with remote `schema_migrations` (repaired via `supabase migration repair --status applied`). Phase 4 added no migrations — all data came from dashboard-side Migrations 057/058.
 - **Branch strategy:** Commit directly to `main` — Vercel auto-deploys on every push.
 - **Next priority:** see `tasks/todo.md` (top of file).

@@ -4,6 +4,50 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-05-19 (evening) — Bug-fix session: Routes-tab for unassigned drivers + /schedule scroll
+
+**Scope:** driver-app only, no migration. Follow-on to the morning's super_admin visibility arc. Darren noticed two regressions on smoke test: (1) drivers without an assignment still had no path to Week Schedule (the morning fix only routed super_admin), and (2) once routed to `/schedule`, long week lists got clipped at ~3 rows and BottomNav fell off the bottom of the viewport.
+
+**Bug 1 — Toggle hidden + Week Schedule unreachable when no route is on the URL**
+
+Root cause: `RouteListScreen.tsx` short-circuited with a "Route not found" full-screen return BEFORE the Today/Week toggle render and BEFORE the `view === 'week'` branch. Anyone who hit `/route/[bad-id]` (typo'd link, stale notification, race with a fresh assignment) lost both the toggle and the path to Week Schedule.
+
+Fix (commit `ebaebc2`):
+- Moved the `view === 'week'` branch above the `!route` check so Week Schedule renders regardless of route resolution.
+- Rewrote the `!route` branch to render `<ViewToggle>` + the existing "Route not found" banner inside the My Route tab body. Toggle stays visible.
+- Route-dependent derivations (`dayRoutes`, `routeIndex`, `trucksLabel`, etc.) and `handleStopTap` are now reached only when `route` is non-null, so no null-access risk.
+
+**Bug 2 — Unassigned drivers stuck on Home with no Routes-tab path to /schedule**
+
+Root cause: The morning's `b49e6e1` deliberately scoped the BottomNav Routes-tab redirect to super_admin only ("Drivers without an assignment still fall back to /"). Darren's original spec — "identical behavior to how super_admin sees it" — was a literal comparison: drivers should also reach `/schedule` when unassigned.
+
+Fix (commit `ced6aa1`):
+- `BottomNav.tsx` — removed the `isSuperAdmin` branch from `routesHref`. Both driver and super_admin now route to `/schedule` when `primaryRouteId` is undefined. Safe because `rolesAllowed: ['driver', 'super_admin']` already gates the tab — no `tools_only` leak.
+
+**Bug 3 — /schedule clips week list at ~3 rows, BottomNav drops off the bottom of the viewport**
+
+Root cause: `src/app/schedule/page.tsx` overrode the `.screen` utility's `height: 100svh` lock with an inline `minHeight: '100vh'` and rendered `<main style={{ flex: 1 }}>` without an inner scroll container. On iOS Safari with the toolbar visible, 100vh > 100svh, so the column stretched past the locked viewport and the page only scrolled at the document level. `WeekScheduleView` doesn't manage its own scroll — it expects the parent to (RouteListScreen wraps it in `<div style={{ flex: 1, overflowY: 'auto' }}>` for exactly this reason).
+
+Fix (commit `d1b1910`):
+- Dropped the inline `display: 'flex', flexDirection: 'column', minHeight: '100vh'` overrides — the `.screen` class already provides those.
+- Added `overflowY: 'auto'` to `<main>` so the week list scrolls inside the main area while BottomNav stays pinned.
+
+**Commits**
+- `ebaebc2` — fix(routes): keep Today/Week toggle visible when no route is assigned
+- `ced6aa1` — fix(nav): unassigned drivers land on /schedule, matching super_admin
+- `d1b1910` — fix(schedule): inner scroll on /schedule so BottomNav stays pinned
+
+**Files touched**
+- `src/screens/RouteListScreen.tsx` — toggle hoisted above `!route` short-circuit; banner moved inside My Route tab body
+- `src/components/BottomNav.tsx` — `routesHref` simplified to `primaryRouteId ? /route/<id> : '/schedule'` for both gated roles
+- `src/app/schedule/page.tsx` — drop redundant inline layout overrides; add `overflowY: 'auto'` on `<main>`
+
+**Lessons logged**
+- `.screen` utility class is load-bearing — inline layout overrides (`minHeight`, `display: flex`, `flex-direction`) defeat the iOS Safari toolbar lock and the BottomNav pin contract.
+- "Identical to super_admin" is a literal spec phrase. When the spec compares one role to another, trust the comparison; don't add asymmetric role guards.
+
+---
+
 ## 2026-05-19 — Bug-fix session: super_admin route visibility + tenting sub-hub
 
 **Scope:** driver-app only, no migration. Two unrelated bugs surfaced by Darren on post-Phase-4 smoke testing. Both smoke-tested and confirmed fixed before session close.

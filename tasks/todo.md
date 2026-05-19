@@ -1,5 +1,14 @@
 # Open Tasks — partytime-driver-app
 
+## May 19, 2026 (evening) — Routes-tab for unassigned drivers + /schedule scroll fix
+
+- [ ] **Smoke-test on production after Vercel deploys** (`ebaebc2` → `ced6aa1` → `d1b1910`):
+  1. Driver with no route assigned today → tap Routes tab → lands on `/schedule` (week view), not `/`. BottomNav pinned at bottom. Long week list scrolls inside main area, not at document level.
+  2. super_admin with no route assigned → same behavior (regression check vs. morning's `b49e6e1`).
+  3. Driver or super_admin with an assigned route → tap Routes → still goes to `/route/[id]` as before.
+  4. Land directly on `/route/[bad-id]` (typo'd URL or stale notification) → Today/Week toggle visible at top, "Route not found" banner inside My Route tab body. Tap Week tab → WeekScheduleView renders.
+- [ ] **Audit other `className="screen"` pages for inline layout overrides** that conflict with the class. The fix to `/schedule/page.tsx` (commit `d1b1910`) removed inline `minHeight: '100vh'` + `display: flex, flexDirection: column` — the `.screen` class already provides those, and the inline `100vh` actively breaks the iOS Safari toolbar lock (`100vh > 100svh` with the toolbar visible). Grep `className="screen"` across `src/app/` and `src/screens/` and check each for redundant inline `display`/`flexDirection`/`height`/`minHeight`/`overflow`. Likely candidates: any page built before the `.screen` lock was added (pre-2026-05-12). See `tasks/lessons.md` → ".screen utility class is load-bearing."
+
 ## May 17, 2026 — Time Window Constraints Phase 4 (driver-app integration)
 
 - [ ] **Smoke-test the three new surfaces on production** after Vercel auto-deploys the three `main` commits (`05b1607`, `ab0bc1e`, `54766d3`). Plan in `CLAUDE.md` → "Time Window Constraints — Phase 4" → NEXT block. Five loops:
