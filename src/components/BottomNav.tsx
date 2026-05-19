@@ -115,16 +115,15 @@ export default function BottomNav() {
   // on /tools first) means routes is empty here and falls through to the
   // unassigned path.
   //
-  // Unassigned routing: super_admin → /schedule (full week board); driver → /
-  // (Home, shows empty-day state). When assigned, both roles go to the route
-  // detail view.
+  // Unassigned routing: both driver and super_admin land on /schedule (week
+  // board). Tab is already gated to those two roles, so no tools_only leak.
+  // When assigned, both roles go to the route detail view.
   const today = (() => {
     const d = new Date()
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   })()
   const primaryRouteId  = getRoutesForDate(today)[0]?.route_id
-  const isSuperAdmin    = !!roles && roles.includes('super_admin')
-  const routesHref      = primaryRouteId ? `/route/${primaryRouteId}` : isSuperAdmin ? '/schedule' : '/'
+  const routesHref      = primaryRouteId ? `/route/${primaryRouteId}` : '/schedule'
 
   const visibleTabs = TABS.filter((t) => {
     if (!t.rolesAllowed) return true
