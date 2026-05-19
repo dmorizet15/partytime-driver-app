@@ -141,7 +141,7 @@ const GRID_CATEGORIES: Category[] = [
     iconBg: 'rgba(0,0,255,0.18)',
     iconColor: '#6B8FFF',
     badge: { text: '3 live', kind: 'live' },
-    href: '/tools/tent-squaring',
+    href: '/tools/tenting',
   },
   {
     id: 'hvac',
