@@ -41,8 +41,8 @@ export default function SchedulePage() {
   const role = (roles?.find((r) => r === 'driver' || r === 'super_admin' || r === 'tools_only')) ?? null
 
   return (
-    <div className="screen" style={{ background: '#FFF9EE', display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-      <main style={{ flex: 1 }}>
+    <div className="screen" style={{ background: '#FFF9EE' }}>
+      <main style={{ flex: 1, overflowY: 'auto' }}>
         <WeekScheduleView
           currentUserId={user.id}
           currentUserRole={role}
