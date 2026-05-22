@@ -6,8 +6,8 @@ Next.js 14 PWA for the driver mobile workflow. Downstream of `partytime-dashboar
 
 ## Current build state
 
-- **Active feature:** None — 2026-05-19 was a bug-fix day. Two arcs landed: morning (super_admin route visibility + tenting sub-hub, commits `406ed82` `b49e6e1` `c0bffa5`), evening (Routes-tab toggle for unassigned drivers + `/schedule` scroll/BottomNav fix, commits `ebaebc2` `ced6aa1` `d1b1910`). Next active feature: TBD (Arcade Party Kong v3 Sessions B/C/D still pending if no new priority lands).
-- **Latest migration:** **053** (`game_scores`, 2026-05-15). Local directory in lockstep with remote `schema_migrations` (repaired via `supabase migration repair --status applied`). Phase 4 added no migrations — all data came from dashboard-side Migrations 057/058.
+- **Active feature:** Fleet Maintenance Module (driver app) — shipped 2026-05-22, commit `46ba851`. Four screens (Fleet Overview, Work Order Detail, Log Service Entry) + a role-gated Tools Hub card + a home-screen alert card. Reads/writes the dashboard-owned fleet tables (migrations 062–068) directly via the RLS-gated supabase client — no new API routes, no new migrations. See "Fleet Maintenance Module — Driver App" section below.
+- **Latest migration:** **068** in the remote `schema_migrations` table (dashboard Fleet Maintenance phases 1–4). Driver-app local `supabase/migrations/` is unchanged at 12 files (latest `20260515_012_game_scores`) — the fleet module added zero migrations; every table was already live from the dashboard side. The "migration count" is the remote table count, not the local file count.
 - **Branch strategy:** Commit directly to `main` — Vercel auto-deploys on every push.
 - **Next priority:** see `tasks/todo.md` (top of file).
 
@@ -65,6 +65,29 @@ The window resolver lives in `src/lib/stopConstraints.ts` — pure-functional po
 5. Suggested-tier stop (dashed outline badge) → no gate, no standby — just the badge.
 
 ---
+
+## Fleet Maintenance Module — Driver App
+
+Shipped 2026-05-22 (commit `46ba851`). Driver-app surface for the dashboard's Fleet Maintenance Module. All four phases of the dashboard build (migrations 062–068) are production-green; the driver app **reads and writes those same tables** — no migrations, no API routes.
+
+- **Access.** `profiles.fleet_maintenance_access` is a stacked, additive permission, independent of `roles`. UI gate: `useFleetAccess()` (`src/hooks/fleet/`). DB gate: every fleet table + the `service-invoices` Storage bucket is RLS-gated on the `has_fleet_maintenance_access()` predicate. `getUserRole` now SELECTs `fleet_maintenance_access`; `UserProfile` carries it. A standard driver sees the Tools Hub with no Fleet card and no trace of the module.
+- **Data layer — `src/lib/fleet/`.** `queries.ts` (all Supabase reads/writes via the browser client), `pmStatus.ts` (pure PM-tier derivation — compares dashboard-computed `next_due_*` to today / current mileage+hours), `format.ts`, `types.ts`, `theme.ts` (dark hub palette `FC`). Hooks in `src/hooks/fleet/`. Shared components in `src/components/fleet/`.
+- **Screen 1 — Tools Hub card.** `FleetMaintenanceCard` inline in `ToolsScreen.tsx` — role-gated (renders null without access), red pill shows open work-order count (hidden at zero).
+- **Home alert card.** `<FleetAlertCard />` in `DayRouteSelectorScreen.tsx`, between the COD card and the day list. Red-border card; renders only for fleet-access users with ≥1 open work order. Lives in the populated-home body, so it appears on days the driver has a route.
+- **Screen 2 — Fleet Overview** (`/tools/fleet`). Open-WO + PM-due summary counts, trucks + equipment lists with red/amber/green status dots (red = open work order, amber = PM due, green = OK), open work-order queue (tap → detail).
+- **Screen 3 — Work Order Detail** (`/tools/fleet/work-orders/[id]`). Header (status/source/priority pills), asset, opened/assigned meta, service log (newest 10), "Parts for this asset" (asset_part_fitments → parts + cross-refs + inventory; vendor phone matched by brand → tap-to-call). Actions: Log service entry / Mark resolved / Upload invoice / Assign. **Mark resolved only closes the work order — it does NOT create a service record.**
+- **Screen 4 — Log Service Entry** (`/tools/fleet/work-orders/[id]/log-service`). Writes `service_records` (+ `service_line_items` + optional `service_invoices` to the `service-invoices` bucket). When a service type is picked from the asset's `maintenance_schedules`, the schedule's `service_type` enum value is written so the dashboard PM trigger recomputes `next_due_*`. The work order stays open — resolving is a separate, deliberate action.
+
+**Schema gaps flagged 2026-05-22 (Darren-side follow-ups, see `tasks/todo.md`):** no work-order→parts junction (parts shown are asset-fit, labelled "Parts for this asset"); `vendors` table empty (no tap-to-call data yet); no CarQuest/NAPA (priority-1/2) cross-refs seeded; invoice-upload was ❌ in the Notion Build Spec v1.0 access matrix but the approved 2026-05-22 design session supersedes that — driver app uploads invoices.
+
+**NEXT smoke test (production, Vercel auto-deploys commit `46ba851`):**
+
+1. Fleet-access user → Tools Hub shows the Fleet Maintenance card; standard driver → no card at all.
+2. `/tools/fleet` → overview renders counts, trucks (13) + equipment (24) with status dots, "No open work orders" empty state (table is currently empty).
+3. Create a work order dashboard-side (or DVIR defect) → Tools card red pill + home alert card appear; tap → Work Order Detail.
+4. Work Order Detail → Log service entry → fill the form → Save → returns to detail with the new entry in the service log; work order still open.
+5. Mark resolved → work order closes, resolved banner shows; confirm no service record was auto-created.
+6. Assign → pick a user / Assign to me / Unassign. Upload invoice → pick a service record → camera/file → invoice attached.
 
 ## Session close (autonomous — no permission needed)
 

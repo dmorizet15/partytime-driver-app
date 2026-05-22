@@ -1,5 +1,18 @@
 # Open Tasks — partytime-driver-app
 
+## May 22, 2026 — Fleet Maintenance Module (driver app) — commit `46ba851`
+
+- [ ] **Smoke-test on production** after Vercel deploys `46ba851`. Six loops in `CLAUDE.md` → "Fleet Maintenance Module — Driver App" → NEXT block: (1) card gating, (2) overview render + empty states, (3) work order appears in card pill + home alert, (4) log service entry, (5) mark resolved does NOT create a service record, (6) assign + upload invoice.
+- [ ] **Darren — populate the `vendors` table.** Empty as of 2026-05-22. The Work Order Detail parts section matches a cross-reference's `brand` text to a `vendors.name` to surface a tap-to-call phone. With zero vendor rows there are no call buttons anywhere — the UI degrades gracefully ("No phone"). Add vendor rows (esp. CarQuest, NAPA) with `phone` set and the call buttons light up automatically, no code change.
+- [ ] **Darren — seed CarQuest / NAPA cross-references.** All 26 `part_cross_references` rows are priority-3 (manufacturer-direct: ACDelco, Motorcraft, Mann, Donaldson, Mopar, Fleetguard). Zero priority-1 (CarQuest) or priority-2 (NAPA). The driver-app UI renders whatever exists, sorted by priority, and tags each by tier — it just shows Direct refs until 1/2 are seeded. Verification pass against live CarQuest/NAPA catalogs is a Darren task.
+- [ ] **Decide: work-order → parts junction table.** v1 ships with no link between `fleet_work_orders` and `parts`; Screen 3 shows parts that fit the *asset* (via `asset_part_fitments`), labelled "Parts for this asset". A `work_order_parts` junction (curated parts per work order) is a future enhancement — dashboard-side migration if wanted.
+- [ ] **chat-Claude — reconcile Notion.** The Fleet Maintenance Build Spec v1.0 access matrix lists "Upload invoice PDF/photo" as ❌ read-only for the driver app. The approved 2026-05-22 mobile design session supersedes that — the driver app DOES upload invoices (Screen 3 action + Screen 4 form). Update the access matrix in Notion.
+- [ ] **Pre-trip mileage capture (separate driver-app session).** The Build Spec calls for a required odometer field at the bottom of the pre-trip inspection screen, feeding `trucks.current_mileage` — this activates mileage-based PM flagging fleet-wide. NOT built this session (scope was the Tools Hub fleet surface only). Until it lands, PM tiers are date-based; `pmStatus.ts` already handles mileage when `current_mileage` is populated.
+- [ ] **Work-order-creation notification is a dashboard task.** MBC Part 3 logs "any new `fleet_work_orders` INSERT should email `receives_fleet_notifications` users via Resend." That fires dashboard-side (or a shared cron) — not in the driver app. No driver-app work; noted for cross-repo awareness.
+- [ ] **AVA fleet alerts — future session.** Fleet alerts in the AVA morning brief were explicitly deferred. The home `FleetAlertCard` is the interim surface.
+- [ ] **Minor — home alert card placement.** `<FleetAlertCard />` sits in `DayRouteSelectorScreen`'s populated-home body (between COD card and day list, per spec). On an empty-route home (e.g. a fleet manager with no route assigned) it does not render — the Tools Hub card is always available as the fallback entry. Revisit only if Darren wants the alert on the empty state too.
+- [ ] **Minor — resolved work orders.** A resolved work order's detail screen is reachable only via a stale link (overview + home card list open WOs only). It renders a "Resolved" banner and hides "Mark resolved"; other actions stay enabled. Acceptable.
+
 ## May 19, 2026 (evening) — Routes-tab for unassigned drivers + /schedule scroll fix
 
 - [ ] **Smoke-test on production after Vercel deploys** (`ebaebc2` → `ced6aa1` → `d1b1910`):

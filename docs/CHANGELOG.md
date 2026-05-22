@@ -4,6 +4,34 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-05-22 — Fleet Maintenance Module (driver app)
+
+**Scope:** driver-app only. No migrations, no API routes. Commit `46ba851` (24 files, +3,567). The dashboard's Fleet Maintenance Module (phases 1–4, migrations 062–068) is production-green; this session built the driver-app surface — four screens + a Tools Hub card + a home alert card — reading and writing those tables directly through the RLS-gated supabase client.
+
+**Pre-flight.** Regenerated `src/types/supabase.ts` for the 062–068 tables. Verified via direct SQL (`supabase db query --linked`): CHECK-constraint enum values for every fleet table, RLS policies (`has_fleet_maintenance_access()` gates all fleet tables for `authenticated` — read + write), and the `service-invoices` Storage bucket policies (same predicate). Confirmed seed data: 13 trucks, 24 equipment, 91 PM schedules, 27 parts, 26 cross-refs; `fleet_work_orders`, `service_records`, and `vendors` all empty.
+
+**Schema gaps flagged to Darren (answered before build):** no work-order→parts junction → show asset-fit parts labelled "Parts for this asset"; `vendors` empty → tap-to-call degrades to "no phone" gracefully; no CarQuest/NAPA cross-refs → render whatever priority exists; `fleet_work_orders` empty → empty states everywhere; invoice-upload conflict (Notion spec said ❌, kickoff design says ✅) → build per the kickoff, reconcile Notion separately.
+
+**Auth.** `profiles.fleet_maintenance_access` added to the `getUserRole` SELECT + the `UserProfile` type. `useFleetAccess()` is the single UI gate. A standard driver sees no Fleet card and cannot reach any `/tools/fleet` route (`FleetGate` → "Access denied").
+
+**Data layer — `src/lib/fleet/`.** `queries.ts` (all reads/writes), `pmStatus.ts` (pure PM-tier derivation), `format.ts`, `types.ts`, `theme.ts`. Hooks in `src/hooks/fleet/`. Shared components in `src/components/fleet/` (FleetGate, FleetPills, FleetAlertCard, InvoiceUpload, BottomSheet, fleetIcons).
+
+**Screen 1 — Tools Hub card.** `FleetMaintenanceCard` in `ToolsScreen.tsx` — role-gated (renders null without access), red pill = open work-order count (hidden at zero).
+
+**Home alert card.** `<FleetAlertCard />` in `DayRouteSelectorScreen.tsx`, between the COD card and the day list — red-border card, shown only to fleet-access users with ≥1 open work order.
+
+**Screen 2 — Fleet Overview** (`/tools/fleet`). Open-WO + PM-due counts, trucks + equipment with red/amber/green status dots, open work-order queue.
+
+**Screen 3 — Work Order Detail** (`/tools/fleet/work-orders/[id]`). Status/source/priority pills, asset, meta, service log (newest 10), "Parts for this asset" (cross-refs + tap-to-call vendor phone). Actions: Log service / Mark resolved / Upload invoice / Assign. Mark resolved closes the work order only — no auto service record.
+
+**Screen 4 — Log Service Entry** (`/tools/fleet/work-orders/[id]/log-service`). Writes `service_records` (+ line items + optional invoice to the `service-invoices` bucket). Picking a service type from the asset's `maintenance_schedules` writes the schedule's `service_type` so the dashboard PM trigger recomputes `next_due_*`. Work order stays open.
+
+**Build:** `npx next build` green end-to-end (one fix mid-build — ES5 target rejects Map/Set iterator spreads; switched to `Array.from`). Pushed to `main` — Vercel auto-deploys.
+
+**Decisions for Notion (chat-Claude):** (1) driver app DOES upload invoices — the approved 2026-05-22 design session supersedes the Build Spec v1.0 access matrix; (2) "Parts for this asset" naming reflects the absence of a work-order→parts junction (v1 accepted, junction is a future enhancement); (3) pre-trip mileage capture is a separate driver-app session, not built here.
+
+---
+
 ## 2026-05-19 (evening) — Bug-fix session: Routes-tab for unassigned drivers + /schedule scroll
 
 **Scope:** driver-app only, no migration. Follow-on to the morning's super_admin visibility arc. Darren noticed two regressions on smoke test: (1) drivers without an assignment still had no path to Week Schedule (the morning fix only routed super_admin), and (2) once routed to `/schedule`, long week lists got clipped at ~3 rows and BottomNav fell off the bottom of the viewport.
