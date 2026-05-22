@@ -1,5 +1,39 @@
 # Open Tasks — partytime-driver-app
 
+## May 22, 2026 (evening) — Fleet Maintenance driver-app UI fixes
+
+**NEXT driver-app task → Pre-trip mileage capture.** Deferred from this session.
+The Build Spec calls for a required odometer field at the bottom of the pre-trip
+inspection screen, feeding `trucks.current_mileage` — this activates
+mileage-based PM flagging fleet-wide. WIP exists **uncommitted** in the working
+tree: `src/screens/InspectionScreen.tsx` (odometer field + `SET_ODOMETER`
+reducer action + submit gating) and `src/app/api/inspection/submit/route.ts`
+(server-side `current_mileage` validation). Pick this up next, finish + verify
+it, build, and ship as its own commit. Until it lands, PM tiers stay
+date-based; `pmStatus.ts` already handles mileage once `current_mileage` is
+populated.
+
+- [ ] **Equipment management — add/deactivate equipment, split model-level rows
+  into per-unit rows (e.g. two forklift models tracked independently), hide
+  TapGoods items not relevant to PTR fleet. High priority. Requires dashboard +
+  driver app session.** The driver app now shows a disabled "Manage equipment"
+  lock affordance on the Equipment section header (tap → toast: "Equipment
+  management coming soon — contact your administrator…"). That placeholder sets
+  the expectation; the real build is dashboard-owned schema + driver-app UI.
+- [ ] **Smoke-test the three UI fixes on production** after Vercel deploys this
+  session's commit:
+  1. Tap any truck/equipment row on Fleet Overview → Asset Detail loads (name,
+     spec, plate/serial, status badge, PM schedule, service history, work
+     orders). "Log service" opens the form with **no work order required**.
+     "View all work orders" reveals resolved WOs (button shown only when
+     resolved WOs exist for the asset).
+  2. Fleet Overview layout — Trucks section (open truck WOs above the truck
+     list, never collapsed) → Equipment section (open equipment WOs above the
+     list; list collapses, default-collapsed at zero equipment WOs,
+     default-expanded with ≥1) → "Other work orders" catch-all at the bottom
+     (`asset_type` null or asset in neither table; hidden when empty).
+  3. Tap the disabled "Manage equipment" lock chip → toast appears, no nav.
+
 ## May 22, 2026 — Fleet Maintenance Module (driver app) — commit `46ba851`
 
 - [ ] **Smoke-test on production** after Vercel deploys `46ba851`. Six loops in `CLAUDE.md` → "Fleet Maintenance Module — Driver App" → NEXT block: (1) card gating, (2) overview render + empty states, (3) work order appears in card pill + home alert, (4) log service entry, (5) mark resolved does NOT create a service record, (6) assign + upload invoice.

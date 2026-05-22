@@ -4,6 +4,24 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-05-22 (evening) — Fleet Maintenance driver-app: three UI fixes
+
+**Scope:** driver-app only. No migrations, no API routes, no type regen (every column the fixes consume was already in `src/types/supabase.ts`). Follow-on to the morning's Fleet Maintenance Module ship (`46ba851`).
+
+**Fix 1 — Standalone "Log service" entry point.** Tapping any truck or equipment row on Fleet Overview now navigates to a new **Asset Detail screen** (`/tools/fleet/assets/[type]/[id]`) — name, year/make/model, plate/serial, status badge, PM schedule (next-due per service type with PM-tier dots/pills), service history (last 5), and the asset's work orders. Primary button "Log service" opens the Log Service Entry form with **no pre-existing work order required** — this closes the gap where a routine oil change couldn't be logged without first opening a work order. Secondary button "View all work orders" toggles resolved work orders into the list (shown only when the asset has resolved WOs). `LogServiceEntryScreen` was refactored to accept either a `workOrderId` (work-order path, unchanged) or an `assetType` + `assetId` pair (the new standalone path, route `/tools/fleet/assets/[type]/[id]/log-service`); back + post-save navigation follow the entry point.
+
+**Fix 2 — Work order placement on Fleet Overview.** The overview is restructured into three sections. **Trucks:** header → open truck work orders (always visible, never collapsed, hidden if none) → full truck list. **Equipment:** header → open equipment work orders (always visible, never collapsed) → equipment list with a collapse/expand toggle *on the list only* (default collapsed at zero open equipment WOs, expanded with ≥1). **Other work orders:** a bottom catch-all for any `fleet_work_orders` row whose `asset_type` is null or whose asset resolves to neither the trucks nor `non_truck_assets` table — hidden entirely when empty. `fetchFleetOverview` now fetches trucks + equipment unfiltered (active rows drive the visible lists; the full id sets decide section vs. catch-all) and returns `truckWorkOrders` / `equipmentWorkOrders` / `otherWorkOrders` instead of one flat `workOrders` array.
+
+**Fix 3 — Equipment management placeholder.** A visible-but-disabled "Manage equipment" chip (lock icon, grayed) sits on the Equipment section header. Tapping it shows a toast — "Equipment management coming soon — contact your administrator to add or update equipment." Sets the expectation without a full build.
+
+**Refactors.** Extracted `WorkOrderCard` and `ServiceLogEntry` to `src/components/fleet/` (shared by Fleet Overview / Asset Detail / Work Order Detail). Added `PmDot` + `PmLevelPill` to `FleetPills`, `ChevronDownIcon` + `LockIcon` to `fleetIcons`. `FleetAssetInfo` gained `vehicleSpec` / `identifier` / `identifierLabel`; `fetchAssetDetail` is the new Asset Detail query.
+
+**Build:** `npx next build` green end-to-end (one fix mid-build — the new `assetType` prop on `LogServiceEntryScreen` shadowed an existing local; renamed the local to `effectiveAssetType`). Pushed to `main` — Vercel auto-deploys.
+
+**Deferred:** pre-trip mileage capture — WIP left uncommitted in the working tree (`InspectionScreen.tsx` + inspection submit route); logged in `tasks/todo.md` as the next driver-app task.
+
+---
+
 ## 2026-05-22 — Fleet Maintenance Module (driver app)
 
 **Scope:** driver-app only. No migrations, no API routes. Commit `46ba851` (24 files, +3,567). The dashboard's Fleet Maintenance Module (phases 1–4, migrations 062–068) is production-green; this session built the driver-app surface — four screens + a Tools Hub card + a home alert card — reading and writing those tables directly through the RLS-gated supabase client.

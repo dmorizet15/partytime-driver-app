@@ -89,6 +89,24 @@ export function ChevronRightIcon({ size = 22, color = '#fff' }: IconProps): JSX.
   )
 }
 
+export function ChevronDownIcon({ size = 22, color = '#fff' }: IconProps): JSX.Element {
+  return (
+    <Svg size={size} color={color}>
+      <path d="M6 9l6 6l6 -6" />
+    </Svg>
+  )
+}
+
+export function LockIcon({ size = 22, color = '#fff' }: IconProps): JSX.Element {
+  return (
+    <Svg size={size} color={color}>
+      <path d="M5 13a2 2 0 0 1 2 -2h10a2 2 0 0 1 2 2v6a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2z" />
+      <path d="M11 16a1 1 0 1 0 2 0a1 1 0 0 0 -2 0" />
+      <path d="M8 11v-4a4 4 0 1 1 8 0v4" />
+    </Svg>
+  )
+}
+
 export function PlusIcon({ size = 22, color = '#fff' }: IconProps): JSX.Element {
   return (
     <Svg size={size} color={color}>

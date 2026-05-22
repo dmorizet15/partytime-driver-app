@@ -9,6 +9,8 @@ import { supabase } from '@/lib/supabase'
 import { assetHealth, mostSevere, pmLevelForSchedule } from './pmStatus'
 import { equipmentSubtitle, prettyServiceType, truckSubtitle } from './format'
 import type {
+  AssetDetail,
+  AssetScheduleView,
   AssetType,
   AssignableUser,
   CrossRefView,
@@ -50,6 +52,11 @@ async function fetchAssetNameMap(): Promise<Map<string, string>> {
   return map
 }
 
+function vehicleSpecOf(parts: (string | number | null | undefined)[], fallback: string): string {
+  const spec = parts.filter(Boolean).join(' ').trim()
+  return spec || fallback
+}
+
 export async function fetchAssetInfo(type: AssetType, id: string): Promise<FleetAssetInfo | null> {
   if (type === 'truck') {
     const { data } = await supabase.from('trucks').select('*').eq('id', id).maybeSingle()
@@ -57,6 +64,8 @@ export async function fetchAssetInfo(type: AssetType, id: string): Promise<Fleet
     const t = data as TruckRow
     return {
       id: t.id, assetType: 'truck', name: t.name, subtitle: truckSubtitle(t),
+      vehicleSpec: vehicleSpecOf([t.year, t.make, t.model], 'Truck'),
+      identifier: t.plate?.trim() || null, identifierLabel: 'Plate',
       currentMileage: t.current_mileage, currentHours: null,
     }
   }
@@ -65,6 +74,8 @@ export async function fetchAssetInfo(type: AssetType, id: string): Promise<Fleet
   const e = data as NonTruckAssetRow
   return {
     id: e.id, assetType: 'equipment', name: e.name, subtitle: equipmentSubtitle(e),
+    vehicleSpec: vehicleSpecOf([e.year, e.make, e.model], prettyServiceType(e.asset_type)),
+    identifier: e.serial_number?.trim() || null, identifierLabel: 'Serial',
     currentMileage: null, currentHours: e.current_hours,
   }
 }
@@ -98,17 +109,24 @@ export async function fetchOpenWorkOrdersSummary(): Promise<OpenWorkOrdersSummar
 
 export async function fetchFleetOverview(): Promise<FleetOverview> {
   const [trucksRes, equipRes, woRes, schedRes] = await Promise.all([
-    supabase.from('trucks').select('*').eq('active', true).order('name'),
-    supabase.from('non_truck_assets').select('*').eq('active', true).order('name'),
+    supabase.from('trucks').select('*').order('name'),
+    supabase.from('non_truck_assets').select('*').order('name'),
     supabase.from('fleet_work_orders').select('*').in('status', OPEN_STATUSES)
       .order('created_at', { ascending: false }),
     supabase.from('maintenance_schedules').select('*').eq('active', true),
   ])
 
-  const trucks     = (trucksRes.data ?? []) as TruckRow[]
-  const equipment  = (equipRes.data ?? []) as NonTruckAssetRow[]
-  const workOrders = (woRes.data ?? []) as WorkOrderRow[]
-  const schedules  = (schedRes.data ?? []) as MaintenanceSchedule[]
+  // Fetch trucks + equipment unfiltered: the active rows drive the visible
+  // lists, while the full id sets decide whether a work order belongs to a
+  // section or the "Other work orders" catch-all (asset still exists, even if
+  // inactive → it stays in its section; gone entirely → catch-all).
+  const allTrucks    = (trucksRes.data ?? []) as TruckRow[]
+  const allEquipment = (equipRes.data ?? []) as NonTruckAssetRow[]
+  const workOrders   = (woRes.data ?? []) as WorkOrderRow[]
+  const schedules    = (schedRes.data ?? []) as MaintenanceSchedule[]
+
+  const trucks    = allTrucks.filter((t) => t.active)
+  const equipment = allEquipment.filter((e) => e.active)
 
   const truckById = new Map(trucks.map((t) => [t.id, t]))
   const equipById = new Map(equipment.map((e) => [e.id, e]))
@@ -151,33 +169,72 @@ export async function fetchFleetOverview(): Promise<FleetOverview> {
     }
   }
 
-  // Resolve work-order asset names — most are in the active lists; backfill any
-  // that point at an inactive asset.
-  const nameMap = new Map<string, string>()
-  trucks.forEach((t) => nameMap.set(t.id, t.name))
-  equipment.forEach((e) => nameMap.set(e.id, e.name))
-  if (workOrders.some((w) => !nameMap.has(w.asset_id))) {
-    const full = await fetchAssetNameMap()
-    full.forEach((v, k) => { if (!nameMap.has(k)) nameMap.set(k, v) })
+  // Partition open work orders into TRUCKS / EQUIPMENT / catch-all. A work
+  // order is "Other" when its asset_type is null OR its asset_id resolves to
+  // neither the trucks nor the non_truck_assets table.
+  const truckIds = new Set(allTrucks.map((t) => t.id))
+  const equipIds = new Set(allEquipment.map((e) => e.id))
+  const nameMap  = new Map<string, string>()
+  allTrucks.forEach((t) => nameMap.set(t.id, t.name))
+  allEquipment.forEach((e) => nameMap.set(e.id, e.name))
+
+  const truckWorkOrders:     WorkOrderListItem[] = []
+  const equipmentWorkOrders: WorkOrderListItem[] = []
+  const otherWorkOrders:     WorkOrderListItem[] = []
+  for (const w of workOrders) {
+    const item: WorkOrderListItem = { ...w, assetName: nameMap.get(w.asset_id) ?? 'Unknown asset' }
+    const known = truckIds.has(w.asset_id) || equipIds.has(w.asset_id)
+    if (!w.asset_type || !known)        otherWorkOrders.push(item)
+    else if (w.asset_type === 'truck')  truckWorkOrders.push(item)
+    else if (w.asset_type === 'equipment') equipmentWorkOrders.push(item)
+    else                                otherWorkOrders.push(item)
   }
-  const woList: WorkOrderListItem[] = workOrders.map((w) => ({
-    ...w,
-    assetName: nameMap.get(w.asset_id) ?? 'Unknown asset',
-  }))
 
   return {
     openWorkOrderCount: workOrders.length,
     pmDueCount,
     trucks:    trucks.map(toOverviewTruck),
     equipment: equipment.map(toOverviewEquip),
-    workOrders: woList,
+    truckWorkOrders,
+    equipmentWorkOrders,
+    otherWorkOrders,
   }
+}
+
+// ─── Asset Detail (/tools/fleet/assets/[type]/[id]) ─────────────────────────
+
+export async function fetchAssetDetail(type: AssetType, id: string): Promise<AssetDetail | null> {
+  const asset = await fetchAssetInfo(type, id)
+  if (!asset) return null
+
+  const [schedRes, woRes, serviceRecords] = await Promise.all([
+    supabase.from('maintenance_schedules').select('*')
+      .eq('asset_type', type).eq('asset_id', id).eq('active', true),
+    supabase.from('fleet_work_orders').select('*')
+      .eq('asset_type', type).eq('asset_id', id)
+      .order('created_at', { ascending: false }),
+    fetchServiceRecordsForAsset(type, id, 5),
+  ])
+
+  const schedules  = (schedRes.data ?? []) as MaintenanceSchedule[]
+  const workOrders = (woRes.data ?? []) as WorkOrderRow[]
+
+  const ctx = { currentMileage: asset.currentMileage, currentHours: asset.currentHours }
+  const scheduleViews: AssetScheduleView[] = schedules.map((s) => ({
+    schedule: s,
+    pmLevel:  pmLevelForSchedule(s, ctx),
+  }))
+
+  const hasOpenWO = workOrders.some((w) => OPEN_STATUSES.includes(w.status))
+  const health = assetHealth(hasOpenWO, mostSevere(scheduleViews.map((v) => v.pmLevel)))
+
+  return { asset, health, schedules: scheduleViews, serviceRecords, workOrders }
 }
 
 // ─── Work Order Detail (/tools/fleet/work-orders/[id]) ──────────────────────
 
 async function fetchServiceRecordsForAsset(
-  type: AssetType, assetId: string,
+  type: AssetType, assetId: string, limit = 10,
 ): Promise<ServiceRecordView[]> {
   const { data } = await supabase
     .from('service_records')
@@ -186,7 +243,7 @@ async function fetchServiceRecordsForAsset(
     .eq('asset_id', assetId)
     .order('service_date', { ascending: false })
     .order('created_at', { ascending: false })
-    .limit(10)
+    .limit(limit)
   const records = (data ?? []) as ServiceRecordRow[]
   if (records.length === 0) return []
 
@@ -312,10 +369,11 @@ export async function fetchWorkOrderDetail(id: string): Promise<WorkOrderDetail 
 }
 
 // ─── Log Service Entry context ──────────────────────────────────────────────
+// Built either from a work order (fetchLogServiceContext) or straight from an
+// asset (fetchLogServiceContextForAsset, the standalone "Log service" path).
+// Both reduce to the same shape — the entry happens against an asset.
 
 export interface LogServiceContext {
-  workOrderId:        string
-  workOrderTitle:     string
   asset:              FleetAssetInfo | null
   serviceTypeOptions: ServiceTypeOption[]
   vendors:            VendorRow[]
@@ -346,22 +404,28 @@ export async function fetchVendors(): Promise<VendorRow[]> {
   return (data ?? []) as VendorRow[]
 }
 
+/** Log-service context for an asset directly — the standalone entry point. */
+export async function fetchLogServiceContextForAsset(
+  type: AssetType, assetId: string,
+): Promise<LogServiceContext> {
+  const [asset, serviceTypeOptions, vendors] = await Promise.all([
+    fetchAssetInfo(type, assetId),
+    fetchServiceTypeOptions(type, assetId),
+    fetchVendors(),
+  ])
+  return { asset, serviceTypeOptions, vendors }
+}
+
+/** Log-service context resolved from a work order. Null when the WO is gone. */
 export async function fetchLogServiceContext(workOrderId: string): Promise<LogServiceContext | null> {
   const { data } = await supabase
     .from('fleet_work_orders')
-    .select('id, title, asset_type, asset_id')
+    .select('asset_type, asset_id')
     .eq('id', workOrderId)
     .maybeSingle()
   if (!data) return null
-  const wo = data as { id: string; title: string; asset_type: string; asset_id: string }
-  const type = wo.asset_type as AssetType
-
-  const asset = await fetchAssetInfo(type, wo.asset_id)
-  const [serviceTypeOptions, vendors] = await Promise.all([
-    fetchServiceTypeOptions(type, wo.asset_id),
-    fetchVendors(),
-  ])
-  return { workOrderId: wo.id, workOrderTitle: wo.title, asset, serviceTypeOptions, vendors }
+  const wo = data as { asset_type: string; asset_id: string }
+  return fetchLogServiceContextForAsset(wo.asset_type as AssetType, wo.asset_id)
 }
 
 export async function fetchAssignableUsers(): Promise<AssignableUser[]> {

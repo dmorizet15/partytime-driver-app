@@ -4,6 +4,7 @@ import { FC } from '@/lib/fleet/theme'
 import { PRIORITY_LABEL, SOURCE_LABEL, STATUS_LABEL } from '@/lib/fleet/format'
 import type {
   AssetHealth,
+  PmLevel,
   WorkOrderPriority,
   WorkOrderSource,
   WorkOrderStatus,
@@ -55,6 +56,22 @@ const STATUS_TONE: Record<WorkOrderStatus, Tone> = {
 const SOURCE_TONE: Record<WorkOrderSource, Tone> = {
   dvir_defect: TONE.blue,
   manual:      TONE.gray,
+}
+
+const PM_TONE: Record<PmLevel, Tone> = {
+  ok:       TONE.green,
+  due_soon: TONE.amber,
+  overdue:  TONE.red,
+}
+const PM_LABEL: Record<PmLevel, string> = {
+  ok:       'OK',
+  due_soon: 'Due soon',
+  overdue:  'Overdue',
+}
+const PM_DOT: Record<PmLevel, string> = {
+  ok:       FC.green,
+  due_soon: FC.amber,
+  overdue:  FC.red,
 }
 
 // ─── Base pill ──────────────────────────────────────────────────────────────
@@ -110,4 +127,20 @@ export function SourcePill({ source }: { source: string }) {
 export function WorkOrderStatusPill({ status }: { status: string }) {
   const key = status as WorkOrderStatus
   return <Pill label={STATUS_LABEL[key] ?? status} tone={STATUS_TONE[key] ?? TONE.gray} />
+}
+
+export function PmLevelPill({ level }: { level: PmLevel }) {
+  return <Pill label={PM_LABEL[level]} tone={PM_TONE[level]} />
+}
+
+export function PmDot({ level, size = 10 }: { level: PmLevel; size?: number }) {
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        width: size, height: size, borderRadius: '50%',
+        background: PM_DOT[level], flexShrink: 0, display: 'inline-block',
+      }}
+    />
+  )
 }

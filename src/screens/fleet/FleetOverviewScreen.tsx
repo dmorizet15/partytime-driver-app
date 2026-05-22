@@ -3,22 +3,30 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import BottomNav from '@/components/BottomNav'
+import WorkOrderCard from '@/components/fleet/WorkOrderCard'
 import { FC, FONT_BODY, FONT_DISPLAY } from '@/lib/fleet/theme'
 import { fetchFleetOverview } from '@/lib/fleet/queries'
 import type { FleetOverview, OverviewAsset, WorkOrderListItem } from '@/lib/fleet/types'
-import { HealthPill, PriorityPill, SourcePill, StatusDot } from '@/components/fleet/FleetPills'
+import { HealthPill, StatusDot } from '@/components/fleet/FleetPills'
 import {
   BoxIcon,
+  ChevronDownIcon,
   ChevronRightIcon,
-  ClipboardIcon,
+  LockIcon,
   TruckIcon,
 } from '@/components/fleet/fleetIcons'
+
+const EQUIP_MGMT_MSG =
+  'Equipment management coming soon — contact your administrator to add or update equipment.'
 
 export default function FleetOverviewScreen() {
   const router = useRouter()
   const [data, setData] = useState<FleetOverview | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
+  // null = follow the default rule (expanded iff there are open equipment WOs).
+  const [equipExpanded, setEquipExpanded] = useState<boolean | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -29,6 +37,20 @@ export default function FleetOverviewScreen() {
       .catch(() => { if (!cancelled) { setError(true); setLoading(false) } })
     return () => { cancelled = true }
   }, [])
+
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(null), 4200)
+    return () => clearTimeout(t)
+  }, [toast])
+
+  const equipWOCount = data?.equipmentWorkOrders.length ?? 0
+  const equipOpen = equipExpanded ?? equipWOCount > 0
+
+  const openAsset = (a: OverviewAsset) =>
+    router.push(`/tools/fleet/assets/${a.assetType}/${a.id}`)
+  const openWorkOrder = (wo: WorkOrderListItem) =>
+    router.push(`/tools/fleet/work-orders/${wo.id}`)
 
   return (
     <div className="screen" style={{ background: FC.bg, fontFamily: FONT_BODY, color: FC.white }}>
@@ -110,56 +132,78 @@ export default function FleetOverviewScreen() {
               />
             </div>
 
-            {/* Trucks */}
+            {/* ── TRUCKS ───────────────────────────────────────────────── */}
             <SectionHeader label="Trucks" count={data.trucks.length} />
             <div style={{ padding: '0 18px' }}>
+              {data.truckWorkOrders.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 12 }}>
+                  {data.truckWorkOrders.map((wo) => (
+                    <WorkOrderCard key={wo.id} wo={wo} subtitle={wo.assetName} onTap={() => openWorkOrder(wo)} />
+                  ))}
+                </div>
+              )}
               {data.trucks.length === 0
                 ? <EmptyRow text="No active trucks" />
                 : (
                   <div style={cardListStyle}>
                     {data.trucks.map((a, i) => (
-                      <AssetRow key={a.id} asset={a} kind="truck" last={i === data.trucks.length - 1} />
+                      <AssetRow key={a.id} asset={a} last={i === data.trucks.length - 1} onTap={() => openAsset(a)} />
                     ))}
                   </div>
                 )}
             </div>
 
-            {/* Equipment */}
-            <SectionHeader label="Equipment" count={data.equipment.length} />
+            {/* ── EQUIPMENT ────────────────────────────────────────────── */}
+            <EquipmentHeader count={data.equipment.length} onManage={() => setToast(EQUIP_MGMT_MSG)} />
             <div style={{ padding: '0 18px' }}>
+              {data.equipmentWorkOrders.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 12 }}>
+                  {data.equipmentWorkOrders.map((wo) => (
+                    <WorkOrderCard key={wo.id} wo={wo} subtitle={wo.assetName} onTap={() => openWorkOrder(wo)} />
+                  ))}
+                </div>
+              )}
               {data.equipment.length === 0
                 ? <EmptyRow text="No active equipment" />
                 : (
-                  <div style={cardListStyle}>
-                    {data.equipment.map((a, i) => (
-                      <AssetRow key={a.id} asset={a} kind="equipment" last={i === data.equipment.length - 1} />
-                    ))}
-                  </div>
+                  <>
+                    <CollapseToggle
+                      label="All equipment"
+                      count={data.equipment.length}
+                      open={equipOpen}
+                      onToggle={() => setEquipExpanded(!equipOpen)}
+                    />
+                    {equipOpen && (
+                      <div style={{ ...cardListStyle, marginTop: 8 }}>
+                        {data.equipment.map((a, i) => (
+                          <AssetRow key={a.id} asset={a} last={i === data.equipment.length - 1} onTap={() => openAsset(a)} />
+                        ))}
+                      </div>
+                    )}
+                  </>
                 )}
             </div>
 
-            {/* Work orders */}
-            <SectionHeader label="Open work orders" count={data.workOrders.length} />
-            <div style={{ padding: '0 18px 28px' }}>
-              {data.workOrders.length === 0
-                ? <EmptyRow text="No open work orders" />
-                : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {data.workOrders.map((wo) => (
-                      <WorkOrderRow
-                        key={wo.id}
-                        wo={wo}
-                        onTap={() => router.push(`/tools/fleet/work-orders/${wo.id}`)}
-                      />
-                    ))}
-                  </div>
-                )}
-            </div>
+            {/* ── OTHER WORK ORDERS — catch-all ────────────────────────── */}
+            {data.otherWorkOrders.length > 0 && (
+              <>
+                <SectionHeader label="Other work orders" count={data.otherWorkOrders.length} />
+                <div style={{ padding: '0 18px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {data.otherWorkOrders.map((wo) => (
+                    <WorkOrderCard key={wo.id} wo={wo} subtitle={wo.assetName} onTap={() => openWorkOrder(wo)} />
+                  ))}
+                </div>
+              </>
+            )}
+
+            <div style={{ height: 28 }} />
           </>
         )}
       </div>
 
       <BottomNav />
+
+      {toast && <Toast text={toast} />}
     </div>
   )
 }
@@ -214,6 +258,83 @@ function SectionHeader({ label, count }: { label: string; count: number }) {
   )
 }
 
+/** Equipment section header — carries the disabled "Manage equipment" affordance. */
+function EquipmentHeader({ count, onManage }: { count: number; onManage: () => void }) {
+  return (
+    <div style={{
+      padding: '22px 18px 8px',
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+    }}>
+      <div style={{
+        display: 'flex', alignItems: 'baseline', gap: 8,
+        fontFamily: FONT_DISPLAY, fontSize: 13, fontWeight: 800,
+        letterSpacing: '0.2em', textTransform: 'uppercase', color: FC.muted,
+        paddingLeft: 4,
+      }}>
+        <span>Equipment</span>
+        <span style={{ color: FC.faint, letterSpacing: '0.1em' }}>{count}</span>
+      </div>
+      <button
+        onClick={onManage}
+        aria-label="Manage equipment — coming soon"
+        style={{
+          flexShrink: 0,
+          display: 'flex', alignItems: 'center', gap: 5,
+          background: 'transparent', border: `0.5px solid ${FC.cardBorder}`,
+          borderRadius: 999, padding: '5px 10px',
+          cursor: 'pointer', fontFamily: 'inherit',
+          color: FC.faint, fontSize: 10, fontWeight: 800,
+          letterSpacing: '0.06em', textTransform: 'uppercase', whiteSpace: 'nowrap',
+        }}
+      >
+        <LockIcon size={12} color={FC.faint} />
+        Manage equipment
+      </button>
+    </div>
+  )
+}
+
+/** Collapse / expand control for the equipment list (the list only — work
+ *  orders above it are never collapsed). */
+function CollapseToggle({
+  label, count, open, onToggle,
+}: {
+  label: string
+  count: number
+  open: boolean
+  onToggle: () => void
+}) {
+  return (
+    <button
+      onClick={onToggle}
+      aria-expanded={open}
+      style={{
+        width: '100%', cursor: 'pointer', fontFamily: 'inherit',
+        background: FC.card, border: `0.5px solid ${FC.cardBorder}`,
+        borderRadius: 14, padding: '13px 14px',
+        display: 'flex', alignItems: 'center', gap: 8, color: FC.white,
+      }}
+    >
+      <span style={{ fontSize: 13.5, fontWeight: 800 }}>{label}</span>
+      <span style={{ fontSize: 13.5, fontWeight: 800, color: FC.faint }}>{count}</span>
+      <span style={{ flex: 1 }} />
+      <span style={{
+        fontSize: 10.5, fontWeight: 800, color: FC.muted,
+        letterSpacing: '0.08em', textTransform: 'uppercase',
+      }}>
+        {open ? 'Hide' : 'Show'}
+      </span>
+      <span style={{
+        display: 'flex',
+        transform: open ? 'rotate(180deg)' : 'none',
+        transition: 'transform 0.15s ease',
+      }}>
+        <ChevronDownIcon size={18} color={FC.muted} />
+      </span>
+    </button>
+  )
+}
+
 function EmptyRow({ text }: { text: string }) {
   return (
     <div style={{
@@ -226,14 +347,20 @@ function EmptyRow({ text }: { text: string }) {
   )
 }
 
-function AssetRow({ asset, kind, last }: { asset: OverviewAsset; kind: 'truck' | 'equipment'; last: boolean }) {
-  const Icon = kind === 'truck' ? TruckIcon : BoxIcon
+function AssetRow({ asset, last, onTap }: { asset: OverviewAsset; last: boolean; onTap: () => void }) {
+  const Icon = asset.assetType === 'truck' ? TruckIcon : BoxIcon
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 12,
-      padding: '13px 14px',
-      borderBottom: last ? 'none' : `0.5px solid ${FC.divider}`,
-    }}>
+    <button
+      onClick={onTap}
+      aria-label={`${asset.name} — view details`}
+      style={{
+        width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
+        background: 'transparent', color: FC.white,
+        border: 0, borderBottom: last ? 'none' : `0.5px solid ${FC.divider}`,
+        display: 'flex', alignItems: 'center', gap: 12,
+        padding: '13px 14px',
+      }}
+    >
       <StatusDot health={asset.health} />
       <div style={{ flexShrink: 0, opacity: 0.55, display: 'flex' }}>
         <Icon size={18} color={FC.muted} />
@@ -253,48 +380,29 @@ function AssetRow({ asset, kind, last }: { asset: OverviewAsset; kind: 'truck' |
         </div>
       </div>
       <HealthPill health={asset.health} />
-    </div>
+      <ChevronRightIcon size={18} color={FC.faint} />
+    </button>
   )
 }
 
-function WorkOrderRow({ wo, onTap }: { wo: WorkOrderListItem; onTap: () => void }) {
+function Toast({ text }: { text: string }) {
   return (
-    <button
-      onClick={onTap}
-      aria-label={`Work order: ${wo.title}`}
+    <div
+      role="status"
+      aria-live="polite"
       style={{
-        width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
-        background: FC.card, border: `0.5px solid ${FC.cardBorder}`,
-        borderRadius: 14, padding: '14px 14px',
-        display: 'flex', alignItems: 'center', gap: 12, color: FC.white,
+        position: 'fixed', left: '50%',
+        bottom: 'calc(108px + env(safe-area-inset-bottom))',
+        transform: 'translateX(-50%)',
+        background: FC.cardRaised, color: FC.white,
+        padding: '12px 18px', borderRadius: 16,
+        fontSize: 13, fontWeight: 600, lineHeight: 1.4,
+        border: `0.5px solid ${FC.cardBorder}`,
+        boxShadow: '0 12px 30px -10px rgba(0,0,0,0.6)',
+        zIndex: 300, maxWidth: '84vw', textAlign: 'center',
       }}
     >
-      <div style={{
-        width: 38, height: 38, borderRadius: 10, flexShrink: 0,
-        background: 'rgba(255,255,255,0.05)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>
-        <ClipboardIcon size={20} color={FC.muted} />
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{
-          fontSize: 14, fontWeight: 800, color: FC.white, lineHeight: 1.25,
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        }}>
-          {wo.title}
-        </div>
-        <div style={{
-          marginTop: 2, fontSize: 12, color: FC.muted,
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        }}>
-          {wo.assetName}
-        </div>
-        <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          <PriorityPill priority={wo.priority} />
-          <SourcePill source={wo.source} />
-        </div>
-      </div>
-      <ChevronRightIcon size={20} color={FC.faint} />
-    </button>
+      {text}
+    </div>
   )
 }

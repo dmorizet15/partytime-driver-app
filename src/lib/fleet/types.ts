@@ -47,11 +47,16 @@ export interface WorkOrderListItem extends WorkOrderRow {
 }
 
 export interface FleetOverview {
-  openWorkOrderCount: number
-  pmDueCount:         number
-  trucks:             OverviewAsset[]
-  equipment:          OverviewAsset[]
-  workOrders:         WorkOrderListItem[]
+  openWorkOrderCount:  number
+  pmDueCount:          number
+  trucks:              OverviewAsset[]
+  equipment:           OverviewAsset[]
+  /** Open work orders whose asset is a known truck. */
+  truckWorkOrders:     WorkOrderListItem[]
+  /** Open work orders whose asset is a known equipment unit. */
+  equipmentWorkOrders: WorkOrderListItem[]
+  /** Open work orders with a null asset_type or an asset in neither table. */
+  otherWorkOrders:     WorkOrderListItem[]
 }
 
 /** Lightweight asset reference for the home alert card + Tools badge. */
@@ -64,7 +69,10 @@ export interface FleetAssetInfo {
   id:             string
   assetType:      AssetType
   name:           string
-  subtitle:       string
+  subtitle:       string           // compact one-liner — work order / log-service headers
+  vehicleSpec:    string           // year/make/model only, no plate ("2019 Isuzu NPR")
+  identifier:     string | null    // trucks: plate · equipment: serial number
+  identifierLabel: string          // "Plate" | "Serial"
   currentMileage: number | null
   currentHours:   number | null
 }
@@ -92,6 +100,22 @@ export interface WorkOrderDetail {
   assignedUser:   { id: string; display_name: string | null } | null
   serviceRecords: ServiceRecordView[]
   parts:          PartForAsset[]
+}
+
+/** A maintenance schedule paired with its derived PM tier — Asset Detail PM list. */
+export interface AssetScheduleView {
+  schedule: MaintenanceSchedule
+  pmLevel:  PmLevel
+}
+
+/** Everything the Asset Detail screen renders for one truck / equipment unit. */
+export interface AssetDetail {
+  asset:          FleetAssetInfo
+  health:         AssetHealth
+  schedules:      AssetScheduleView[]
+  serviceRecords: ServiceRecordView[]
+  /** Every work order for the asset — open + resolved, newest first. */
+  workOrders:     WorkOrderRow[]
 }
 
 /** Service-type option for the Log Service Entry dropdown. */

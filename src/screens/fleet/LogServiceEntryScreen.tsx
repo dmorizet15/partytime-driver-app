@@ -6,7 +6,11 @@ import InvoiceUpload from '@/components/fleet/InvoiceUpload'
 import { CloseIcon, PlusIcon } from '@/components/fleet/fleetIcons'
 import { useAuth } from '@/hooks/useAuth'
 import { FC, FONT_BODY, FONT_DISPLAY } from '@/lib/fleet/theme'
-import { createServiceEntry, fetchLogServiceContext } from '@/lib/fleet/queries'
+import {
+  createServiceEntry,
+  fetchLogServiceContext,
+  fetchLogServiceContextForAsset,
+} from '@/lib/fleet/queries'
 import type { LogServiceContext } from '@/lib/fleet/queries'
 import type { AssetType } from '@/lib/fleet/types'
 
@@ -26,9 +30,29 @@ function toNum(s: string): number | null {
 
 type LineItem = { name: string; qty: string }
 
-export default function LogServiceEntryScreen({ workOrderId }: { workOrderId: string }) {
+/**
+ * Log Service Entry — reachable two ways:
+ *  • from a work order  → `workOrderId` set; back / save returns to the WO.
+ *  • from an asset      → `assetType` + `assetId` set; the standalone path,
+ *    so Luke can log a routine service with no work order open. Back / save
+ *    returns to that asset's detail screen.
+ */
+export default function LogServiceEntryScreen({
+  workOrderId, assetType, assetId,
+}: {
+  workOrderId?: string
+  assetType?:   string
+  assetId?:     string
+}) {
   const router = useRouter()
   const { user, profile } = useAuth()
+
+  const routeType: AssetType | null =
+    assetType === 'truck' || assetType === 'equipment' ? assetType : null
+  const backHref = workOrderId
+    ? `/tools/fleet/work-orders/${workOrderId}`
+    : `/tools/fleet/assets/${assetType}/${assetId}`
+  const backLabel = workOrderId ? 'Work order' : 'Asset'
 
   const [ctx, setCtx] = useState<LogServiceContext | null>(null)
   const [loading, setLoading] = useState(true)
@@ -52,16 +76,21 @@ export default function LogServiceEntryScreen({ workOrderId }: { workOrderId: st
 
   useEffect(() => {
     let cancelled = false
-    fetchLogServiceContext(workOrderId).then((c) => {
+    const load: Promise<LogServiceContext | null> = workOrderId
+      ? fetchLogServiceContext(workOrderId)
+      : routeType && assetId
+        ? fetchLogServiceContextForAsset(routeType, assetId)
+        : Promise.resolve(null)
+    load.then((c) => {
       if (cancelled) return
       if (!c) { setNotFound(true); setLoading(false); return }
       setCtx(c)
       setLoading(false)
     })
     return () => { cancelled = true }
-  }, [workOrderId])
+  }, [workOrderId, routeType, assetId])
 
-  const assetType: AssetType = ctx?.asset?.assetType ?? 'truck'
+  const effectiveAssetType: AssetType = ctx?.asset?.assetType ?? 'truck'
 
   const effectiveServiceType = useMemo(
     () => (serviceTypeValue === CUSTOM ? customServiceType.trim() : serviceTypeValue),
@@ -80,7 +109,7 @@ export default function LogServiceEntryScreen({ workOrderId }: { workOrderId: st
 
   async function save() {
     const asset = ctx?.asset
-    if (!asset) { setError('This work order has no asset attached.'); return }
+    if (!asset) { setError('No asset attached — cannot log a service entry.'); return }
     if (!effectiveServiceType) { setError('Choose or enter a service type.'); return }
     if (!serviceDate) { setError('Pick the date the work was performed.'); return }
     if (performedBy === 'external' && !externalName.trim()) {
@@ -102,13 +131,13 @@ export default function LogServiceEntryScreen({ workOrderId }: { workOrderId: st
           ? profile?.display_name ?? null
           : externalName.trim(),
         vendorId:          performedBy === 'external' && vendorId ? vendorId : null,
-        mileageAtService:  assetType === 'truck' ? toNum(mileageStr) : null,
-        hoursAtService:    assetType === 'equipment' ? toNum(hoursStr) : null,
+        mileageAtService:  effectiveAssetType === 'truck' ? toNum(mileageStr) : null,
+        hoursAtService:    effectiveAssetType === 'equipment' ? toNum(hoursStr) : null,
         notes:             notes.trim() || null,
         lineItems:         lineItems.map((li) => ({ name: li.name, qty: toNum(li.qty) })),
         invoice,
       })
-      router.push(`/tools/fleet/work-orders/${workOrderId}`)
+      router.push(backHref)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save the service entry.')
       setSaving(false)
@@ -124,15 +153,15 @@ export default function LogServiceEntryScreen({ workOrderId }: { workOrderId: st
         padding: '14px 18px',
       }}>
         <button
-          onClick={() => router.push(`/tools/fleet/work-orders/${workOrderId}`)}
-          aria-label="Back to work order"
+          onClick={() => router.push(backHref)}
+          aria-label={`Back to ${backLabel.toLowerCase()}`}
           style={{
             background: 'transparent', border: 0, color: FC.amber,
             fontSize: 11, fontWeight: 800, letterSpacing: '0.16em',
             cursor: 'pointer', fontFamily: 'inherit', padding: 0, textTransform: 'uppercase',
           }}
         >
-          ← Work order
+          ← {backLabel}
         </button>
         <div style={{
           marginTop: 10, fontFamily: FONT_DISPLAY,
@@ -226,7 +255,7 @@ export default function LogServiceEntryScreen({ workOrderId }: { workOrderId: st
             </Field>
 
             {/* Mileage / hours */}
-            {assetType === 'truck' ? (
+            {effectiveAssetType === 'truck' ? (
               <Field label="Mileage at service (optional)">
                 <input
                   type="number" inputMode="numeric"

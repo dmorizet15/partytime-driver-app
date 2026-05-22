@@ -275,6 +275,14 @@ The last two lines ran post-mount and overrode the JSX's `width: 100%; height: 1
 
 ---
 
+## Before adding a prop to an existing component, grep its body for that identifier — a new prop that shadows a local is a webpack error, not a type squiggle.
+
+**Why:** The Fleet UI-fixes session (2026-05-22 evening) added an `assetType` prop to `LogServiceEntryScreen` so it could run in standalone-asset mode. The screen already had `const assetType: AssetType = ctx?.asset?.assetType ?? 'truck'` a few dozen lines down. Destructured prop + later `const` of the same name in the same function scope = a redeclaration. `npx next build` failed at the webpack/SWC compile stage (`` `assetType` redefined here ``) — it cost a full build cycle to surface, because the new prop and the old local were far apart in the file and nothing flagged it while editing.
+
+**How to apply:** When extending a component's prop list, `grep -n "<newPropName>" <file>` first. If the identifier already appears as a local `const`/`let`/function param, pick a different prop name or rename the local in the same edit pass — before building. The collision is mechanical and cheap to avoid up front; discovered at build time it burns a full `next build`. Same discipline as any rename: the editor won't always catch a shadow when the two declarations are far apart, and `next build` compiles before it type-checks, so the error surfaces late.
+
+---
+
 ## Generated Supabase types carry column names — not CHECK-constraint enum values, not RLS predicates. Query the DB directly before building.
 
 **Why:** Fleet Maintenance (2026-05-22) built a driver-app surface on dashboard-owned tables (`fleet_work_orders`, `service_records`, etc.). `src/types/supabase.ts` typed every column as `status: string`, `priority: string`, `asset_type: string` — the generator does not encode `CHECK (status = ANY (ARRAY['open','in_progress','resolved']))` into a string-literal union. Writing `status: 'closed'` would have compiled clean and failed at runtime with a constraint violation. Likewise the types say nothing about whether RLS lets the driver-app JWT INSERT/UPDATE a table, or whether a Storage bucket's policies admit uploads. All of that was resolved up front with `supabase db query --linked` against `pg_constraint` (CHECK defs), `pg_policies` (RLS cmd + predicate), and `storage.buckets` — confirming `has_fleet_maintenance_access()` gates every fleet table + the `service-invoices` bucket for `authenticated`, so the driver app could write directly with no API route.
