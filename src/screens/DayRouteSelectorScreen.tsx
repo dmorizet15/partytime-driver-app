@@ -9,6 +9,7 @@ import type { Stop }                    from '@/types'
 import BottomNav                        from '@/components/BottomNav'
 import PostTripDefectCard               from '@/components/PostTripDefectCard'
 import StopWindowBadge                  from '@/components/StopWindowBadge'
+import FleetAlertCard                   from '@/components/fleet/FleetAlertCard'
 
 // ─── Direction 03 (Editorial) tokens ──────────────────────────────────────────
 const C = {
@@ -790,6 +791,10 @@ export default function DayRouteSelectorScreen() {
                 </div>
               )
             })()}
+
+            {/* Fleet alert — renders only for fleet-access users with ≥1
+                open work order; self-fetches, hidden otherwise */}
+            <FleetAlertCard />
 
             {/* Day list eyebrow */}
             <div style={{

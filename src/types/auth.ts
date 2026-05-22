@@ -13,4 +13,7 @@ export interface UserProfile {
   id: string
   roles: Role[]
   display_name: string | null
+  /** Stacked, additive permission — independent of `roles`. Gates the
+   *  Fleet Maintenance module (Tools Hub card + /tools/fleet screens). */
+  fleet_maintenance_access: boolean
 }

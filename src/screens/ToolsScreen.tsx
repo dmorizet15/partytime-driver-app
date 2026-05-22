@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import BottomNav from '@/components/BottomNav'
+import { useOpenWorkOrders } from '@/hooks/fleet/useOpenWorkOrders'
+import { WrenchIcon } from '@/components/fleet/fleetIcons'
 
 // ─── PTR design tokens — dark hub palette ───────────────────────────────────
 const C = {
@@ -333,6 +335,62 @@ function CategoryCardWide({ cat, onTap }: { cat: Category; onTap: (c: Category) 
   )
 }
 
+// ─── Fleet Maintenance card — role-gated ────────────────────────────────────
+// Renders null entirely for users without fleet_maintenance_access, so a
+// standard driver sees the Tools Hub with no trace of the module. The red pill
+// surfaces the open work-order count (hidden at zero — nothing to flag).
+function FleetMaintenanceCard({ onTap }: { onTap: () => void }) {
+  const { count, hasAccess, loading } = useOpenWorkOrders()
+  if (loading || !hasAccess) return null
+
+  return (
+    <div style={{ padding: '12px 18px 0' }}>
+      <button
+        onClick={onTap}
+        aria-label="Fleet Maintenance"
+        style={{
+          background: C.card,
+          border: `0.5px solid ${C.cardBorder}`,
+          borderRadius: 14,
+          padding: '16px 14px',
+          cursor: 'pointer', fontFamily: 'inherit',
+          textAlign: 'left',
+          display: 'flex', alignItems: 'center', gap: 14,
+          color: C.white,
+          width: '100%',
+        }}
+      >
+        <IconWrap bg="rgba(150,160,180,0.16)">
+          <WrenchIcon size={22} color="#AEB6C6" />
+        </IconWrap>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontFamily: FONT_DISPLAY, fontSize: 16, fontWeight: 800,
+            color: C.white, letterSpacing: '-0.01em', lineHeight: 1.2,
+          }}>
+            Fleet Maintenance
+          </div>
+          <div style={{ marginTop: 4, fontSize: 12, color: C.muted, lineHeight: 1.4 }}>
+            Work orders · PM · service log
+          </div>
+        </div>
+        {count > 0 && (
+          <span style={{
+            display: 'inline-block',
+            background: 'rgba(229,72,77,0.15)', color: '#E5484D',
+            border: '0.5px solid rgba(229,72,77,0.35)',
+            padding: '3px 9px', borderRadius: 999,
+            fontSize: 10, fontWeight: 800, letterSpacing: '0.04em',
+            textTransform: 'uppercase', whiteSpace: 'nowrap', lineHeight: 1.2,
+          }}>
+            {count} open
+          </span>
+        )}
+      </button>
+    </div>
+  )
+}
+
 // ─── Screen ─────────────────────────────────────────────────────────────────
 export default function ToolsScreen() {
   const router = useRouter()
@@ -428,6 +486,9 @@ export default function ToolsScreen() {
             <CategoryCardGrid key={cat.id} cat={cat} onTap={handleTap} />
           ))}
         </div>
+
+        {/* Fleet Maintenance — role-gated; renders null without access */}
+        <FleetMaintenanceCard onTap={() => router.push('/tools/fleet')} />
 
         {/* Full-width: Generators (above divider) */}
         <div style={{ padding: '12px 18px 0' }}>

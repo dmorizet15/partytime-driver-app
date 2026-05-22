@@ -14,6 +14,44 @@ export type Database = {
   }
   public: {
     Tables: {
+      asset_part_fitments: {
+        Row: {
+          asset_id: string
+          asset_type: string
+          created_at: string
+          id: string
+          notes: string | null
+          part_id: string
+          position: string | null
+        }
+        Insert: {
+          asset_id: string
+          asset_type: string
+          created_at?: string
+          id?: string
+          notes?: string | null
+          part_id: string
+          position?: string | null
+        }
+        Update: {
+          asset_id?: string
+          asset_type?: string
+          created_at?: string
+          id?: string
+          notes?: string | null
+          part_id?: string
+          position?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "asset_part_fitments_part_id_fkey"
+            columns: ["part_id"]
+            isOneToOne: false
+            referencedRelation: "parts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       audit_log: {
         Row: {
           action_type: string
@@ -47,6 +85,72 @@ export type Database = {
           old_value?: Json | null
           user_id?: string | null
           user_role?: Database["public"]["Enums"]["user_role"] | null
+        }
+        Relationships: []
+      }
+      carrier_compliance: {
+        Row: {
+          created_at: string
+          entity_name: string
+          id: string
+          interstate_flag: boolean
+          mcs150_biennial_month: number | null
+          mcs150_biennial_year_parity: string | null
+          mcs150_confirmation_number: string | null
+          mcs150_last_filed_date: string | null
+          mcs150_next_due_date: string | null
+          notes: string | null
+          power_unit_count_current: number | null
+          ucr_base_state: string | null
+          ucr_bracket: string | null
+          ucr_confirmation_id: string | null
+          ucr_fee_paid: boolean
+          ucr_filed_date: string | null
+          ucr_registration_year: number | null
+          updated_at: string
+          usdot_number: string
+        }
+        Insert: {
+          created_at?: string
+          entity_name: string
+          id?: string
+          interstate_flag?: boolean
+          mcs150_biennial_month?: number | null
+          mcs150_biennial_year_parity?: string | null
+          mcs150_confirmation_number?: string | null
+          mcs150_last_filed_date?: string | null
+          mcs150_next_due_date?: string | null
+          notes?: string | null
+          power_unit_count_current?: number | null
+          ucr_base_state?: string | null
+          ucr_bracket?: string | null
+          ucr_confirmation_id?: string | null
+          ucr_fee_paid?: boolean
+          ucr_filed_date?: string | null
+          ucr_registration_year?: number | null
+          updated_at?: string
+          usdot_number: string
+        }
+        Update: {
+          created_at?: string
+          entity_name?: string
+          id?: string
+          interstate_flag?: boolean
+          mcs150_biennial_month?: number | null
+          mcs150_biennial_year_parity?: string | null
+          mcs150_confirmation_number?: string | null
+          mcs150_last_filed_date?: string | null
+          mcs150_next_due_date?: string | null
+          notes?: string | null
+          power_unit_count_current?: number | null
+          ucr_base_state?: string | null
+          ucr_bracket?: string | null
+          ucr_confirmation_id?: string | null
+          ucr_fee_paid?: boolean
+          ucr_filed_date?: string | null
+          ucr_registration_year?: number | null
+          updated_at?: string
+          usdot_number?: string
         }
         Relationships: []
       }
@@ -132,6 +236,42 @@ export type Database = {
             columns: ["route_id"]
             isOneToOne: false
             referencedRelation: "routes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dispatch_stop_dispatcher_state: {
+        Row: {
+          dispatcher_seen_at: string | null
+          dispatcher_user_id: string
+          manual_rank: number | null
+          stop_id: string
+        }
+        Insert: {
+          dispatcher_seen_at?: string | null
+          dispatcher_user_id: string
+          manual_rank?: number | null
+          stop_id: string
+        }
+        Update: {
+          dispatcher_seen_at?: string | null
+          dispatcher_user_id?: string
+          manual_rank?: number | null
+          stop_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dispatch_stop_dispatcher_state_dispatcher_user_id_fkey"
+            columns: ["dispatcher_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dispatch_stop_dispatcher_state_stop_id_fkey"
+            columns: ["stop_id"]
+            isOneToOne: false
+            referencedRelation: "dispatch_stops"
             referencedColumns: ["id"]
           },
         ]
@@ -495,6 +635,68 @@ export type Database = {
           },
         ]
       }
+      fleet_work_orders: {
+        Row: {
+          asset_id: string
+          asset_type: string
+          assigned_to_user_id: string | null
+          created_at: string
+          description: string | null
+          id: string
+          priority: string
+          resolution_notes: string | null
+          resolved_at: string | null
+          resolved_by_user_id: string | null
+          source: string
+          source_defect_id: string | null
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          asset_id: string
+          asset_type: string
+          assigned_to_user_id?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          priority?: string
+          resolution_notes?: string | null
+          resolved_at?: string | null
+          resolved_by_user_id?: string | null
+          source: string
+          source_defect_id?: string | null
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          asset_id?: string
+          asset_type?: string
+          assigned_to_user_id?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          priority?: string
+          resolution_notes?: string | null
+          resolved_at?: string | null
+          resolved_by_user_id?: string | null
+          source?: string
+          source_defect_id?: string | null
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fleet_work_orders_source_defect_id_fkey"
+            columns: ["source_defect_id"]
+            isOneToOne: false
+            referencedRelation: "vehicle_defects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       game_scores: {
         Row: {
           achieved_at: string
@@ -527,16 +729,253 @@ export type Database = {
           },
         ]
       }
+      maintenance_schedules: {
+        Row: {
+          active: boolean
+          asset_id: string
+          asset_type: string
+          created_at: string
+          id: string
+          interval_hours: number | null
+          interval_miles: number | null
+          interval_months: number | null
+          last_service_date: string | null
+          last_service_hours: number | null
+          last_service_mileage: number | null
+          next_due_date: string | null
+          next_due_hours: number | null
+          next_due_miles: number | null
+          service_label: string | null
+          service_type: string
+          updated_at: string
+          warning_threshold_days: number | null
+          warning_threshold_miles: number | null
+        }
+        Insert: {
+          active?: boolean
+          asset_id: string
+          asset_type: string
+          created_at?: string
+          id?: string
+          interval_hours?: number | null
+          interval_miles?: number | null
+          interval_months?: number | null
+          last_service_date?: string | null
+          last_service_hours?: number | null
+          last_service_mileage?: number | null
+          next_due_date?: string | null
+          next_due_hours?: number | null
+          next_due_miles?: number | null
+          service_label?: string | null
+          service_type: string
+          updated_at?: string
+          warning_threshold_days?: number | null
+          warning_threshold_miles?: number | null
+        }
+        Update: {
+          active?: boolean
+          asset_id?: string
+          asset_type?: string
+          created_at?: string
+          id?: string
+          interval_hours?: number | null
+          interval_miles?: number | null
+          interval_months?: number | null
+          last_service_date?: string | null
+          last_service_hours?: number | null
+          last_service_mileage?: number | null
+          next_due_date?: string | null
+          next_due_hours?: number | null
+          next_due_miles?: number | null
+          service_label?: string | null
+          service_type?: string
+          updated_at?: string
+          warning_threshold_days?: number | null
+          warning_threshold_miles?: number | null
+        }
+        Relationships: []
+      }
+      non_truck_assets: {
+        Row: {
+          active: boolean
+          asset_type: string
+          created_at: string
+          current_hours: number | null
+          engine_code: string | null
+          id: string
+          make: string | null
+          model: string | null
+          name: string
+          notes: string | null
+          serial_number: string | null
+          tapgoods_product_id: string | null
+          updated_at: string
+          year: number | null
+        }
+        Insert: {
+          active?: boolean
+          asset_type: string
+          created_at?: string
+          current_hours?: number | null
+          engine_code?: string | null
+          id?: string
+          make?: string | null
+          model?: string | null
+          name: string
+          notes?: string | null
+          serial_number?: string | null
+          tapgoods_product_id?: string | null
+          updated_at?: string
+          year?: number | null
+        }
+        Update: {
+          active?: boolean
+          asset_type?: string
+          created_at?: string
+          current_hours?: number | null
+          engine_code?: string | null
+          id?: string
+          make?: string | null
+          model?: string | null
+          name?: string
+          notes?: string | null
+          serial_number?: string | null
+          tapgoods_product_id?: string | null
+          updated_at?: string
+          year?: number | null
+        }
+        Relationships: []
+      }
+      part_cross_references: {
+        Row: {
+          brand: string
+          created_at: string
+          id: string
+          part_id: string
+          part_number: string
+          priority: number
+          source_url: string | null
+          verified_date: string | null
+        }
+        Insert: {
+          brand: string
+          created_at?: string
+          id?: string
+          part_id: string
+          part_number: string
+          priority?: number
+          source_url?: string | null
+          verified_date?: string | null
+        }
+        Update: {
+          brand?: string
+          created_at?: string
+          id?: string
+          part_id?: string
+          part_number?: string
+          priority?: number
+          source_url?: string | null
+          verified_date?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "part_cross_references_part_id_fkey"
+            columns: ["part_id"]
+            isOneToOne: false
+            referencedRelation: "parts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      part_inventory: {
+        Row: {
+          created_at: string
+          id: string
+          last_counted_at: string | null
+          part_id: string
+          qty_on_hand: number
+          reorder_at: number | null
+          storage_location: string | null
+          supplier_name: string | null
+          supplier_part_number: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          last_counted_at?: string | null
+          part_id: string
+          qty_on_hand?: number
+          reorder_at?: number | null
+          storage_location?: string | null
+          supplier_name?: string | null
+          supplier_part_number?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          last_counted_at?: string | null
+          part_id?: string
+          qty_on_hand?: number
+          reorder_at?: number | null
+          storage_location?: string | null
+          supplier_name?: string | null
+          supplier_part_number?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "part_inventory_part_id_fkey"
+            columns: ["part_id"]
+            isOneToOne: false
+            referencedRelation: "parts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      parts: {
+        Row: {
+          category: string
+          created_at: string
+          id: string
+          notes: string | null
+          part_name: string
+          updated_at: string
+          vmrs_code: string | null
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          id?: string
+          notes?: string | null
+          part_name: string
+          updated_at?: string
+          vmrs_code?: string | null
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          id?: string
+          notes?: string | null
+          part_name?: string
+          updated_at?: string
+          vmrs_code?: string | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           archived_at: string | null
           archived_by_user_id: string | null
           created_at: string
           display_name: string | null
+          fleet_maintenance_access: boolean
           id: string
           invited_at: string | null
           invited_by_user_id: string | null
           mobile_number: string | null
+          receives_fleet_notifications: boolean
           roles: Database["public"]["Enums"]["user_role"][]
           status: string
         }
@@ -545,10 +984,12 @@ export type Database = {
           archived_by_user_id?: string | null
           created_at?: string
           display_name?: string | null
+          fleet_maintenance_access?: boolean
           id: string
           invited_at?: string | null
           invited_by_user_id?: string | null
           mobile_number?: string | null
+          receives_fleet_notifications?: boolean
           roles?: Database["public"]["Enums"]["user_role"][]
           status?: string
         }
@@ -557,10 +998,12 @@ export type Database = {
           archived_by_user_id?: string | null
           created_at?: string
           display_name?: string | null
+          fleet_maintenance_access?: boolean
           id?: string
           invited_at?: string | null
           invited_by_user_id?: string | null
           mobile_number?: string | null
+          receives_fleet_notifications?: boolean
           roles?: Database["public"]["Enums"]["user_role"][]
           status?: string
         }
@@ -839,6 +1282,7 @@ export type Database = {
           created_by: string | null
           dispatched_at: string | null
           dispatched_by: string | null
+          dispatcher_notes: string | null
           estimated_return_at: string | null
           id: string
           label: string
@@ -860,6 +1304,7 @@ export type Database = {
           created_by?: string | null
           dispatched_at?: string | null
           dispatched_by?: string | null
+          dispatcher_notes?: string | null
           estimated_return_at?: string | null
           id?: string
           label: string
@@ -881,6 +1326,7 @@ export type Database = {
           created_by?: string | null
           dispatched_at?: string | null
           dispatched_by?: string | null
+          dispatcher_notes?: string | null
           estimated_return_at?: string | null
           id?: string
           label?: string
@@ -916,6 +1362,151 @@ export type Database = {
             columns: ["warehouse_arrived_by"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      service_invoices: {
+        Row: {
+          file_name: string
+          file_path: string
+          id: string
+          mime_type: string | null
+          notes: string | null
+          service_record_id: string
+          uploaded_at: string
+          uploaded_by_user_id: string | null
+        }
+        Insert: {
+          file_name: string
+          file_path: string
+          id?: string
+          mime_type?: string | null
+          notes?: string | null
+          service_record_id: string
+          uploaded_at?: string
+          uploaded_by_user_id?: string | null
+        }
+        Update: {
+          file_name?: string
+          file_path?: string
+          id?: string
+          mime_type?: string | null
+          notes?: string | null
+          service_record_id?: string
+          uploaded_at?: string
+          uploaded_by_user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "service_invoices_service_record_id_fkey"
+            columns: ["service_record_id"]
+            isOneToOne: false
+            referencedRelation: "service_records"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      service_line_items: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          part_id: string | null
+          part_number_used: string | null
+          qty_used: number | null
+          service_record_id: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          part_id?: string | null
+          part_number_used?: string | null
+          qty_used?: number | null
+          service_record_id: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          part_id?: string | null
+          part_number_used?: string | null
+          qty_used?: number | null
+          service_record_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "service_line_items_part_id_fkey"
+            columns: ["part_id"]
+            isOneToOne: false
+            referencedRelation: "parts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_line_items_service_record_id_fkey"
+            columns: ["service_record_id"]
+            isOneToOne: false
+            referencedRelation: "service_records"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      service_records: {
+        Row: {
+          asset_id: string
+          asset_type: string
+          created_at: string
+          hours_at_service: number | null
+          id: string
+          mileage_at_service: number | null
+          notes: string | null
+          performed_by_name: string | null
+          performed_by_type: string
+          performed_by_user_id: string | null
+          service_date: string
+          service_type: string
+          updated_at: string
+          vendor_id: string | null
+        }
+        Insert: {
+          asset_id: string
+          asset_type: string
+          created_at?: string
+          hours_at_service?: number | null
+          id?: string
+          mileage_at_service?: number | null
+          notes?: string | null
+          performed_by_name?: string | null
+          performed_by_type: string
+          performed_by_user_id?: string | null
+          service_date: string
+          service_type: string
+          updated_at?: string
+          vendor_id?: string | null
+        }
+        Update: {
+          asset_id?: string
+          asset_type?: string
+          created_at?: string
+          hours_at_service?: number | null
+          id?: string
+          mileage_at_service?: number | null
+          notes?: string | null
+          performed_by_name?: string | null
+          performed_by_type?: string
+          performed_by_user_id?: string | null
+          service_date?: string
+          service_type?: string
+          updated_at?: string
+          vendor_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "service_records_vendor_id_fkey"
+            columns: ["vendor_id"]
+            isOneToOne: false
+            referencedRelation: "vendors"
             referencedColumns: ["id"]
           },
         ]
@@ -1030,6 +1621,8 @@ export type Database = {
           completed_at: string | null
           error_message: string | null
           id: string
+          orphan_count: number | null
+          orphans_rehealed: number | null
           reservations_created: number
           reservations_fetched: number
           reservations_updated: number
@@ -1042,6 +1635,8 @@ export type Database = {
           completed_at?: string | null
           error_message?: string | null
           id?: string
+          orphan_count?: number | null
+          orphans_rehealed?: number | null
           reservations_created?: number
           reservations_fetched?: number
           reservations_updated?: number
@@ -1054,6 +1649,8 @@ export type Database = {
           completed_at?: string | null
           error_message?: string | null
           id?: string
+          orphan_count?: number | null
+          orphans_rehealed?: number | null
           reservations_created?: number
           reservations_fetched?: number
           reservations_updated?: number
@@ -1415,6 +2012,36 @@ export type Database = {
           },
         ]
       }
+      vendors: {
+        Row: {
+          address: string | null
+          created_at: string
+          id: string
+          name: string
+          notes: string | null
+          phone: string | null
+          speciality: string | null
+        }
+        Insert: {
+          address?: string | null
+          created_at?: string
+          id?: string
+          name: string
+          notes?: string | null
+          phone?: string | null
+          speciality?: string | null
+        }
+        Update: {
+          address?: string | null
+          created_at?: string
+          id?: string
+          name?: string
+          notes?: string | null
+          phone?: string | null
+          speciality?: string | null
+        }
+        Relationships: []
+      }
       will_call_orders: {
         Row: {
           checkin_window_end: string | null
@@ -1540,6 +2167,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      has_fleet_maintenance_access: { Args: never; Returns: boolean }
       is_scheduler_or_super_admin: { Args: never; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
     }
