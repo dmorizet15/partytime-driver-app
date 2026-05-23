@@ -10,13 +10,18 @@
 // dashboard-side migrations 026–030.
 //
 //   POST { route_id, truck_id, towing_trailer, previous_dvir_reviewed_id?,
-//          previous_dvir_acknowledged, checklist, defect_acknowledgments }
+//          previous_dvir_acknowledged, checklist, defect_acknowledgments,
+//          current_mileage }
 //   → 200 { id, outcome: 'clear' | 'non_oos' | 'oos' }
 //
 // outcome derivation:
 //   any failed row with severity = 'oos' → 'oos'
 //   any failed row at all                  → 'non_oos'
 //   all rows pass                          → 'clear'
+//
+// Side effect: on a successful vehicle_inspections insert, the driver's
+// just-entered odometer reading is also written to trucks.current_mileage
+// (non-fatal — a write failure is logged but does not 500).
 
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies }                   from 'next/headers'
@@ -60,7 +65,12 @@ interface SubmitBody {
   previous_dvir_acknowledged: unknown
   checklist:                  unknown
   defect_acknowledgments:     unknown
+  current_mileage:            unknown
 }
+
+// Upper sanity bound for the odometer reading. Well above any real box-truck
+// lifetime mileage, well under the Postgres `integer` ceiling.
+const MAX_ODOMETER = 2000000
 
 function getSessionClient() {
   const cookieStore = cookies()
@@ -116,6 +126,23 @@ export async function POST(request: NextRequest) {
   }
   const checklistMap = checklist as Record<string, IncomingItem | undefined>
 
+  // ── Validate current odometer reading ─────────────────────────────────────
+  // Required field — feeds trucks.current_mileage, which activates mileage-based
+  // PM flagging fleet-wide. The driver app gates submit on a non-empty value;
+  // this is the authoritative server-side check.
+  const mileage = body.current_mileage
+  if (
+    typeof mileage !== 'number' ||
+    !Number.isInteger(mileage) ||
+    mileage < 0 ||
+    mileage > MAX_ODOMETER
+  ) {
+    return NextResponse.json(
+      { error: `Missing or invalid current_mileage (expected an integer between 0 and ${MAX_ODOMETER})` },
+      { status: 400 }
+    )
+  }
+
   const session = getSessionClient()
   const { data: { user } } = await session.auth.getUser()
   if (!user) {
@@ -170,6 +197,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: inspectionRes.error.message }, { status: 500 })
   }
   const inspectionId = inspectionRes.data.id as string
+
+  // ── Update trucks.current_mileage (non-fatal) ─────────────────────────────
+  // Records the live pre-trip odometer reading on the assigned truck — the
+  // signal that activates mileage-based PM flagging across the fleet dashboard.
+  // Unconditional write: a pre-trip reading is captured live and is ground
+  // truth, so there is no backdated value to guard against. Non-fatal — the
+  // vehicle_inspections row above is the federally-required artifact and
+  // already exists; an odometer write failure must not block the driver from
+  // starting the route.
+  const mileageRes = await admin
+    .from('trucks')
+    .update({ current_mileage: mileage, updated_at: new Date().toISOString() })
+    .eq('id', truckId)
+  if (mileageRes.error) {
+    console.error('[/api/inspection/submit] trucks.current_mileage update failed (non-fatal):', mileageRes.error.message)
+  }
 
   // ── Insert vehicle_defects (per failed row) ───────────────────────────────
   // TODO: wrap inspection + defects + acks in a transactional RPC. Today the

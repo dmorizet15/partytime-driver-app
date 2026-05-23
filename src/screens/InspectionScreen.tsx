@@ -153,6 +153,7 @@ export interface InspectionForm {
   defectAcknowledgments:    Set<string>
   towingTrailer:            boolean | null
   checklist:                Record<CategoryKey, ChecklistItem>
+  odometer:                 string            // current odometer reading, miles — digit-only string, '' until entered
   signed:                   boolean
 
   // Submit lifecycle
@@ -181,6 +182,7 @@ type Action =
   | { type: 'TOGGLE_DEFECT_ACK';   payload: { defectId: string } }
   | { type: 'SET_TOWING';          payload: { towing: boolean } }
   | { type: 'SET_CHECKLIST_ITEM';  payload: { category: CategoryKey; item: ChecklistItem } }
+  | { type: 'SET_ODOMETER';        payload: { value: string } }
   | { type: 'SET_SIGNED';          payload: { signed: boolean } }
   | { type: 'SUBMIT_START' }
   | { type: 'SUBMIT_SUCCESS';      payload: { id: string; outcome: 'clear' | 'non_oos' | 'oos' } }
@@ -208,6 +210,7 @@ function initialState(routeId: string): State {
       defectAcknowledgments:    new Set(),
       towingTrailer:            null,
       checklist:                buildInitialChecklist(),
+      odometer:                 '',
       signed:                   false,
       submitting:               false,
       submitError:              null,
@@ -258,6 +261,9 @@ function reducer(state: State, action: Action): State {
           checklist: { ...state.form.checklist, [action.payload.category]: action.payload.item },
         },
       }
+
+    case 'SET_ODOMETER':
+      return { ...state, form: { ...state.form, odometer: action.payload.value } }
 
     case 'SET_SIGNED':
       return { ...state, form: { ...state.form, signed: action.payload.signed } }
@@ -833,8 +839,13 @@ export default function InspectionScreen({ routeId }: InspectionScreenProps) {
       const passed  = visible.filter((k) => state.form.checklist[k].state === 'pass').length
       const flagged = visible.filter((k) => state.form.checklist[k].state === 'fail')
 
+      // Odometer is required. The input is digit-sanitized on entry, so a
+      // non-empty value is always a valid non-negative integer; the server
+      // re-validates as the authoritative check.
+      const odometerValid = state.form.odometer.trim().length > 0
+
       const submit = async () => {
-        if (!state.form.signed || state.form.submitting) return
+        if (!state.form.signed || !odometerValid || state.form.submitting) return
         dispatch({ type: 'SUBMIT_START' })
         try {
           const res = await fetch('/api/inspection/submit', {
@@ -848,6 +859,7 @@ export default function InspectionScreen({ routeId }: InspectionScreenProps) {
               previous_dvir_acknowledged: state.form.previousDvirAcknowledged,
               checklist:                  state.form.checklist,
               defect_acknowledgments:     Array.from(state.form.defectAcknowledgments),
+              current_mileage:            Number(state.form.odometer),
             }),
           })
           const json = await res.json()
@@ -985,6 +997,82 @@ export default function InspectionScreen({ routeId }: InspectionScreenProps) {
               )}
             </div>
 
+            {/* Odometer reading — required. Feeds trucks.current_mileage on
+                submit, which activates mileage-based PM flagging fleet-wide.
+                Placed above the certify checkbox so the "information above is
+                accurate" attestation covers the reading. */}
+            <div style={{
+              marginTop: 14,
+              background: C.paper,
+              border: `1.5px solid rgba(10,11,20,0.10)`,
+              borderRadius: 18,
+              padding: '18px 18px 20px',
+              boxShadow: '0 2px 8px -4px rgba(10,11,20,0.08)',
+            }}>
+              <div style={{
+                fontSize: 11, fontWeight: 800, color: C.muted,
+                letterSpacing: '0.18em', textTransform: 'uppercase',
+              }}>
+                Odometer
+              </div>
+              <label
+                htmlFor="odometer-input"
+                style={{
+                  display: 'block',
+                  marginTop: 8,
+                  fontFamily: FONT_DISPLAY,
+                  fontSize: 17, fontWeight: 900, color: C.ink,
+                  lineHeight: 1.2, letterSpacing: '-0.01em',
+                }}
+              >
+                Current odometer reading (miles)
+              </label>
+              <div style={{
+                marginTop: 4,
+                fontSize: 12.5, color: C.muted, lineHeight: 1.4,
+              }}>
+                Enter the number shown on the truck&apos;s dashboard.
+              </div>
+              <input
+                id="odometer-input"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={state.form.odometer}
+                onChange={(e) => dispatch({
+                  type: 'SET_ODOMETER',
+                  payload: { value: e.target.value.replace(/[^0-9]/g, '').slice(0, 7) },
+                })}
+                placeholder="e.g. 84120"
+                aria-label="Current odometer reading in miles"
+                aria-required="true"
+                aria-invalid={!odometerValid}
+                style={{
+                  marginTop: 12,
+                  width: '100%',
+                  background: C.paper,
+                  border: `1.5px solid ${odometerValid ? 'rgba(10,11,20,0.16)' : C.gold}`,
+                  borderRadius: 12,
+                  padding: '14px 14px',
+                  fontFamily: FONT_DISPLAY,
+                  fontSize: 22, fontWeight: 900,
+                  letterSpacing: '0.01em',
+                  color: C.ink,
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              />
+              {!odometerValid && (
+                <div style={{
+                  marginTop: 6,
+                  fontSize: 11.5, color: C.red, fontWeight: 700,
+                }}>
+                  Odometer reading required.
+                </div>
+              )}
+            </div>
+
             {/* Certify checkbox */}
             <button
               onClick={() => dispatch({ type: 'SET_SIGNED', payload: { signed: !state.form.signed } })}
@@ -1057,7 +1145,7 @@ export default function InspectionScreen({ routeId }: InspectionScreenProps) {
           <Footer>
             <PrimaryCTA
               label={state.form.submitting ? 'Submitting…' : 'Submit Inspection'}
-              disabled={!state.form.signed || state.form.submitting}
+              disabled={!state.form.signed || !odometerValid || state.form.submitting}
               onClick={submit}
             />
           </Footer>

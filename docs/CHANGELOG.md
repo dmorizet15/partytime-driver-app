@@ -4,6 +4,22 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-05-23 — Pre-trip mileage capture (driver app)
+
+**Scope:** driver-app only. No migration — `trucks.current_mileage` (integer, nullable) already existed. Follow-on to the 2026-05-22 Fleet Maintenance ships.
+
+**Surface.** Required Odometer card on the pre-trip inspection's `sign_submit` step (Screen 6), placed above the certify checkbox so the "information above is accurate" attestation covers the reading. Label: "Current odometer reading (miles)" + helper "Enter the number shown on the truck's dashboard." Input is `type="text"`, `inputMode="numeric"`, `pattern="[0-9]*"`, digit-sanitized in the `onChange` handler (`replace(/[^0-9]/g, '').slice(0, 7)`), with tabular-nums display and a gold-border error state. `Submit Inspection` stays disabled until both the certify checkbox is checked AND the odometer reads a non-empty digit string. New form field `odometer: string` + `SET_ODOMETER` reducer action.
+
+**Server.** `POST /api/inspection/submit` now requires `current_mileage` in the body — integer, `0 ≤ n ≤ MAX_ODOMETER (2,000,000)`. Missing/invalid → 400 with the validator message. On a successful `vehicle_inspections` insert the route also writes `current_mileage` to `trucks` (via the admin client) — **unconditional** (pre-trip is the live ground-truth reading; no backdated value to guard against) and **non-fatal** (a write failure is logged as `trucks.current_mileage update failed (non-fatal)` and the request still 200s — the federally-required inspection row already exists by that point, and an odometer write failure must not block the driver from starting the route).
+
+**Knock-on.** Mileage-based PM flagging is now live fleet-wide. `pmStatus.pmLevelForSchedule` already consumed `trucks.current_mileage` against each schedule's `next_due_miles` + `warning_threshold_miles`; that branch was dormant until this commit, since `current_mileage` was uniformly null. Fleet Overview's `pmDueCount`, Fleet Overview asset-row dots, and Asset Detail PM rows all re-tier automatically on the next read after a pre-trip lands.
+
+**Build:** `npx next build` green. Pushed to `main`.
+
+**Pre-existing investigation note (kept).** Four decisions resolved before the build: (1) the odometer field lives on Screen 6, not Screen 5 — drivers should not enter the reading before they have the truck in front of them and the certify attestation in view; (2) above the certify checkbox; (3) unconditional write; (4) non-fatal trucks UPDATE. The WIP that landed this commit had been sitting in the working tree from the previous investigation arc — verified against the spec, route header comment polished to list `current_mileage` in the POST body, then committed as-is.
+
+---
+
 ## 2026-05-22 (evening) — Fleet Maintenance driver-app: three UI fixes
 
 **Scope:** driver-app only. No migrations, no API routes, no type regen (every column the fixes consume was already in `src/types/supabase.ts`). Follow-on to the morning's Fleet Maintenance Module ship (`46ba851`).

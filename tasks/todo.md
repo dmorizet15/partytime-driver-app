@@ -1,17 +1,38 @@
 # Open Tasks — partytime-driver-app
 
-## May 22, 2026 (evening) — Fleet Maintenance driver-app UI fixes
+## May 23, 2026 — Pre-trip mileage capture (driver app)
 
-**NEXT driver-app task → Pre-trip mileage capture.** Deferred from this session.
-The Build Spec calls for a required odometer field at the bottom of the pre-trip
-inspection screen, feeding `trucks.current_mileage` — this activates
-mileage-based PM flagging fleet-wide. WIP exists **uncommitted** in the working
-tree: `src/screens/InspectionScreen.tsx` (odometer field + `SET_ODOMETER`
-reducer action + submit gating) and `src/app/api/inspection/submit/route.ts`
-(server-side `current_mileage` validation). Pick this up next, finish + verify
-it, build, and ship as its own commit. Until it lands, PM tiers stay
-date-based; `pmStatus.ts` already handles mileage once `current_mileage` is
-populated.
+Shipped. Required odometer field on Screen 6 (sign_submit), above the certify
+checkbox. `POST /api/inspection/submit` validates an integer 0 ≤ n ≤ 2,000,000
+(400 on missing/invalid), then writes `trucks.current_mileage` via the admin
+client after a successful `vehicle_inspections` insert — unconditional (pre-trip
+is ground truth, no forward-only guard) and non-fatal (an UPDATE failure is
+logged, never 500s; the federally-required inspection row already exists by
+then). Mileage-based PM flagging now activates as soon as a driver submits a
+pre-trip — `pmStatus.ts` already knew how to consume the value.
+
+- [ ] **Smoke-test on production** after Vercel deploys this session's commit:
+  1. Open a pre-trip on an assigned truck → Screen 6 shows the **Odometer**
+     card above the certify checkbox. **Submit Inspection** stays disabled
+     until the odometer reads a non-empty digit string AND the certify box is
+     checked. The input rejects non-digits, caps at 7 chars.
+  2. Submit a valid reading → 200, navigates per outcome. Confirm
+     `trucks.current_mileage` is updated on `partytime-east` for that truck.
+  3. Hit `POST /api/inspection/submit` with `current_mileage: 3000000` (over
+     cap) or missing → 400 with the validator message.
+  4. Force a `trucks` UPDATE failure (e.g. flip RLS off-side, or rename the
+     column temporarily on staging) → request still returns 200 with the
+     inspection id; the failure is logged to Vercel function logs as
+     `trucks.current_mileage update failed (non-fatal)`.
+  5. Submit two pre-trips in a row with the second reading LOWER than the
+     first (unusual but valid for a wrap or admin correction) → the second
+     write lands because the write is unconditional.
+- [ ] **Optional: confirm dashboard PM tier recompute.** Submit a pre-trip
+  whose new `current_mileage` crosses a schedule's `next_due_miles - warning`
+  threshold → the dashboard's PM trigger should re-tier on the next read. No
+  driver-app code change; just a verification loop.
+
+## May 22, 2026 (evening) — Fleet Maintenance driver-app UI fixes
 
 - [ ] **Equipment management — add/deactivate equipment, split model-level rows
   into per-unit rows (e.g. two forklift models tracked independently), hide
@@ -41,7 +62,7 @@ populated.
 - [ ] **Darren — seed CarQuest / NAPA cross-references.** All 26 `part_cross_references` rows are priority-3 (manufacturer-direct: ACDelco, Motorcraft, Mann, Donaldson, Mopar, Fleetguard). Zero priority-1 (CarQuest) or priority-2 (NAPA). The driver-app UI renders whatever exists, sorted by priority, and tags each by tier — it just shows Direct refs until 1/2 are seeded. Verification pass against live CarQuest/NAPA catalogs is a Darren task.
 - [ ] **Decide: work-order → parts junction table.** v1 ships with no link between `fleet_work_orders` and `parts`; Screen 3 shows parts that fit the *asset* (via `asset_part_fitments`), labelled "Parts for this asset". A `work_order_parts` junction (curated parts per work order) is a future enhancement — dashboard-side migration if wanted.
 - [ ] **chat-Claude — reconcile Notion.** The Fleet Maintenance Build Spec v1.0 access matrix lists "Upload invoice PDF/photo" as ❌ read-only for the driver app. The approved 2026-05-22 mobile design session supersedes that — the driver app DOES upload invoices (Screen 3 action + Screen 4 form). Update the access matrix in Notion.
-- [ ] **Pre-trip mileage capture (separate driver-app session).** The Build Spec calls for a required odometer field at the bottom of the pre-trip inspection screen, feeding `trucks.current_mileage` — this activates mileage-based PM flagging fleet-wide. NOT built this session (scope was the Tools Hub fleet surface only). Until it lands, PM tiers are date-based; `pmStatus.ts` already handles mileage when `current_mileage` is populated.
+- [x] ~~**Pre-trip mileage capture (separate driver-app session).**~~ Shipped 2026-05-23 — odometer field on Screen 6 above the certify checkbox; `POST /api/inspection/submit` validates 0–2,000,000 and writes `trucks.current_mileage` via the admin client (unconditional, non-fatal). Mileage-based PM flagging is live.
 - [ ] **Work-order-creation notification is a dashboard task.** MBC Part 3 logs "any new `fleet_work_orders` INSERT should email `receives_fleet_notifications` users via Resend." That fires dashboard-side (or a shared cron) — not in the driver app. No driver-app work; noted for cross-repo awareness.
 - [ ] **AVA fleet alerts — future session.** Fleet alerts in the AVA morning brief were explicitly deferred. The home `FleetAlertCard` is the interim surface.
 - [ ] **Minor — home alert card placement.** `<FleetAlertCard />` sits in `DayRouteSelectorScreen`'s populated-home body (between COD card and day list, per spec). On an empty-route home (e.g. a fleet manager with no route assigned) it does not render — the Tools Hub card is always available as the fallback entry. Revisit only if Darren wants the alert on the empty state too.
