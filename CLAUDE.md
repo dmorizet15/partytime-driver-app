@@ -7,6 +7,7 @@ Next.js 14 PWA for the driver mobile workflow. Downstream of `partytime-dashboar
 ## Current build state
 
 - **Active feature:** Fleet Maintenance Module (driver app) — shipped 2026-05-22 (`46ba851`), three UI fixes the same evening (`ca93062`), pre-trip mileage capture 2026-05-23. Five screens (Fleet Overview, Asset Detail, Work Order Detail, Log Service Entry) + a role-gated Tools Hub card + a home-screen alert card + an Odometer card on the pre-trip Screen 6 that feeds `trucks.current_mileage`. Reads/writes the dashboard-owned fleet tables (migrations 062–068) directly via the RLS-gated supabase client; pre-trip mileage capture writes `trucks.current_mileage` via the admin client. No new migrations. See "Fleet Maintenance Module — Driver App" section below.
+- **Latest shipment:** Auto-logout — two-layer shared-device hygiene, 2026-05-24 (`76bb769`). Layer 1: after the existing 6-second "Welcome back — route complete" banner on warehouse_return geofence auto-complete, the same setTimeout now signs the driver out and replaces to `/login`. Layer 2: `LoginScreen` stamps `localStorage.ptr_session_date = YYYY-MM-DD` on a successful sign-in; `AuthContext` checks it on the `INITIAL_SESSION` auth event (only — `SIGNED_IN` is skipped to avoid racing a fresh login) and signs out + `window.location.replace('/login')` before exposing the session to any consumer if the device has crossed midnight. Driver-app only — no migrations, no dashboard, no SMS. See "Auto-Logout (Shared-Device Hygiene)" section below.
 - **Latest migration:** **068** in the remote `schema_migrations` table (dashboard Fleet Maintenance phases 1–4). Driver-app local `supabase/migrations/` is unchanged at 12 files (latest `20260515_012_game_scores`) — the fleet module added zero migrations; every table was already live from the dashboard side. The "migration count" is the remote table count, not the local file count.
 - **Branch strategy:** Commit directly to `main` — Vercel auto-deploys on every push.
 - **Next priority:** see `tasks/todo.md` (top of file).
@@ -91,6 +92,30 @@ Shipped 2026-05-22 (commit `46ba851`). Driver-app surface for the dashboard's Fl
 4. Work Order Detail → Log service entry → fill the form → Save → returns to detail with the new entry in the service log; work order still open.
 5. Mark resolved → work order closes, resolved banner shows; confirm no service record was auto-created.
 6. Assign → pick a user / Assign to me / Unassign. Upload invoice → pick a service record → camera/file → invoice attached.
+
+---
+
+## Auto-Logout (Shared-Device Hygiene)
+
+Shipped 2026-05-24 (commit `76bb769`). Drivers share company devices; the next driver was picking up the device and finding the previous driver still signed in. Two complementary layers — driver-app only, no migrations, no dashboard, no SMS.
+
+- **Layer 1 — warehouse_return signOut (primary trigger).** When the `warehouse_return` geofence auto-completes the last stop and `/api/complete-stop` returns OK, `StopDetailScreen.tsx` sets `welcomeBackAt` and renders the 6-second "Welcome back — route complete" banner. That same setTimeout (now `async`) clears `localStorage.ptr_session_date`, awaits `signOut()`, and `router.replace('/login')`. The banner finishes naturally — signOut fires only on the trailing edge, so the driver sees the confirmation. Manual `Mark Complete` on warehouse_return is intentionally untouched (no banner there); Layer 2 catches that case next morning.
+- **Layer 2 — day-change check (fallback).** `LoginScreen.tsx` writes `localStorage.ptr_session_date = new Date().toISOString().split('T')[0]` immediately after a successful `signIn`, before `router.push('/')`. `AuthContext.tsx`'s `onAuthStateChange` callback checks the key on the `INITIAL_SESSION` event (the first auth event per page load) — if it's missing or not equal to today's date, it removes the key, awaits `supabase.auth.signOut()`, and calls `window.location.replace('/login')` then `return`s before `setUser(...)` runs, so the provider never exposes the stale session to any consumer. **`SIGNED_IN` events are skipped on purpose** — LoginScreen has just stamped the date, and checking inside the SIGNED_IN handler would race the new login and immediately sign the driver out.
+
+**Why this shape (rules to preserve in future sessions):**
+
+- **PWA-safe.** No `setTimeout(midnight)`. On a phone the OS suspends background tabs; the timer would silently miss. App-load checking is the only reliable trigger for a driver-facing PWA.
+- **The gate must run before authed UI renders.** The check lives inside `AuthProvider`'s `onAuthStateChange`, not inside a page component. Returning early before `setUser` keeps `loading=true` / `user=null` until the redirect lands, so no consumer ever sees the stale session.
+- **Personal-device morning-check signs the driver out.** Per spec, a driver opening the app at home the morning after their shift is signed out on first load — they re-authenticate and go about their day. This is intentional; do not "fix" it.
+
+**Files.** `src/screens/StopDetailScreen.tsx` (Layer 1 hook + `signOut` import at the top), `src/screens/LoginScreen.tsx` (Layer 2 stamp in `handleSubmit`'s success branch), `src/context/AuthContext.tsx` (Layer 2 INITIAL_SESSION check).
+
+**NEXT smoke test (production, Vercel auto-deploys `76bb769`):**
+
+1. Trigger the warehouse_return geofence (or run the route to depot) → confirm the 6 s welcome-back banner runs in full, then app redirects to `/login` with no session.
+2. DevTools → Application → Local Storage: set `ptr_session_date` to yesterday → reload any authed route → expect immediate redirect to `/login` before the home screen paints. Console clean.
+3. Same-day refresh of an active session → `ptr_session_date` already today → no signOut, no redirect, normal render.
+4. Sign in on `/login` → confirm `ptr_session_date` is set to today; reload → still signed in.
 
 ## Session close (autonomous — no permission needed)
 
