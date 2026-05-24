@@ -29,6 +29,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // TOKEN_REFRESHED keeps the same user — skip profile re-fetch
         if (event === 'TOKEN_REFRESHED') return
 
+        // Auto-logout Layer 2: on the first auth event after app load
+        // (INITIAL_SESSION), check that ptr_session_date is today. If the
+        // device has crossed midnight since this session was opened, sign
+        // out and bounce to /login before any authed UI renders. SIGNED_IN
+        // events are skipped because LoginScreen has just stamped the date.
+        if (event === 'INITIAL_SESSION' && session?.user && typeof window !== 'undefined') {
+          const stored = localStorage.getItem('ptr_session_date')
+          const today  = new Date().toISOString().split('T')[0]
+          if (stored !== today) {
+            localStorage.removeItem('ptr_session_date')
+            try { await supabase.auth.signOut() } catch (err) {
+              console.error('[autoLogout] day-change signOut failed', err)
+            }
+            window.location.replace('/login')
+            return
+          }
+        }
+
         setUser(session?.user ?? null)
         try {
           if (session?.user) {

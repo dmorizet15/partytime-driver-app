@@ -129,6 +129,11 @@ export default function LoginScreen() {
       setError('Invalid email or password.')
       setLoading(false)
     } else {
+      // Auto-logout Layer 2: stamp today's date so the day-change gate in
+      // AuthContext knows when this session was opened. Cleared on signOut.
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('ptr_session_date', new Date().toISOString().split('T')[0])
+      }
       router.push('/')
     }
   }

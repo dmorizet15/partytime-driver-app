@@ -1,5 +1,36 @@
 # Open Tasks — partytime-driver-app
 
+## May 24, 2026 — Auto-logout (driver app, two layers)
+
+Shipped. Drivers share company devices; this closes the gap where the next
+driver picked up a device still signed in as the previous driver. Two
+complementary layers, driver-app only — no dashboard, no SMS, no migrations.
+
+- **Layer 1 — warehouse_return signOut.** `StopDetailScreen.tsx` welcomeBackAt
+  effect: after the 6 s "Welcome back — route complete" banner fully runs,
+  clears `ptr_session_date`, calls `supabase.auth.signOut()`, and
+  `router.replace('/login')`. The banner finishes naturally — signOut fires
+  only on the trailing edge of the existing 6 s timeout.
+- **Layer 2 — day-change check.** `LoginScreen.tsx` stamps
+  `localStorage.ptr_session_date = YYYY-MM-DD` on a successful sign-in.
+  `AuthContext.tsx` checks the value on `INITIAL_SESSION` events (the first
+  auth event per page load); if stored ≠ today (or missing), it removes the
+  key, signs out, and `window.location.replace('/login')` before any authed
+  UI renders. `SIGNED_IN` events are skipped — LoginScreen has just stamped
+  the date, so checking would race the new login.
+
+- [ ] **Smoke-test on production** after Vercel deploys this commit:
+  1. Trigger the warehouse_return geofence in dev (or run the route to depot)
+     → confirm the 6 s welcome-back banner runs in full, then the app
+     redirects to `/login` with no session.
+  2. DevTools → Application → Local Storage: set `ptr_session_date` to
+     yesterday → reload any authed route → expect immediate redirect to
+     `/login` before the home screen paints. Console should be clean.
+  3. Same-day refresh of an active session → `ptr_session_date` already
+     today → no signOut, no redirect, normal render.
+  4. Sign in on /login → `ptr_session_date` is set to today; reload → still
+     signed in.
+
 ## May 23, 2026 — Pre-trip mileage capture (driver app)
 
 Shipped. Required odometer field on Screen 6 (sign_submit), above the certify

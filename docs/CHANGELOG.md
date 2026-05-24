@@ -4,6 +4,24 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-05-24 — Auto-logout (driver app, two layers)
+
+**Scope:** driver-app only. No migration, no API route, no dashboard / SMS / schema changes. Shared-device hygiene only.
+
+**Problem.** Drivers share company devices. When a route ended, the next driver picked up the device and found the previous driver still signed in. Two complementary layers now close the gap.
+
+**Layer 1 — warehouse_return signOut.** When the `warehouse_return` geofence fires and `/api/complete-stop` succeeds, `StopDetailScreen.tsx` already shows a 6-second "Welcome back — route complete" inline banner before clearing the `welcomeBackAt` timestamp. That same `setTimeout` now also clears `localStorage.ptr_session_date`, calls `supabase.auth.signOut()`, and `router.replace('/login')`. The banner finishes naturally — the signOut fires only on the trailing edge of the existing 6 s timeout, so the driver still sees the confirmation. Manual `Mark Complete` on the warehouse_return stop is intentionally untouched (it navigates away to the route view without the banner) — Layer 2 catches that case next morning.
+
+**Layer 2 — day-change check.** A PWA on a phone gets suspended overnight; `setTimeout(midnight)` is unreliable. Instead, every authenticated app load checks a `localStorage.ptr_session_date` key against today's date (`YYYY-MM-DD`). `LoginScreen.tsx` stamps the key after a successful `signIn`. `AuthContext.tsx` reads it inside `onAuthStateChange` on the `INITIAL_SESSION` event — the first auth event per page load — and if it's missing or not equal to today, it removes the key, calls `supabase.auth.signOut()`, and `window.location.replace('/login')` *before* the provider exposes the session to any consumer (returns early before `setUser`). `SIGNED_IN` events are skipped because LoginScreen has just stamped the date; checking on `SIGNED_IN` would race the new login.
+
+**Edge case (intentional).** A driver opening the app on a personal device the morning after their shift is signed out on first load. That is the correct and intended behavior per the spec — they re-authenticate and go about their day.
+
+**Build:** `npx next build` green. Pushed to `main`.
+
+**Files modified.** `src/screens/StopDetailScreen.tsx` (Layer 1 hook, `signOut` import), `src/screens/LoginScreen.tsx` (Layer 2 stamp), `src/context/AuthContext.tsx` (Layer 2 check).
+
+---
+
 ## 2026-05-23 — Pre-trip mileage capture (driver app)
 
 **Scope:** driver-app only. No migration — `trucks.current_mileage` (integer, nullable) already existed. Follow-on to the 2026-05-22 Fleet Maintenance ships.

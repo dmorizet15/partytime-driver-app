@@ -10,6 +10,7 @@ import { photoUploadService } from '@/services/PhotoUploadService'
 import { logEvent } from '@/services/EventLogger'
 import { sendEtaSms, getStopSmsStatus, getDriverLocation } from '@/services/EtaSmsService'
 import type { StopSmsStatus } from '@/services/EtaSmsService'
+import { signOut } from '@/lib/auth'
 import BottomNav from '@/components/BottomNav'
 import StopWeatherModule from '@/components/weather/StopWeatherModule'
 import { HAS_STOP_LEVEL_BADGES } from '@/lib/weather/thresholds'
@@ -377,9 +378,23 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   const [welcomeBackAt, setWelcomeBackAt] = useState<string | null>(null)
   useEffect(() => {
     if (!welcomeBackAt) return
-    const t = setTimeout(() => setWelcomeBackAt(null), 6000)
+    // Auto-logout Layer 1: warehouse_return geofence auto-complete ends the
+    // route. After the 6s banner runs in full, sign out so the next driver
+    // picking up the shared device lands on /login.
+    const t = setTimeout(async () => {
+      setWelcomeBackAt(null)
+      try {
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('ptr_session_date')
+        }
+        await signOut()
+      } catch (err) {
+        console.error('[autoLogout] signOut after warehouse_return failed', err)
+      }
+      router.replace('/login')
+    }, 6000)
     return () => clearTimeout(t)
-  }, [welcomeBackAt])
+  }, [welcomeBackAt, router])
 
   useArrivalGeofence({
     stopId,
