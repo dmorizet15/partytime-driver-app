@@ -53,13 +53,15 @@ const FONT_DISPLAY = "var(--font-archivo), 'Archivo', 'Inter', system-ui, -apple
 const FONT_BODY    = "var(--font-inter), 'Inter', system-ui, -apple-system, sans-serif"
 
 // ─── Stop type pill colors ────────────────────────────────────────────────────
-const TYPE_PILL: Record<'delivery' | 'pickup' | 'service' | 'warehouse', { bg: string; color: string }> = {
-  delivery:  { bg: C.blue, color: '#fff' },
-  pickup:    { bg: C.gold, color: C.ink },
-  service:   { bg: C.ink,  color: '#fff' },
-  // Neutral gray — matches the route-list WAREHOUSE chip; deliberately not an
-  // action color (blue/gold/green all signal a tap target).
-  warehouse: { bg: C.off,  color: C.muted },
+// Keep in lockstep with TYPE_PILL in DayRouteSelectorScreen — both depot
+// stop types (legacy 'warehouse' + new 'warehouse_return' from dashboard
+// Migration 070/071) share the same neutral treatment.
+const TYPE_PILL: Record<'delivery' | 'pickup' | 'service' | 'warehouse' | 'warehouse_return', { bg: string; color: string }> = {
+  delivery:         { bg: C.blue, color: '#fff' },
+  pickup:           { bg: C.gold, color: C.ink },
+  service:          { bg: C.ink,  color: '#fff' },
+  warehouse:        { bg: C.off,  color: C.muted },
+  warehouse_return: { bg: C.off,  color: C.muted },
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -349,24 +351,66 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
 
   // ── GPS Auto-Arrival (Phase 2.5C) ──────────────────────────────────────────
   // Arms a 150m geofence around the stop's coordinates while this screen is
-  // mounted. Skipped for warehouse stops (no coords + no arrival semantics),
-  // already-arrived stops, and completed stops. The hook is called
-  // unconditionally on every render so hook order stays stable — `enabled`
-  // gates the actual watchPosition call.
+  // mounted. Skipped for legacy `warehouse` mid-stops (no coords on the
+  // synthetic row), already-arrived stops, and completed stops. The hook
+  // is called unconditionally on every render so hook order stays stable —
+  // `enabled` gates the actual watchPosition call.
+  // `warehouse_return` stops (Migration 071) are INCLUDED: the depot is a
+  // real coordinate, and arrival there marks the end of the route. See the
+  // welcomeBackAtRef block below for the auto-complete side of the geofence.
   const geofenceEnabled =
     !!stop
-    && (stop.stop_type === 'delivery' || stop.stop_type === 'pickup' || stop.stop_type === 'service')
+    && (
+      stop.stop_type === 'delivery'
+      || stop.stop_type === 'pickup'
+      || stop.stop_type === 'service'
+      || stop.stop_type === 'warehouse_return'
+    )
     && stop.latitude  != null
     && stop.longitude != null
     && !stop.arrived_at
     && stop.current_status !== 'completed'
+
+  // "Welcome back — route complete" confirmation timestamp, set when the
+  // warehouse_return geofence fires and the auto-complete POST succeeds.
+  // Drives a brief inline banner below; cleared by the screen unmount.
+  const [welcomeBackAt, setWelcomeBackAt] = useState<string | null>(null)
+  useEffect(() => {
+    if (!welcomeBackAt) return
+    const t = setTimeout(() => setWelcomeBackAt(null), 6000)
+    return () => clearTimeout(t)
+  }, [welcomeBackAt])
 
   useArrivalGeofence({
     stopId,
     latitude:  stop?.latitude,
     longitude: stop?.longitude,
     enabled:   geofenceEnabled,
-    onArrive:  (arrivedAt) => markArrived(stopId, arrivedAt),
+    onArrive:  async (arrivedAt) => {
+      markArrived(stopId, arrivedAt)
+      // warehouse_return is the only stop type where arrival === completion.
+      // Fire /api/complete-stop right after the geofence stamp so the
+      // dashboard's realtime toast surfaces immediately without waiting
+      // for the driver to tap Mark Complete. Idempotent — repeating the
+      // POST against an already-completed stop is harmless.
+      if (stop?.stop_type === 'warehouse_return') {
+        try {
+          const r = await fetch('/api/complete-stop', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ stop_id: stopId }),
+          })
+          if (r.ok) {
+            const completedAt = new Date().toISOString()
+            markComplete(stopId, completedAt)
+            setWelcomeBackAt(completedAt)
+          }
+        } catch {
+          // Network blip — driver can still tap the manual Mark Complete
+          // fallback in the action card below. No-op here.
+        }
+      }
+    },
   })
 
   // ── Standby tick ──────────────────────────────────────────────────────────
@@ -479,6 +523,15 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   // skip SMS / COD / POD / Mark-Stop-Complete per spec. The action card shows
   // a single Open-in-Maps button instead of the standard Mark/quick-actions stack.
   const isWarehouse = stop.stop_type === 'warehouse'
+  // warehouse_return — the new auto-injected end-of-route depot stop
+  // (dashboard Migration 070/071, Notion spec
+  // 3690aa6451b881d6b00fcc9dc5c1890b). Real dispatch_stops row, gets
+  // geofenced auto-completion at 150m around the depot, with a manual
+  // Mark Complete fallback. Shares the no-SMS/no-COD/no-POD posture of
+  // the legacy `warehouse` synthetic stop above.
+  const isWarehouseReturn = stop.stop_type === 'warehouse_return'
+  // Either one suppresses customer-facing UI (SMS, payment, POD).
+  const isDepotStop = isWarehouse || isWarehouseReturn
 
   // Headline = venue/business if available, else customer name. Trailing period
   // applied in JSX so the period color can be toned independently if needed.
@@ -1370,8 +1423,9 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
           </div>
         ) : (
           <>
-            {/* ETA / SMS block — hidden for warehouse stops (no customer SMS) */}
-            {!isWarehouse && (
+            {/* ETA / SMS block — hidden for any depot stop (warehouse reload
+                + warehouse_return) since there's no customer to text. */}
+            {!isDepotStop && (
             <div style={{ padding: '16px 18px 0' }}>
               {etaStatus === 'sent' ? (
                 <>
@@ -1711,10 +1765,94 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
                 padding: 14,
                 boxShadow: `5px 5px 0 ${C.ink}`,
               }}>
-                {isWarehouse ? (
-                  // Warehouse — navigate-to-depot only. No Mark Stop Complete
-                  // (Decision 1A), no SMS, no POD; the prominent CTA matches
-                  // the Mark button's geometry/shadow for visual consistency.
+                {isWarehouseReturn ? (
+                  // warehouse_return — the spec's "active prompt" surface:
+                  // a top message line ("Head back to the warehouse — your
+                  // day is done"), the big gold Navigate CTA, and a smaller
+                  // Mark Complete fallback below. ETA is the calculated_eta
+                  // cascade value (already shown in the stop hero), so we
+                  // don't repeat it here. Geofence at the depot auto-fires
+                  // /api/complete-stop on arrival; the fallback is for cases
+                  // where GPS drift prevents the auto-fire from landing.
+                  <>
+                    <div
+                      style={{
+                        fontFamily:    FONT_DISPLAY,
+                        fontSize:      15,
+                        fontWeight:    800,
+                        letterSpacing: '-0.01em',
+                        color:         C.ink,
+                        marginBottom:  12,
+                        textAlign:     'center',
+                      }}
+                    >
+                      Head back to the warehouse — your day is done.
+                    </div>
+                    <button
+                      onClick={handleNavigate}
+                      disabled={navLoading}
+                      style={{
+                        width: '100%', height: 60, borderRadius: 999,
+                        background: C.gold, color: C.ink,
+                        border: 0, cursor: navLoading ? 'default' : 'pointer',
+                        fontSize: 16, fontWeight: 900, fontFamily: FONT_DISPLAY,
+                        letterSpacing: '-0.01em',
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        padding: '0 8px 0 22px',
+                        boxShadow: '0 14px 30px -10px rgba(255,184,0,0.55)',
+                        opacity: navLoading ? 0.65 : 1,
+                        transition: 'opacity 120ms ease',
+                      }}
+                    >
+                      <span>{navLoading ? 'Opening…' : 'Navigate to Warehouse'}</span>
+                      <span style={{
+                        width: 44, height: 44, borderRadius: '50%',
+                        background: C.ink,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        flexShrink: 0,
+                      }}>
+                        <NavigateIcon size={18} color={C.gold}/>
+                      </span>
+                    </button>
+                    <button
+                      onClick={handleMarkCompleteTap}
+                      style={{
+                        marginTop: 10,
+                        width: '100%', height: 40, borderRadius: 999,
+                        background: 'transparent', color: C.ink,
+                        border: `1.5px solid ${C.ink}`, cursor: 'pointer',
+                        fontSize: 13, fontWeight: 800, fontFamily: FONT_DISPLAY,
+                        letterSpacing: '-0.01em',
+                      }}
+                    >
+                      Mark Complete
+                    </button>
+                    {welcomeBackAt && (
+                      <div
+                        role="status"
+                        aria-live="polite"
+                        style={{
+                          marginTop:     12,
+                          padding:       '10px 12px',
+                          borderRadius:  10,
+                          background:    C.green,
+                          color:         C.ink,
+                          fontFamily:    FONT_DISPLAY,
+                          fontSize:      13,
+                          fontWeight:    800,
+                          letterSpacing: '-0.01em',
+                          textAlign:     'center',
+                        }}
+                      >
+                        Welcome back — route complete
+                      </div>
+                    )}
+                  </>
+                ) : isWarehouse ? (
+                  // Warehouse (legacy synthetic break-block) — navigate-to-depot
+                  // only. No Mark Stop Complete (Decision 1A), no SMS, no POD;
+                  // the prominent CTA matches the Mark button's geometry/shadow
+                  // for visual consistency.
                   <button
                     onClick={handleNavigate}
                     disabled={navLoading}

@@ -45,7 +45,15 @@ export interface Stop {
   route_id: string
   stop_sequence: number
   order_id: string
-  stop_type: 'delivery' | 'pickup' | 'service' | 'warehouse'
+  // 'warehouse_return' (dashboard Migration 070/071) — auto-injected
+  // end-of-route depot stop. Real dispatch_stops row with the warehouse
+  // address, geofenced auto-completion at 150m. Notion spec
+  // 3690aa6451b881d6b00fcc9dc5c1890b.
+  // 'warehouse' is the legacy break-block synthetic stop (BreakBlock
+  // type='warehouse'), kept here for back-compat with supabaseTransform's
+  // synthetic builder; the two coexist in the route list (legacy reload
+  // stops in the middle, real warehouse_return at the tail).
+  stop_type: 'delivery' | 'pickup' | 'service' | 'warehouse' | 'warehouse_return'
   customer_name: string
   company_name?: string      // TapGoods rental.name (the order/rental identifier)
   client_company?: string    // primary contact's client.companies[0].name (the org)

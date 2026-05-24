@@ -100,10 +100,11 @@ function firstRel(rel: SupabaseTruckRow | SupabaseTruckRow[] | null): SupabaseTr
   return Array.isArray(rel) ? (rel[0] ?? null) : rel
 }
 
-function mapStopType(raw: string): 'delivery' | 'pickup' | 'service' {
+function mapStopType(raw: string): Stop['stop_type'] {
   const v = raw?.toLowerCase()
-  if (v === 'pickup')  return 'pickup'
-  if (v === 'service') return 'service'
+  if (v === 'pickup')           return 'pickup'
+  if (v === 'service')          return 'service'
+  if (v === 'warehouse_return') return 'warehouse_return'
   return 'delivery'
 }
 
@@ -117,12 +118,20 @@ function mapPaymentState(raw: string | null): PaymentState | undefined {
 // synthetic warehouse stops (Path A). routeId is passed explicitly so callers
 // don't need to retype-narrow s.route_id at the call site.
 function toRealStop(s: SupabaseStopRow, routeId: string, seq: number): Stop {
+  const mappedType = mapStopType(s.stop_type)
+  const isDepotReturn = mappedType === 'warehouse_return'
+  // For warehouse_return rows (Migration 071), the dashboard writes the
+  // depot address text but leaves lat/lng NULL pending geocode-pipeline
+  // backfill. Inject the depot constants here so the driver-app geofence
+  // can fire on day 1 regardless of backfill state.
+  const lat = isDepotReturn ? DEPOT_LAT : (s.address_lat ?? undefined)
+  const lng = isDepotReturn ? DEPOT_LNG : (s.address_lng ?? undefined)
   return {
     stop_id:        s.id,
     route_id:       routeId,
     stop_sequence:  seq,
     order_id:       s.tapgoods_order_token ?? '',
-    stop_type:      mapStopType(s.stop_type),
+    stop_type:      mappedType,
     customer_name:  s.customer_name,
     company_name:   s.company_name   ?? undefined,
     client_company: s.client_company ?? undefined,
@@ -131,8 +140,8 @@ function toRealStop(s: SupabaseStopRow, routeId: string, seq: number): Stop {
     city:           '',
     state:          '',
     postal_code:    '',
-    latitude:       s.address_lat  ?? undefined,
-    longitude:      s.address_lng  ?? undefined,
+    latitude:       lat,
+    longitude:      lng,
     customer_phone: s.customer_phone ?? '',
     customer_cell:  s.customer_cell  ?? undefined,
     notes:          s.notes ?? undefined,
@@ -176,6 +185,14 @@ const DEPOT_ADDRESS_LINE_1 = '2575 Route 55, Poughquag, NY 12570'
 const DEPOT_CITY           = 'Poughquag'
 const DEPOT_STATE          = 'NY'
 const DEPOT_POSTAL         = '12570'
+// Depot geofence target — mirrors the dashboard's WAREHOUSE_LAT/WAREHOUSE_LNG
+// env-or-geocode lookup (src/lib/warehouseLocation.ts). Hardcoded here as an
+// operational constant so the driver-app geofence works on day 1 even before
+// the dashboard's geocode pipeline backfills lat/lng onto the warehouse_return
+// dispatch_stops row (Migration 071 inserts with NULL coords by design). The
+// 150m radius gives the geofence plenty of margin against rough coords.
+const DEPOT_LAT = 41.6225
+const DEPOT_LNG = -73.6816
 
 function buildWarehouseStop(block: BreakBlock, routeId: string, seq: number): Stop {
   return {

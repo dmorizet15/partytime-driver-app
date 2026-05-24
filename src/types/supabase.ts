@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       asset_part_fitments: {
@@ -331,11 +356,13 @@ export type Database = {
           order_end_date: string | null
           order_start_date: string | null
           order_status: string | null
-          payment_state: Database["public"]["Enums"]["payment_state_enum"]
+          payment_state:
+            | Database["public"]["Enums"]["payment_state_enum"]
+            | null
           pickup_window_end: string | null
           pickup_window_start: string | null
           required_pickup_count: number
-          reservation_id: string
+          reservation_id: string | null
           route_id: string | null
           route_position: number | null
           scheduled_date: string
@@ -405,11 +432,13 @@ export type Database = {
           order_end_date?: string | null
           order_start_date?: string | null
           order_status?: string | null
-          payment_state: Database["public"]["Enums"]["payment_state_enum"]
+          payment_state?:
+            | Database["public"]["Enums"]["payment_state_enum"]
+            | null
           pickup_window_end?: string | null
           pickup_window_start?: string | null
           required_pickup_count?: number
-          reservation_id: string
+          reservation_id?: string | null
           route_id?: string | null
           route_position?: number | null
           scheduled_date: string
@@ -479,11 +508,13 @@ export type Database = {
           order_end_date?: string | null
           order_start_date?: string | null
           order_status?: string | null
-          payment_state?: Database["public"]["Enums"]["payment_state_enum"]
+          payment_state?:
+            | Database["public"]["Enums"]["payment_state_enum"]
+            | null
           pickup_window_end?: string | null
           pickup_window_start?: string | null
           required_pickup_count?: number
-          reservation_id?: string
+          reservation_id?: string | null
           route_id?: string | null
           route_position?: number | null
           scheduled_date?: string
@@ -809,6 +840,8 @@ export type Database = {
           notes: string | null
           serial_number: string | null
           tapgoods_product_id: string | null
+          unit_label: string | null
+          unit_number: string | null
           updated_at: string
           year: number | null
         }
@@ -825,6 +858,8 @@ export type Database = {
           notes?: string | null
           serial_number?: string | null
           tapgoods_product_id?: string | null
+          unit_label?: string | null
+          unit_number?: string | null
           updated_at?: string
           year?: number | null
         }
@@ -841,6 +876,8 @@ export type Database = {
           notes?: string | null
           serial_number?: string | null
           tapgoods_product_id?: string | null
+          unit_label?: string | null
+          unit_number?: string | null
           updated_at?: string
           year?: number | null
         }
@@ -2167,6 +2204,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      ensure_warehouse_return_for_route: {
+        Args: { p_route_id: string }
+        Returns: undefined
+      }
       has_fleet_maintenance_access: { Args: never; Returns: boolean }
       is_scheduler_or_super_admin: { Args: never; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
@@ -2181,7 +2222,7 @@ export type Database = {
         | "cancelled_in_tg"
       payment_state_enum: "paid_in_full" | "cod" | "ar_customer" | "balance_due"
       route_status_enum: "draft" | "dispatched" | "in_progress" | "complete"
-      stop_type_enum: "delivery" | "pickup"
+      stop_type_enum: "delivery" | "pickup" | "warehouse_return"
       user_role:
         | "super_admin"
         | "scheduler"
@@ -2317,6 +2358,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       dispatch_status_enum: [
@@ -2329,7 +2373,7 @@ export const Constants = {
       ],
       payment_state_enum: ["paid_in_full", "cod", "ar_customer", "balance_due"],
       route_status_enum: ["draft", "dispatched", "in_progress", "complete"],
-      stop_type_enum: ["delivery", "pickup"],
+      stop_type_enum: ["delivery", "pickup", "warehouse_return"],
       user_role: [
         "super_admin",
         "scheduler",

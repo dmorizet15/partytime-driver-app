@@ -379,7 +379,14 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
             {stops.map((stop) => {
               const isCompleted = stop.current_status === 'completed'
               const isOtw       = stop.current_status === 'on_the_way_sent'
+              // Legacy synthetic warehouse-reload stops (BreakBlock 'warehouse')
+              // AND the new auto-injected warehouse_return rows (dashboard
+              // Migration 070/071) both render with the same neutral chip. The
+              // depot-return is end-of-route, the reload is mid-route — the
+              // visual treatment is intentionally the same so the driver reads
+              // both as "depot, not a customer."
               const isWarehouse = stop.stop_type === 'warehouse'
+                                || stop.stop_type === 'warehouse_return'
               const payLabel    = paymentLabel(stop.payment_state)
               const sentAt      = stop.on_the_way_sent_at ? formatSentAt(stop.on_the_way_sent_at) : null
               const addressLine = [stop.address_line_1, stop.city].filter(Boolean).join(', ')

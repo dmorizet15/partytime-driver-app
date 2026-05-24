@@ -54,12 +54,15 @@ const PAYMENT_PILL: Record<'cod' | 'balance_due' | 'paid_in_full', { bg: string;
 }
 
 // ─── Stop type pill colors ────────────────────────────────────────────────────
-const TYPE_PILL: Record<'delivery' | 'pickup' | 'service' | 'warehouse', { bg: string; color: string }> = {
-  delivery:  { bg: C.blue, color: '#fff' },
-  pickup:    { bg: C.gold, color: C.ink },
-  service:   { bg: C.ink,  color: '#fff' },
-  // Neutral gray — matches the route-list and StopDetail pills.
-  warehouse: { bg: C.off,  color: C.muted },
+const TYPE_PILL: Record<StopTypeKey, { bg: string; color: string }> = {
+  delivery:         { bg: C.blue, color: '#fff' },
+  pickup:           { bg: C.gold, color: C.ink },
+  service:          { bg: C.ink,  color: '#fff' },
+  // Neutral gray — both depot stop types (legacy 'warehouse' synthetic
+  // reload + 'warehouse_return' auto-injected end-of-route) share the
+  // same neutral treatment so the driver reads them as "depot, not customer."
+  warehouse:        { bg: C.off,  color: C.muted },
+  warehouse_return: { bg: C.off,  color: C.muted },
 }
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
@@ -122,12 +125,15 @@ function daySubcopy(count: number): { opener: string; count: string; suffix: str
 // stop types. Returns null when all stops share a single type — keeps the
 // sub-copy short for homogeneous days. Warehouse depot returns are excluded
 // so the breakdown stays a customer-facing summary.
-type StopTypeKey = 'delivery' | 'pickup' | 'service' | 'warehouse'
-type CustomerStopKey = Exclude<StopTypeKey, 'warehouse'>
+type StopTypeKey = 'delivery' | 'pickup' | 'service' | 'warehouse' | 'warehouse_return'
+type CustomerStopKey = Exclude<StopTypeKey, 'warehouse' | 'warehouse_return'>
 function typeBreakdown(stops: Array<{ stop_type: StopTypeKey }>): string | null {
   const counts: Record<CustomerStopKey, number> = { delivery: 0, pickup: 0, service: 0 }
   for (const s of stops) {
-    if (s.stop_type === 'warehouse') continue
+    // Both depot stop types are excluded from the customer-facing breakdown:
+    // legacy 'warehouse' synthetic reload AND the new 'warehouse_return'
+    // auto-injected end-of-route depot (dashboard Migration 070/071).
+    if (s.stop_type === 'warehouse' || s.stop_type === 'warehouse_return') continue
     counts[s.stop_type]++
   }
   const present = (Object.entries(counts) as Array<[CustomerStopKey, number]>).filter(([, n]) => n > 0)
