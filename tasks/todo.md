@@ -1,5 +1,23 @@
 # Open Tasks — partytime-driver-app
 
+## May 26, 2026 — Work Orders & Field Issues (driver app, Session 2)
+
+Shipped to `main` for Vercel auto-deploy. Driver-app surface on top of dashboard Session 1 (`4e04ac9` — `field_work_orders` Migration 073). Stop-detail link + two Tools Hub cards (ungated "Report an Issue" + technician-gated "Work Orders") + four new routes. One shared `ReportIssueForm` powers both Screen 2A (stop context) and 2B (standalone). Cross-app POSTs go to `${NEXT_PUBLIC_DASHBOARD_URL}/api/work-orders` with the user's bearer token so the assignee email fires; reads pull straight from supabase under RLS.
+
+- [ ] **Set `NEXT_PUBLIC_DASHBOARD_URL` on the driver-app Vercel project** (production + preview) **before smoke testing.** Production value: `https://dashboard.partytimerentals.com`. Without it the form throws "NEXT_PUBLIC_DASHBOARD_URL is not configured" on submit. The example `.env.local.example` already documents it; local dev needs it in `.env.local` too.
+- [ ] **Smoke test on production** once env var is live and Vercel redeploys:
+  1. Standard driver (no `work_order_technician`): Tools Hub shows "Report an Issue", **not** "Work Orders".
+  2. Open a delivery stop → faint-red link below the 3-button quick-action grid. Tap → form opens with locked `#order · customer` bar + item picker. Pick item → Submit → green 6 s `PT-#### · You notified` pill on return. Email arrives.
+  3. Same stop → "Item not in this order?" → free-text name + serial → Submit. WO row reflects typed values.
+  4. Tools Hub → "Report an Issue" (standalone) → Truck search → pick a truck → Submit. WO row has `asset_id=<truck.id>`, `asset_type='truck'`.
+  5. Same flow, no search match → "Enter manually" → Submit. `asset_id=null`, `asset_name` = typed value.
+  6. Toggle a profile's `work_order_technician=true` dashboard-side → driver app shows the "Work Orders" Tools Hub card on next mount.
+  7. Open `/tools/work-orders` → tabs (Open / In Progress / Done) with counts → tap a card → detail.
+  8. Detail: Mark In Progress (only when status='open') → moves between tabs. Mark Complete → Done tab. + Note → bottom-sheet modal → save → notes log shows timestamped entry.
+- [ ] **Dashboard route response shape — confirm with dashboard repo.** `createWorkOrder` accepts either `{id, work_order_number, …}` flat OR `{work_order: {…}}` nested. If the route returns something else (e.g. just `{success: true}` with no row data) the success pill will fail with "Dashboard returned an unexpected shape — could not read work order ID." If that happens, pull the actual response shape and tighten `src/lib/workOrders/api.ts`.
+- [ ] **PATCH semantics — confirm with dashboard repo.** Add-Note PATCH sends the **full reconstructed `notes` string** (existing + timestamp prefix + new). If the dashboard's PATCH route appends instead of replaces, that will duplicate the old notes. If so, switch to sending only the new note text and let the dashboard append.
+- [ ] **listTechnicians query depends on `profiles.work_order_technician` and `roles cs '{super_admin}'` being readable under RLS for any authed user.** Dashboard Session 1 must have set this up, but verify the picker actually populates with non-self technicians in prod. If RLS blocks it, expose a `/api/work-orders/technicians` endpoint on the dashboard and swap the client.
+
 ## May 24, 2026 — Auto-logout (driver app, two layers)
 
 Shipped. Drivers share company devices; this closes the gap where the next

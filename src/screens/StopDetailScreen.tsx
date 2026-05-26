@@ -23,6 +23,7 @@ import {
   formatLocalClock,
   isHardConstraintTier,
 } from '@/lib/stopConstraints'
+import { reportIssueSuccessKey } from '@/screens/workOrders/ReportIssueScreen'
 
 // sessionStorage key — driver chose to proceed despite the pickup window
 // not yet being open. Set by the standby card's dismiss button AND by the
@@ -272,6 +273,38 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   // hard-tier pickup stop before its window opens. "I'll wait" dismisses.
   // "Navigate anyway" sets the override and proceeds.
   const [showEarlyPickupGate, setShowEarlyPickupGate] = useState(false)
+
+  // Report-issue post-submit pill. ReportIssueScreen stashes a success
+  // record in sessionStorage under reportIssueSuccessKey(stopId); we read
+  // it on mount, swap the "Report an issue" link for a green confirmation
+  // pill for 6s, then clear the key. Re-mounting the stop later doesn't
+  // re-show the pill (the key is cleared once consumed).
+  const [reportIssueSuccess, setReportIssueSuccess] = useState<
+    | { workOrderNumber: string; assigneeName: string }
+    | null
+  >(null)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const raw = sessionStorage.getItem(reportIssueSuccessKey(stopId))
+    if (!raw) return
+    try {
+      const parsed = JSON.parse(raw)
+      if (parsed?.workOrderNumber && parsed?.assigneeName) {
+        setReportIssueSuccess({
+          workOrderNumber: String(parsed.workOrderNumber),
+          assigneeName:    String(parsed.assigneeName),
+        })
+      }
+    } catch {
+      // bad JSON — ignore + drop the key
+    }
+    sessionStorage.removeItem(reportIssueSuccessKey(stopId))
+  }, [stopId])
+  useEffect(() => {
+    if (!reportIssueSuccess) return
+    const t = setTimeout(() => setReportIssueSuccess(null), 6000)
+    return () => clearTimeout(t)
+  }, [reportIssueSuccess])
 
   useEffect(() => {
     if (stop) logEvent('STOP_VIEWED', routeId, stopId, stop.order_id)
@@ -1958,6 +1991,63 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
                     loading={pod.status === 'uploading'}
                   />
                 </div>
+
+                {/* Report an issue — subtle red-bordered link below the
+                    QuickAction grid. After submit, ReportIssueScreen stashes
+                    a sessionStorage success record keyed on stopId; the
+                    mount-time effect above swaps this link for a 6 s green
+                    confirmation pill, then clears the key. */}
+                {reportIssueSuccess ? (
+                  <div
+                    role="status"
+                    aria-live="polite"
+                    style={{
+                      marginTop: 12,
+                      background: 'rgba(31,191,107,0.10)',
+                      border: `1px solid rgba(31,191,107,0.45)`,
+                      borderRadius: 12,
+                      padding: '10px 14px',
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      fontSize: 13, fontWeight: 700, color: C.green,
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    <span style={{
+                      width: 18, height: 18, borderRadius: '50%',
+                      background: C.green,
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      flexShrink: 0,
+                    }}>
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M4 12l5 5L20 6"/>
+                      </svg>
+                    </span>
+                    <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {reportIssueSuccess.workOrderNumber} · {reportIssueSuccess.assigneeName} notified
+                    </span>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => router.push(`/route/${routeId}/stop/${stopId}/report-issue`)}
+                    style={{
+                      marginTop: 12,
+                      width: '100%',
+                      background: 'transparent',
+                      border: `1px solid rgba(255,90,60,0.45)`,
+                      borderRadius: 12,
+                      padding: '10px 14px',
+                      cursor: 'pointer',
+                      fontFamily: 'inherit',
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      fontSize: 13, fontWeight: 700, color: C.coral,
+                      letterSpacing: '0.01em',
+                    }}
+                    aria-label="Report an issue with this order"
+                  >
+                    <span>Report an issue with this order</span>
+                    <span style={{ fontSize: 16, lineHeight: 1, opacity: 0.85 }}>›</span>
+                  </button>
+                )}
                 </>
                 )}
               </div>

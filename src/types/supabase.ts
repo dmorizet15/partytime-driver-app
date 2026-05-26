@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       asset_part_fitments: {
@@ -370,6 +345,8 @@ export type Database = {
           sms_override_phone: string | null
           stop_status: string | null
           stop_type: Database["public"]["Enums"]["stop_type_enum"]
+          sync_date_updated_at: string | null
+          sync_prev_scheduled_date: string | null
           tapgoods_order_token: string | null
           tapgoods_stop_id: string | null
           tapgoods_writeback_at: string | null
@@ -446,6 +423,8 @@ export type Database = {
           sms_override_phone?: string | null
           stop_status?: string | null
           stop_type: Database["public"]["Enums"]["stop_type_enum"]
+          sync_date_updated_at?: string | null
+          sync_prev_scheduled_date?: string | null
           tapgoods_order_token?: string | null
           tapgoods_stop_id?: string | null
           tapgoods_writeback_at?: string | null
@@ -522,6 +501,8 @@ export type Database = {
           sms_override_phone?: string | null
           stop_status?: string | null
           stop_type?: Database["public"]["Enums"]["stop_type_enum"]
+          sync_date_updated_at?: string | null
+          sync_prev_scheduled_date?: string | null
           tapgoods_order_token?: string | null
           tapgoods_stop_id?: string | null
           tapgoods_writeback_at?: string | null
@@ -615,6 +596,80 @@ export type Database = {
             columns: ["driver_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      field_work_orders: {
+        Row: {
+          asset_id: string | null
+          asset_name: string
+          asset_type: string
+          assigned_to_user_id: string
+          billing_status: string
+          created_at: string
+          created_by_user_id: string
+          customer_name: string | null
+          id: string
+          issue_description: string
+          notes: string | null
+          priority: string
+          serial_number: string | null
+          status: string
+          stop_id: string | null
+          tapgoods_order_id: string | null
+          tapgoods_order_number: string | null
+          updated_at: string
+          work_order_number: string
+        }
+        Insert: {
+          asset_id?: string | null
+          asset_name: string
+          asset_type: string
+          assigned_to_user_id: string
+          billing_status?: string
+          created_at?: string
+          created_by_user_id: string
+          customer_name?: string | null
+          id?: string
+          issue_description: string
+          notes?: string | null
+          priority?: string
+          serial_number?: string | null
+          status?: string
+          stop_id?: string | null
+          tapgoods_order_id?: string | null
+          tapgoods_order_number?: string | null
+          updated_at?: string
+          work_order_number: string
+        }
+        Update: {
+          asset_id?: string | null
+          asset_name?: string
+          asset_type?: string
+          assigned_to_user_id?: string
+          billing_status?: string
+          created_at?: string
+          created_by_user_id?: string
+          customer_name?: string | null
+          id?: string
+          issue_description?: string
+          notes?: string | null
+          priority?: string
+          serial_number?: string | null
+          status?: string
+          stop_id?: string | null
+          tapgoods_order_id?: string | null
+          tapgoods_order_number?: string | null
+          updated_at?: string
+          work_order_number?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "field_work_orders_stop_id_fkey"
+            columns: ["stop_id"]
+            isOneToOne: false
+            referencedRelation: "dispatch_stops"
             referencedColumns: ["id"]
           },
         ]
@@ -1015,6 +1070,7 @@ export type Database = {
           receives_fleet_notifications: boolean
           roles: Database["public"]["Enums"]["user_role"][]
           status: string
+          work_order_technician: boolean
         }
         Insert: {
           archived_at?: string | null
@@ -1029,6 +1085,7 @@ export type Database = {
           receives_fleet_notifications?: boolean
           roles?: Database["public"]["Enums"]["user_role"][]
           status?: string
+          work_order_technician?: boolean
         }
         Update: {
           archived_at?: string | null
@@ -1043,6 +1100,7 @@ export type Database = {
           receives_fleet_notifications?: boolean
           roles?: Database["public"]["Enums"]["user_role"][]
           status?: string
+          work_order_technician?: boolean
         }
         Relationships: [
           {
@@ -2358,9 +2416,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {
       dispatch_status_enum: [

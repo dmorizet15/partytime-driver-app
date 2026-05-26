@@ -4,6 +4,62 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-05-26 — Work Orders & Field Issues (driver app, Session 2)
+
+**Scope.** Driver-app UI for the dashboard's Session 1 work-orders backend (`4e04ac9` — `field_work_orders` Migration 073, `profiles.work_order_technician`, POST/GET/PATCH `/api/work-orders`, `notifyNewFieldWorkOrder` email). Three driver-facing surfaces: a stop-detail "Report an issue" link, an ungated "Report an Issue" Tools Hub card, and a technician-gated "Work Orders" Tools Hub card → list → detail. All four flows share one `ReportIssueForm` component.
+
+### Architecture
+
+- **Cross-app POST, not direct supabase insert.** Driver app POSTs `${NEXT_PUBLIC_DASHBOARD_URL}/api/work-orders` with the supabase access token in the Authorization header. Reason: the dashboard route owns `work_order_number` generation **and** the assignee + super_admin notification email. Skipping the dashboard would skip the email. PATCH for status transitions + notes uses the same route. Reads (`listMyWorkOrders`, `getWorkOrder`, `listTechnicians`) go straight to supabase under RLS — no side effects to worry about, and the dashboard would round-trip a SELECT either way.
+- **Two stacked permissions on `profiles`.** `fleet_maintenance_access` (existing) and `work_order_technician` (new this session). Both are independent of `roles`. UI gates: `useFleetAccess` and `useWorkOrderTechnician`. **Filing an issue is ungated** — any signed-in user can file. The **technician queue** (list + detail) is gated on `work_order_technician`.
+- **`UserProfile` type + `getUserRole` SELECT extended.** The shared profile fetch in `src/lib/auth.ts` was already loading `fleet_maintenance_access`; this session adds `work_order_technician` to the same SELECT. One round trip, two stacked permissions.
+- **Post-submit confirmation via `sessionStorage`.** The stop-detail screen and the form live on different routes, so we can't pass result data via React state. `ReportIssueScreen.onSuccess` stamps `sessionStorage.setItem(reportIssueSuccessKey(stopId), JSON.stringify({workOrderNumber, assigneeName, ts}))` then navigates back. `StopDetailScreen` reads + clears the key on mount and swaps the red-bordered link for a green confirmation pill for 6 s. Key is single-use — re-mounting later doesn't re-show the pill.
+
+### Files
+
+**New.**
+
+- `src/lib/workOrders/api.ts` — `createWorkOrder` POST + `updateWorkOrder` PATCH (cross-app); `listMyWorkOrders`, `getWorkOrder`, `listTechnicians` (RLS-gated supabase). Accepts either flat or nested response shape from the dashboard.
+- `src/lib/workOrders/types.ts` — `FieldWorkOrder` row alias from generated supabase types; `CreateWorkOrderPayload` + `UpdateWorkOrderPayload` payloads; enum unions for status / priority / billing / asset_type.
+- `src/lib/workOrders/theme.ts` — `WC` palette (editorial tokens), `PRIORITY_COLOR` + `STATUS_LABEL` maps, `FONT_DISPLAY` / `FONT_BODY` const.
+- `src/hooks/workOrders/useWorkOrderTechnician.ts` — single-property hook over `useAuth().profile.work_order_technician`.
+- `src/hooks/workOrders/useOpenWorkOrdersCount.ts` — head-count `field_work_orders WHERE status IN ('open','in_progress')` for the Tools Hub badge.
+- `src/components/workOrders/WorkOrderGate.tsx` — route-level access gate (mirrors `FleetGate`).
+- `src/components/workOrders/ReportIssueForm.tsx` — the shared form (stop + standalone modes). Item picker (stop mode), 4-way asset type toggle (standalone), debounce-search of `trucks` + `non_truck_assets` (250 ms), optional related-order debounce-search of `dispatch_stops` (300 ms), self/picker assignee toggle, color-coded priority toggle, billing toggle. Submit via `createWorkOrder`.
+- `src/screens/workOrders/ReportIssueScreen.tsx` — wraps the form. Owns the routeId+stopId param plumbing, the back/post-submit nav, the `reportIssueSuccessKey` sessionStorage stash, and the standalone confirmation panel.
+- `src/screens/workOrders/WorkOrdersListScreen.tsx` — Screen 3. Open / In Progress / Done tabs with count chips, color-coded left-border cards, gold FAB to open Screen 2B. Batches a `profiles` SELECT to resolve creator display names.
+- `src/screens/workOrders/WorkOrderDetailScreen.tsx` — Screen 4. Read-only record, sticky action bar (Mark In Progress / Mark Complete / + Note), bottom-sheet note modal. Notes are PATCHed as the full reconstructed string (existing + timestamp prefix + new) so the client works against either replace-or-append dashboard semantic.
+- `src/app/tools/report-issue/page.tsx`, `src/app/tools/work-orders/page.tsx`, `src/app/tools/work-orders/[id]/page.tsx`, `src/app/route/[routeId]/stop/[stopId]/report-issue/page.tsx` — the four new App Router routes.
+
+**Modified.**
+
+- `src/types/auth.ts` — `UserProfile` gains `work_order_technician: boolean`.
+- `src/lib/auth.ts` — `getUserRole` SELECT list gains `,work_order_technician`.
+- `src/types/supabase.ts` — regenerated from project `fumprcyavpefyupurvsv`; brings in `field_work_orders` table + `profiles.work_order_technician`.
+- `.env.local.example` — documents `NEXT_PUBLIC_DASHBOARD_URL` with prod default `https://dashboard.partytimerentals.com`.
+- `src/screens/StopDetailScreen.tsx` — adds `reportIssueSuccessKey` import + sessionStorage hydration effect + the link/pill swap inside the action card under the QuickAction grid.
+- `src/screens/ToolsScreen.tsx` — adds `AlertIcon` + `ClipboardListIcon` + `ReportIssueCard` + `WorkOrdersCard` components, slotted between the existing Fleet Maintenance card and the Generators card.
+
+### Decisions
+
+- **WebFetch of the Notion spec failed** (auth-walled, normal Notion behavior). Worked from the inline spec in the session prompt + verified types against the regenerated `field_work_orders` schema.
+- **Picked the `NEXT_PUBLIC_DASHBOARD_URL` + client-side POST approach** over a driver-app proxy route or a supabase-direct-insert + DB-trigger-email path. Simpler — one env var, one fetch. Trade-off: needs Vercel env config before the feature works (called out explicitly in `tasks/todo.md`).
+- **Reused the existing inline-tokens design system** (`C = {...}` per-screen palette in StopDetailScreen / ToolsScreen) instead of introducing a `colors.ptw.*` import. The new `WC` palette in `src/lib/workOrders/theme.ts` matches the values exactly — no new design language.
+- **Notes are sent as the full reconstructed value on PATCH.** Without sight of the dashboard's PATCH semantics (replace vs append), replace + client-side concat is the only safe bet — append-on-the-server would duplicate the existing notes when the client also concatenates. Flagged in `tasks/todo.md` for confirmation.
+
+### Build
+
+`npx next build` green end-to-end. All 32 pages generated; 4 new routes registered (`/route/[routeId]/stop/[stopId]/report-issue` 3.16 kB, `/tools/report-issue` 3.14 kB, `/tools/work-orders` 3.97 kB, `/tools/work-orders/[id]` 4.7 kB). No new dependencies. No new migrations (all schema came from dashboard Session 1).
+
+### Open follow-ups (tracked in `tasks/todo.md`)
+
+- **Set `NEXT_PUBLIC_DASHBOARD_URL` in driver-app Vercel project before testing.**
+- Confirm dashboard response shape (flat vs nested) — adjust `createWorkOrder` if neither matches what Session 1 actually returns.
+- Confirm dashboard PATCH semantics for notes (replace vs append) — switch the client to send only the new note text if the server appends.
+- Verify `listTechnicians` actually populates under prod RLS; fall back to a dashboard `/api/work-orders/technicians` endpoint if blocked.
+
+---
+
 ## 2026-05-24 — Auto-logout (driver app, two layers)
 
 **Scope:** driver-app only. No migration, no API route, no dashboard / SMS / schema changes. Shared-device hygiene only.

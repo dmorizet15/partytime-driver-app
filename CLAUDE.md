@@ -6,9 +6,9 @@ Next.js 14 PWA for the driver mobile workflow. Downstream of `partytime-dashboar
 
 ## Current build state
 
-- **Active feature:** Fleet Maintenance Module (driver app) — shipped 2026-05-22 (`46ba851`), three UI fixes the same evening (`ca93062`), pre-trip mileage capture 2026-05-23. Five screens (Fleet Overview, Asset Detail, Work Order Detail, Log Service Entry) + a role-gated Tools Hub card + a home-screen alert card + an Odometer card on the pre-trip Screen 6 that feeds `trucks.current_mileage`. Reads/writes the dashboard-owned fleet tables (migrations 062–068) directly via the RLS-gated supabase client; pre-trip mileage capture writes `trucks.current_mileage` via the admin client. No new migrations. See "Fleet Maintenance Module — Driver App" section below.
-- **Latest shipment:** Auto-logout — two-layer shared-device hygiene, 2026-05-24 (`76bb769`). Layer 1: after the existing 6-second "Welcome back — route complete" banner on warehouse_return geofence auto-complete, the same setTimeout now signs the driver out and replaces to `/login`. Layer 2: `LoginScreen` stamps `localStorage.ptr_session_date = YYYY-MM-DD` on a successful sign-in; `AuthContext` checks it on the `INITIAL_SESSION` auth event (only — `SIGNED_IN` is skipped to avoid racing a fresh login) and signs out + `window.location.replace('/login')` before exposing the session to any consumer if the device has crossed midnight. Driver-app only — no migrations, no dashboard, no SMS. See "Auto-Logout (Shared-Device Hygiene)" section below.
-- **Latest migration:** **068** in the remote `schema_migrations` table (dashboard Fleet Maintenance phases 1–4). Driver-app local `supabase/migrations/` is unchanged at 12 files (latest `20260515_012_game_scores`) — the fleet module added zero migrations; every table was already live from the dashboard side. The "migration count" is the remote table count, not the local file count.
+- **Active feature:** Work Orders & Field Issues (driver app) — shipped 2026-05-26. Driver-app UI on top of the dashboard's Session 1 (`field_work_orders` table — Migration 073 — and POST/GET/PATCH `/api/work-orders`). Adds three driver-facing surfaces (Stop Detail "Report an issue" link, ungated "Report an Issue" Tools Hub card, technician-gated "Work Orders" Tools Hub card → list → detail) sharing one `ReportIssueForm` component. Posts cross-app to the dashboard via a new `NEXT_PUBLIC_DASHBOARD_URL` env var so the assignee email fires. Access is keyed on a new stacked permission `profiles.work_order_technician`. No driver-app migrations; types regenerated. See "Work Orders & Field Issues (Driver App)" section below.
+- **Latest shipment:** Work Orders & Field Issues driver-app build, 2026-05-26. Two new Tools Hub cards, one new stop-detail link, four new App Router routes (`/route/[routeId]/stop/[stopId]/report-issue`, `/tools/report-issue`, `/tools/work-orders`, `/tools/work-orders/[id]`). Build green; pushed to `main` for Vercel auto-deploy. **Vercel env var `NEXT_PUBLIC_DASHBOARD_URL` must be set on the driver-app project before this surfaces work** — without it the form throws on submit.
+- **Latest migration:** **073** in the remote `schema_migrations` table (dashboard Session 1: `field_work_orders` + `profiles.work_order_technician`). Driver-app local `supabase/migrations/` is unchanged at 12 files (latest `20260515_012_game_scores`) — Session 2 added zero migrations; every table + column was already live from the dashboard side. The "migration count" is the remote table count, not the local file count.
 - **Branch strategy:** Commit directly to `main` — Vercel auto-deploys on every push.
 - **Next priority:** see `tasks/todo.md` (top of file).
 
@@ -30,6 +30,7 @@ Full doctrine: `docs/claude/doctrine.md`.
 - Read the relevant sub-doc under `docs/claude/` for the active feature.
 - Fetch Notion pages: Master Project Hub + latest v1.1 Build Plan + most recent Session Summary.
 - State the current migration count (from `supabase/migrations/`) and the active feature before starting work.
+- Apply the superpowers workflow on all coding tasks: brainstorm → plan → approve → execute → verify. PTR-specific rules in this CLAUDE.md take precedence over superpowers where they conflict. Before approving any plan, flag whether shared files require simultaneous dashboard updates in the same session.
 
 ---
 
@@ -116,6 +117,58 @@ Shipped 2026-05-24 (commit `76bb769`). Drivers share company devices; the next d
 2. DevTools → Application → Local Storage: set `ptr_session_date` to yesterday → reload any authed route → expect immediate redirect to `/login` before the home screen paints. Console clean.
 3. Same-day refresh of an active session → `ptr_session_date` already today → no signOut, no redirect, normal render.
 4. Sign in on `/login` → confirm `ptr_session_date` is set to today; reload → still signed in.
+
+---
+
+## Work Orders & Field Issues (Driver App)
+
+Shipped 2026-05-26 — Session 2 of the Work Orders build, sitting on top of dashboard Session 1 (`4e04ac9`: `field_work_orders` table at Migration 073, `profiles.work_order_technician` permission, POST/GET/PATCH `/api/work-orders`, `notifyNewFieldWorkOrder` email).
+
+**Access model.** `profiles.work_order_technician` is a stacked, additive permission, independent of `roles` — same shape as `fleet_maintenance_access`. UI gate: `useWorkOrderTechnician()` (`src/hooks/workOrders/useWorkOrderTechnician.ts`). Route gate: `WorkOrderGate` (`src/components/workOrders/WorkOrderGate.tsx`, mirrors `FleetGate`). `getUserRole`'s SELECT now pulls `work_order_technician`; `UserProfile` carries it. **Reporting an issue is ungated** — any signed-in driver can file a WO from a stop or from the "Report an Issue" Tools Hub card. The **technician queue** (list + detail) is gated on `work_order_technician`.
+
+**Data layer — `src/lib/workOrders/`.** `api.ts` (createWorkOrder POST + updateWorkOrder PATCH cross-app to the dashboard; listMyWorkOrders + getWorkOrder + listTechnicians via RLS-gated supabase client), `types.ts` (FieldWorkOrder row alias, payload shapes, enum unions), `theme.ts` (`WC` palette + PRIORITY_COLOR + STATUS_LABEL). Hooks in `src/hooks/workOrders/` (useWorkOrderTechnician, useOpenWorkOrdersCount). Shared form + gate in `src/components/workOrders/`.
+
+**Cross-app POST is deliberate.** The driver app does **not** insert `field_work_orders` directly via the supabase client. It POSTs `${NEXT_PUBLIC_DASHBOARD_URL}/api/work-orders` with the user's supabase access token in the `Authorization` header. The dashboard route owns (1) `work_order_number` generation, (2) the assignee + super_admins notification email. Shortcutting to supabase would skip the email. PATCH (status transitions, notes) uses the same route. Reads pull straight from supabase under RLS — no side effects to worry about, and the dashboard would just round-trip a SELECT anyway.
+
+**Stop detail — Screen 1.** `src/screens/StopDetailScreen.tsx` — a faint-red-bordered "Report an issue with this order ›" link sits directly under the 3-button QuickAction grid inside the action card. Tap → `/route/[routeId]/stop/[stopId]/report-issue`. After submission, `ReportIssueScreen` stashes `{workOrderNumber, assigneeName, ts}` in `sessionStorage.setItem(reportIssueSuccessKey(stopId), …)`; on mount, the stop screen reads + clears the key and swaps the link for a 6 s green confirmation pill (`PT-#### · Assignee notified`). Re-mount after the pill expires shows the normal link again (key is consumed once).
+
+**Report Issue form — `ReportIssueForm` (Screens 2A + 2B).** One component, two modes — `stop` prop populated → Screen 2A; undefined → Screen 2B.
+- **Screen 2A — stop context.** Locked dark "Issue for order #X · CustomerName" header (not editable). Item picker iterates `stop.items` (from the existing TG-sync'd `dispatch_stops.items` JSON). Selected item → `asset_type='field_item'`, `asset_name=item.name`. "Item not in this order?" fallback row → inline name + serial fields.
+- **Screen 2B — standalone.** Asset type 4-toggle: Truck / Equipment / Field item / Other. Truck & Equipment paths debounce-search `trucks` (name/plate/VIN) and `non_truck_assets` (name/serial_number) directly via supabase with a 250 ms delay, up to 8 results. No match → "Enter manually" card with name + serial. Field item / Other → free-text name + serial. Optional "Related order" search debounce-searches `dispatch_stops` by `tapgoods_order_token` / `customer_name` / `company_name` (300 ms, 8 results) — picking one sets `stop_id` + `tapgoods_order_number` + `customer_name` on the payload.
+- **Common fields.** Issue description (required textarea), Priority toggle (Low/Medium/High, color-coded), Assign-to toggle (Myself shows the user's avatar/display_name chip; Someone else shows a picker of profiles where `work_order_technician=true OR roles cs '{super_admin}'`, with the current user filtered out), Billing toggle (Decide later / Bill customer / No charge — default Decide later).
+- **Submit.** `POST ${NEXT_PUBLIC_DASHBOARD_URL}/api/work-orders` with bearer token. Response shape accepted either flat (`{id, work_order_number, …}`) or nested (`{work_order: {…}}`).
+
+**Screen 3 — Work Orders list (`/tools/work-orders`).** Tabs: Open / In Progress / Done with count chips. Each card carries a 4 px left border in priority color (red high · amber medium · green low). Card body: WO number (Archivo), asset name, issue description clamped to 2 lines, creator display_name + short date. Pulls all rows via `listMyWorkOrders()` then batches a `profiles` SELECT for creator names. Floating gold "+" FAB at bottom-right opens Screen 2B. Gated by `WorkOrderGate`.
+
+**Screen 4 — Work Order detail (`/tools/work-orders/[id]`).** Read-only record — Status / Priority / Billing pills, Asset card, Issue card, Related order card (only when a `tapgoods_order_number` / `customer_name` / `stop_id` is present), Notes log, Meta (created by, created date, assigned to, updated date). Sticky bottom action bar: "Mark In Progress" (only shown when status='open'), "Mark Complete" (status→done), "+ Note" (gold; opens a bottom-sheet modal with a textarea). Notes are appended client-side with a timestamp prefix and PATCHed as the full new value — works against either dashboard semantic (replace OR append). Gated by `WorkOrderGate`.
+
+**Tools Hub cards (`ToolsScreen.tsx`).** Two new wide cards slot in between the existing Fleet Maintenance card and the Generators card.
+- **"Report an Issue"** — ungated; alert-triangle icon in a coral wrap; subtitle "Truck, equipment, or field item". Opens `/tools/report-issue`.
+- **"Work Orders"** — technician-gated via `useOpenWorkOrdersCount` (renders null without access); clipboard-list icon in a gold wrap; subtitle "Field issues filed by drivers"; red "N open" pill when `status IN ('open','in_progress')` > 0. Opens `/tools/work-orders`.
+
+**Files (new).**
+- `src/lib/workOrders/{api,types,theme}.ts`
+- `src/hooks/workOrders/{useWorkOrderTechnician,useOpenWorkOrdersCount}.ts`
+- `src/components/workOrders/{ReportIssueForm,WorkOrderGate}.tsx`
+- `src/screens/workOrders/{ReportIssueScreen,WorkOrdersListScreen,WorkOrderDetailScreen}.tsx`
+- `src/app/route/[routeId]/stop/[stopId]/report-issue/page.tsx`
+- `src/app/tools/{report-issue,work-orders}/page.tsx`
+- `src/app/tools/work-orders/[id]/page.tsx`
+
+**Files (modified).** `src/types/auth.ts` (UserProfile + `work_order_technician`), `src/lib/auth.ts` (getUserRole SELECT extended), `src/types/supabase.ts` (regenerated from dashboard project), `.env.local.example` (`NEXT_PUBLIC_DASHBOARD_URL` added with prod default), `src/screens/StopDetailScreen.tsx` (link + post-submit pill, plus the import from ReportIssueScreen), `src/screens/ToolsScreen.tsx` (two new cards + icons + hook import).
+
+**Required env config — Darren must set this before the feature works.** `NEXT_PUBLIC_DASHBOARD_URL=https://dashboard.partytimerentals.com` must be added to the **driver-app** Vercel project (production + preview). The example file's default value is correct for production; local dev needs `http://localhost:3000` (or whatever port the dashboard runs on) in `.env.local`. Without it, `createWorkOrder()` throws "NEXT_PUBLIC_DASHBOARD_URL is not configured" and the form's Submit button reports the error inline.
+
+**NEXT smoke test (production, after the env var is set and Vercel redeploys):**
+
+1. Standard driver (no `work_order_technician`): Tools Hub shows the "Report an Issue" card; the "Work Orders" card is **absent**. Tools Hub looks otherwise unchanged.
+2. Open any delivery stop → confirm the "Report an issue with this order ›" link sits below the 3-button quick-action grid. Tap → form opens with locked context bar showing `#orderNumber · CustomerName`, item picker lists all stop items.
+3. Pick an item, enter description, leave defaults, Submit → green confirmation panel briefly, then returns to the stop. Confirmation pill `PT-#### · You notified` shows for 6 s. Email lands in inbox.
+4. Same stop, tap link again → tap "Item not in this order?" → enter name + serial → Submit. Verify the WO row has the typed values.
+5. Tools Hub → "Report an Issue" (standalone) → Truck path → type partial truck name → results appear → pick one → Submit. Confirm dashboard's `field_work_orders` shows `asset_id=<truck.id>`, `asset_type='truck'`.
+6. Same flow, search returns no results → "Enter manually" → submit with manual name. Confirm `asset_id=null`, `asset_type='truck'`, `asset_name=<typed value>`.
+7. Toggle a profile's `work_order_technician=true` dashboard-side. Refresh driver app → Tools Hub now shows the "Work Orders" card. Open it → tabs render with counts → tap a card → detail screen.
+8. On detail: Mark In Progress → tab counts update. Mark Complete → moves to Done tab. + Note → modal → save → notes log shows timestamped entry.
 
 ## Session close (autonomous — no permission needed)
 

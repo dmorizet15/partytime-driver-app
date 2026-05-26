@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import BottomNav from '@/components/BottomNav'
 import { useOpenWorkOrders } from '@/hooks/fleet/useOpenWorkOrders'
+import { useOpenWorkOrdersCount } from '@/hooks/workOrders/useOpenWorkOrdersCount'
 import { WrenchIcon } from '@/components/fleet/fleetIcons'
 
 // ─── PTR design tokens — dark hub palette ───────────────────────────────────
@@ -117,6 +118,27 @@ function EngineIcon({ size = 22, color = C.white }: IconProps) {
       <path d="M19 12h2" />
       <path d="M9 11v4" />
       <path d="M15 11v4" />
+    </IconSvg>
+  )
+}
+
+function AlertIcon({ size = 22, color = C.white }: IconProps) {
+  return (
+    <IconSvg size={size} color={color}>
+      <path d="M12 9v4" />
+      <path d="M12 17h.01" />
+      <path d="M10.29 3.86l-8.18 14.18a2 2 0 0 0 1.71 3h16.36a2 2 0 0 0 1.71 -3l-8.18 -14.18a2 2 0 0 0 -3.42 0z" />
+    </IconSvg>
+  )
+}
+
+function ClipboardListIcon({ size = 22, color = C.white }: IconProps) {
+  return (
+    <IconSvg size={size} color={color}>
+      <rect x="8" y="2" width="8" height="4" rx="1" />
+      <path d="M9 4H6a2 2 0 0 0 -2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2V6a2 2 0 0 0 -2 -2h-3" />
+      <line x1="9" y1="12" x2="15" y2="12" />
+      <line x1="9" y1="16" x2="13" y2="16" />
     </IconSvg>
   )
 }
@@ -391,6 +413,102 @@ function FleetMaintenanceCard({ onTap }: { onTap: () => void }) {
   )
 }
 
+// ─── Report an Issue card — ungated (any authed user can file) ──────────────
+// Sits below the role-gated Fleet card so the action lives in the same band
+// for drivers who don't have fleet/technician permissions but still need to
+// flag a field problem.
+function ReportIssueCard({ onTap }: { onTap: () => void }) {
+  return (
+    <div style={{ padding: '12px 18px 0' }}>
+      <button
+        onClick={onTap}
+        aria-label="Report an issue"
+        style={{
+          background: C.card,
+          border: `0.5px solid ${C.cardBorder}`,
+          borderRadius: 14,
+          padding: '16px 14px',
+          cursor: 'pointer', fontFamily: 'inherit',
+          textAlign: 'left',
+          display: 'flex', alignItems: 'center', gap: 14,
+          color: C.white,
+          width: '100%',
+        }}
+      >
+        <IconWrap bg="rgba(255,90,60,0.16)">
+          <AlertIcon size={22} color="#FF7A5A" />
+        </IconWrap>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontFamily: FONT_DISPLAY, fontSize: 16, fontWeight: 800,
+            color: C.white, letterSpacing: '-0.01em', lineHeight: 1.2,
+          }}>
+            Report an Issue
+          </div>
+          <div style={{ marginTop: 4, fontSize: 12, color: C.muted, lineHeight: 1.4 }}>
+            Truck, equipment, or field item
+          </div>
+        </div>
+      </button>
+    </div>
+  )
+}
+
+// ─── Work Orders card — technician-only ─────────────────────────────────────
+// Mirrors FleetMaintenanceCard. Renders null without work_order_technician;
+// red pill surfaces the open + in_progress count (hidden at zero).
+function WorkOrdersCard({ onTap }: { onTap: () => void }) {
+  const { count, hasAccess, loading } = useOpenWorkOrdersCount()
+  if (loading || !hasAccess) return null
+
+  return (
+    <div style={{ padding: '12px 18px 0' }}>
+      <button
+        onClick={onTap}
+        aria-label="Work Orders"
+        style={{
+          background: C.card,
+          border: `0.5px solid ${C.cardBorder}`,
+          borderRadius: 14,
+          padding: '16px 14px',
+          cursor: 'pointer', fontFamily: 'inherit',
+          textAlign: 'left',
+          display: 'flex', alignItems: 'center', gap: 14,
+          color: C.white,
+          width: '100%',
+        }}
+      >
+        <IconWrap bg="rgba(255,184,0,0.16)">
+          <ClipboardListIcon size={22} color={C.gold} />
+        </IconWrap>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontFamily: FONT_DISPLAY, fontSize: 16, fontWeight: 800,
+            color: C.white, letterSpacing: '-0.01em', lineHeight: 1.2,
+          }}>
+            Work Orders
+          </div>
+          <div style={{ marginTop: 4, fontSize: 12, color: C.muted, lineHeight: 1.4 }}>
+            Field issues filed by drivers
+          </div>
+        </div>
+        {count > 0 && (
+          <span style={{
+            display: 'inline-block',
+            background: 'rgba(229,72,77,0.15)', color: '#E5484D',
+            border: '0.5px solid rgba(229,72,77,0.35)',
+            padding: '3px 9px', borderRadius: 999,
+            fontSize: 10, fontWeight: 800, letterSpacing: '0.04em',
+            textTransform: 'uppercase', whiteSpace: 'nowrap', lineHeight: 1.2,
+          }}>
+            {count} open
+          </span>
+        )}
+      </button>
+    </div>
+  )
+}
+
 // ─── Screen ─────────────────────────────────────────────────────────────────
 export default function ToolsScreen() {
   const router = useRouter()
@@ -489,6 +607,12 @@ export default function ToolsScreen() {
 
         {/* Fleet Maintenance — role-gated; renders null without access */}
         <FleetMaintenanceCard onTap={() => router.push('/tools/fleet')} />
+
+        {/* Report an Issue — ungated; any signed-in user can file */}
+        <ReportIssueCard onTap={() => router.push('/tools/report-issue')} />
+
+        {/* Work Orders — technician-only; renders null without access */}
+        <WorkOrdersCard onTap={() => router.push('/tools/work-orders')} />
 
         {/* Full-width: Generators (above divider) */}
         <div style={{ padding: '12px 18px 0' }}>
