@@ -90,6 +90,12 @@ export async function GET(req: NextRequest) {
   const session = getSessionClient()
   const { data: { user } } = await session.auth.getUser()
 
+  if (!user) {
+    const cookieNames = cookies().getAll().map((c) => c.name)
+    console.warn('[/api/routes] unauthenticated request', { date, cookies: cookieNames })
+    return NextResponse.json({ error: 'Unauthenticated' }, { status: 401 })
+  }
+
   let assignedRouteIds: string[] | null = []
   if (user) {
     const assignRes = await supabase

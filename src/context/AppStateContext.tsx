@@ -7,8 +7,10 @@ import React, {
   useCallback,
   ReactNode,
 } from 'react'
+import { useRouter } from 'next/navigation'
 import { Route, Stop, StopStatus } from '@/types'
 import { useAuthContext } from '@/context/AuthContext'
+import { supabase } from '@/lib/supabase'
 import { stopStateService } from '@/services/StopStateService'
 
 // ─── State ────────────────────────────────────────────────────────────────────
@@ -147,6 +149,7 @@ const AppStateContext = createContext<AppStateContextValue | null>(null)
 export function AppStateProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(appReducer, INITIAL_STATE)
   const { user } = useAuthContext()
+  const router = useRouter()
 
   // ── Async loader ───────────────────────────────────────────────────────────
   const loadDay = useCallback(async (date: string, force = false) => {
@@ -156,6 +159,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
     try {
       const res  = await fetch(`/api/routes?date=${date}`)
+
+      if (res.status === 401) {
+        await supabase.auth.signOut()
+        router.replace('/login')
+        return
+      }
+
       const json = await res.json()
 
       if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`)
@@ -196,7 +206,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       console.error('[AppState] loadDay error:', message)
       dispatch({ type: 'LOAD_ERROR', payload: { error: message } })
     }
-  }, [state.loadedDate, state.error, user])
+  }, [state.loadedDate, state.error, user, router])
 
   // ── Selectors ──────────────────────────────────────────────────────────────
   const getRoutesForDate = useCallback(
