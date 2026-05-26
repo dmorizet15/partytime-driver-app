@@ -78,7 +78,16 @@ export default function ReportIssueScreen({ routeId, stopId }: ReportIssueScreen
   }
 
   return (
-    <div className="screen" style={{ background: WC.cream, fontFamily: FONT_BODY, color: WC.ink }}>
+    // Natural-scroll wrapper. We intentionally do NOT use the global `.screen`
+    // class here — that class locks height to 100svh + overflow:hidden, which
+    // on tall viewports (desktop browser) traps the form's bottom action bar
+    // below the fold with no way to scroll to it. Letting the document scroll
+    // naturally reveals the Submit button as the user scrolls down.
+    <div style={{
+      background: WC.cream, fontFamily: FONT_BODY, color: WC.ink,
+      minHeight: '100svh',
+      display: 'flex', flexDirection: 'column',
+    }}>
       <AppHeader
         title="Report an issue"
         subtitle={stop ? `#${stop.order_id} · ${stop.customer_name}` : 'New work order'}

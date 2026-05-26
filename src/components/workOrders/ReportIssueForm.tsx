@@ -336,19 +336,23 @@ export default function ReportIssueForm({
   }
 
   return (
+    // Natural-flow layout. Previously this was a flex column with an inner
+    // `flex-1 overflow-y-auto` scroll region and a `flex-shrink: 0` bottom
+    // action bar — which depends on the parent having a fixed height. The
+    // parent (.screen) used `height: 100svh` on mobile; on a tall desktop
+    // viewport the math broke and the action bar fell below the fold with
+    // no scroll. Now the page just scrolls naturally; the Submit button
+    // appears at the end of content like any other long form.
     <div style={{
       background: C.cream,
       fontFamily: FONT_BODY,
       color: C.ink,
-      minHeight: '100%',
-      display: 'flex', flexDirection: 'column',
     }}>
       {/* ── Context bar (stop mode only) ────────────────────────────────── */}
       {isStopContext && stop && (
         <div style={{
           background: C.ink, color: '#fff',
           padding: '14px 18px',
-          flexShrink: 0,
         }}>
           <div style={{
             fontSize: 10.5, fontWeight: 900, letterSpacing: '0.18em',
@@ -371,7 +375,7 @@ export default function ReportIssueForm({
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto" style={{ padding: '18px 18px 32px' }}>
+      <div style={{ padding: '18px 18px 32px' }}>
         {/* ── Section: Asset ─────────────────────────────────────────────── */}
         <SectionLabel>{isStopContext ? 'Which item has the issue?' : 'What is the issue with?'}</SectionLabel>
 
@@ -518,13 +522,12 @@ export default function ReportIssueForm({
         )}
       </div>
 
-      {/* ── Sticky submit bar ───────────────────────────────────────────── */}
+      {/* ── Submit bar (sits at end of content; reached by scrolling) ──── */}
       <div style={{
         background: C.paper,
         borderTop: `1px solid rgba(10,11,20,0.10)`,
         padding: '14px 18px calc(14px + env(safe-area-inset-bottom))',
         display: 'flex', gap: 10,
-        flexShrink: 0,
       }}>
         {onCancel && (
           <button
