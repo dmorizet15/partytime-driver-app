@@ -1,5 +1,20 @@
 # Open Tasks — partytime-driver-app
 
+## May 27, 2026 — AVA Phase 1 — Session 2 (branch `feature/ava-phase1`)
+
+Morning brief card (Tier 2) + Home post-pre-trip quiet state + weather flag (Part 1). Design doc: `docs/ava/2026-05-27-ava-morning-brief-card.md`. Branch must NOT merge to `main` until all 9 Phase 1 components are in. Vercel auto-deploys as a **preview**.
+
+- [ ] **Smoke-test the preview deploy** once Vercel finishes:
+  1. Pre-pre-trip Home: hero (greeting + stop count + truck), day list, "Inspect & Start Route" CTA. AVA card renders only for `stats_enabled=true` drivers (Joey default). Weather card renders only on ≥amber wind/rain/snow at first delivery stop.
+  2. Complete pre-trip → return to Home: hero shows greeting + truck only (no sub-copy). Pre-trip receipt, day list, AVA card, weather card, Gold CTA all hidden. FleetAlert + COD still render if applicable.
+  3. The "Ask Ava about today" stub button is gone.
+  4. Toggle `stats_enabled=true` on a non-Joey profile → AVA card appears on next Home mount.
+- [ ] **COD-collected-this-week stat — follow-up.** Stats block currently shows weekly stops only. Adding COD-collected-this-week needs a separate query against `cash_collections` (no FK to dispatch_stops yet — see the Cash Collection v2 follow-up below). When picked up, the field name to use on `PersonalStats` is `weekCodCollectedCents: number | null`. Render line: "$X COD collected this week." appended below the stops line.
+- [ ] **Dependency map content authoring** — Darren content task. Until rows exist, `dependencyHits.countHitsForItems` returns 0 and the checklist offer never appears on the AVA card. The helper signature is ready; swap is one file.
+- [ ] **Profile-settings UI for the three new toggles** — columns are in the DB (013); the Profile screen still needs the three switches (checklist on/off, personality direct/personality, stats off/on). Pair with this session so Joey can flip his own stats opt-in instead of needing dashboard-side.
+
+---
+
 ## May 27, 2026 — AVA Phase 1 — Session 1 (branch `feature/ava-phase1`, commit `c43192c`)
 
 Schema (migrations 013/014/015) + Tier 1 header chip + placeholder drawer pushed to `feature/ava-phase1`. Branch must NOT be merged to `main` until all 9 Phase 1 components are in. Vercel auto-deploys this branch as a **preview**, not production.

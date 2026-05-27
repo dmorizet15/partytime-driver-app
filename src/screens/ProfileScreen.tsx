@@ -407,7 +407,7 @@ export default function ProfileScreen() {
       .then((s) => { if (!cancelled) setStats(s) })
       .catch((err) => {
         console.error('[personalStats]', err)
-        if (!cancelled) setStats({ totalStopsCompleted: 0, startDate: null, truckHistory: [] })
+        if (!cancelled) setStats({ totalStopsCompleted: 0, weekStopsCompleted: 0, startDate: null, truckHistory: [] })
       })
     return () => { cancelled = true }
   }, [user?.id])
