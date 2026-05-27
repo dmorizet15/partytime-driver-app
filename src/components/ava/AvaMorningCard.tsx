@@ -4,7 +4,13 @@ import { useEffect, useState } from 'react'
 import type { UserProfile } from '@/types/auth'
 import type { Stop }        from '@/types'
 import { fetchPersonalStats }       from '@/lib/personalStatsClient'
-import { countTentItems, countHitsForItems } from '@/lib/ava/dependencyHits'
+import {
+  countTentItems,
+  getAlwaysCarryItems,
+  getTriggeredItems,
+  type DependencyMapRow,
+} from '@/lib/ava/dependencyHits'
+import AvaChecklistSheet from '@/components/ava/AvaChecklistSheet'
 import { addressKey, fetchTodayNotesHitCount } from '@/lib/ava/stopNotesClient'
 import {
   getMorningMessage,
@@ -42,6 +48,8 @@ interface AvaMorningCardProps {
 interface CardSignals {
   weekStopsCompleted: number | null  // null while loading; 0 once resolved with no data
   notesHitCount:      number         // 0 default; updated after fetch
+  alwaysItems:        DependencyMapRow[]
+  triggeredItems:     DependencyMapRow[]
   loading:            boolean
 }
 
@@ -49,44 +57,62 @@ export default function AvaMorningCard({ profile, dayStops, todayKey }: AvaMorni
   const [signals, setSignals] = useState<CardSignals>({
     weekStopsCompleted: null,
     notesHitCount:      0,
+    alwaysItems:        [],
+    triggeredItems:     [],
     loading:            true,
   })
+  const [checklistOpen, setChecklistOpen] = useState(false)
 
-  // Fetch weekly stats (gated on opt-in) and today's notes-hit count in
-  // parallel. Both fail open — a flaky network just hides the corresponding
-  // sub-block; the card itself still renders if any trigger remains.
+  // Fetch weekly stats (gated on opt-in), today's notes-hit count, and the
+  // dependency-map rule sets in parallel. All fail open — a flaky network
+  // just hides the corresponding sub-block; the card itself still renders if
+  // any trigger remains.
   useEffect(() => {
     let cancelled = false
     const addressKeys = dayStops.map(addressKey).filter(Boolean)
+    const allItems    = dayStops.flatMap((s) => s.items ?? [])
 
     const statsPromise = profile.stats_enabled
       ? fetchPersonalStats(profile.id).then((s) => s.weekStopsCompleted).catch(() => 0)
       : Promise.resolve(0)
     const notesPromise = fetchTodayNotesHitCount(addressKeys).catch(() => 0)
+    const alwaysPromise    = profile.checklist_enabled
+      ? getAlwaysCarryItems().catch<DependencyMapRow[]>(() => [])
+      : Promise.resolve<DependencyMapRow[]>([])
+    const triggeredPromise = profile.checklist_enabled
+      ? getTriggeredItems(allItems).catch<DependencyMapRow[]>(() => [])
+      : Promise.resolve<DependencyMapRow[]>([])
 
-    Promise.all([statsPromise, notesPromise]).then(([weekStops, notesHits]) => {
-      if (cancelled) return
-      setSignals({
-        weekStopsCompleted: weekStops,
-        notesHitCount:      notesHits,
-        loading:            false,
-      })
-    })
+    Promise.all([statsPromise, notesPromise, alwaysPromise, triggeredPromise]).then(
+      ([weekStops, notesHits, alwaysItems, triggeredItems]) => {
+        if (cancelled) return
+        setSignals({
+          weekStopsCompleted: weekStops,
+          notesHitCount:      notesHits,
+          alwaysItems,
+          triggeredItems,
+          loading:            false,
+        })
+      }
+    )
 
     return () => { cancelled = true }
-  }, [profile.id, profile.stats_enabled, dayStops])
+  }, [profile.id, profile.stats_enabled, profile.checklist_enabled, dayStops])
 
   // Derive surface conditions (all sync, no awaits).
   const allItems = dayStops.flatMap((s) => s.items ?? [])
   const tentCount     = countTentItems(allItems)
-  const checklistHits = countHitsForItems(allItems)         // === 0 this session
+  const triggeredCount = new Set(signals.triggeredItems.map((r) => r.required_item)).size
+  const checklistHits  = signals.alwaysItems.length + triggeredCount
   const codCount      = dayStops.filter(
     (s) => s.stop_type === 'delivery' && COD_PAYMENT_STATES.has(s.payment_state ?? '')
   ).length
   const stopCount     = dayStops.length
 
   const checklistOffered = profile.checklist_enabled && checklistHits > 0
-  const showStats        = profile.stats_enabled && (signals.weekStopsCompleted ?? 0) > 0
+  // TEMP (Session 3 visual confirm): >= 0 so Darren can see his own card render.
+  // REVERT to > 0 before session close.
+  const showStats        = profile.stats_enabled && (signals.weekStopsCompleted ?? 0) >= 0
   const showNotesNudge   = signals.notesHitCount > 0
 
   // Trigger rule: render only when AVA has at least one thing to surface.
@@ -116,6 +142,7 @@ export default function AvaMorningCard({ profile, dayStops, todayKey }: AvaMorni
   )
 
   return (
+    <>
     <div style={{ padding: '12px 18px 0' }}>
       <section
         aria-label="AVA morning brief"
@@ -164,9 +191,9 @@ export default function AvaMorningCard({ profile, dayStops, todayKey }: AvaMorni
           </p>
         )}
 
-        {/* Checklist offer — conditional on dependency-map hits. Hidden this
-            session (hits always 0 until content seeded). Placeholder button
-            action — the real per-item flow lands Session 3. */}
+        {/* Checklist offer — conditional on dependency-map hits. Tap opens
+            the AvaChecklistSheet (always-carry + triggered manifest items).
+            Reminder only — never gates the Gold CTA. */}
         {checklistOffered && (
           <div style={{
             marginTop: 12,
@@ -183,7 +210,7 @@ export default function AvaMorningCard({ profile, dayStops, todayKey }: AvaMorni
             </p>
             <button
               type="button"
-              onClick={() => {/* Session 3 wiring */}}
+              onClick={() => setChecklistOpen(true)}
               style={{
                 marginTop: 10,
                 background: C.gold, color: C.ink,
@@ -237,6 +264,15 @@ export default function AvaMorningCard({ profile, dayStops, todayKey }: AvaMorni
         </div>
       </section>
     </div>
+
+    {checklistOpen && (
+      <AvaChecklistSheet
+        alwaysItems={signals.alwaysItems}
+        triggeredItems={signals.triggeredItems}
+        onClose={() => setChecklistOpen(false)}
+      />
+    )}
+    </>
   )
 }
 

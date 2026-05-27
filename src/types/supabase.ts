@@ -328,6 +328,42 @@ export type Database = {
           },
         ]
       }
+      dependency_map: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          notes: string | null
+          quantity_threshold: number
+          required_item: string
+          required_quantity: number
+          trigger_type: string
+          trigger_value: string | null
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          notes?: string | null
+          quantity_threshold?: number
+          required_item: string
+          required_quantity?: number
+          trigger_type: string
+          trigger_value?: string | null
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          notes?: string | null
+          quantity_threshold?: number
+          required_item?: string
+          required_quantity?: number
+          trigger_type?: string
+          trigger_value?: string | null
+        }
+        Relationships: []
+      }
       dispatch_stop_dispatcher_state: {
         Row: {
           dispatcher_seen_at: string | null
