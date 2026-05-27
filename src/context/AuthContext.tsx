@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { getUserRole } from '../lib/auth'
+import { flushPendingStopNotes } from '../lib/ava/stopNotesClient'
 import type { Role, UserProfile } from '../types/auth'
 
 interface AuthContextValue {
@@ -52,6 +53,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (session?.user) {
             const p = await getUserRole(session.user.id, session.access_token)
             if (!cancelled) setProfile(p)
+            // AVA Remembers — drain any notes queued while offline. Fire-and-
+            // forget; failures stay in the queue for the next pass.
+            if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
+              void flushPendingStopNotes()
+            }
           } else {
             setProfile(null)
           }

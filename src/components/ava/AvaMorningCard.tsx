@@ -11,7 +11,12 @@ import {
   type DependencyMapRow,
 } from '@/lib/ava/dependencyHits'
 import AvaChecklistSheet from '@/components/ava/AvaChecklistSheet'
-import { addressKey, fetchTodayNotesHitCount } from '@/lib/ava/stopNotesClient'
+import AvaNotesReviewSheet from '@/components/ava/AvaNotesReviewSheet'
+import {
+  addressKey,
+  fetchLatestNotesByAddress,
+  type StopNoteRow,
+} from '@/lib/ava/stopNotesClient'
 import {
   getMorningMessage,
   type PersonalityPreference,
@@ -47,7 +52,7 @@ interface AvaMorningCardProps {
 
 interface CardSignals {
   weekStopsCompleted: number | null  // null while loading; 0 once resolved with no data
-  notesHitCount:      number         // 0 default; updated after fetch
+  notesByAddress:     Map<string, StopNoteRow>
   alwaysItems:        DependencyMapRow[]
   triggeredItems:     DependencyMapRow[]
   loading:            boolean
@@ -56,17 +61,18 @@ interface CardSignals {
 export default function AvaMorningCard({ profile, dayStops, todayKey }: AvaMorningCardProps) {
   const [signals, setSignals] = useState<CardSignals>({
     weekStopsCompleted: null,
-    notesHitCount:      0,
+    notesByAddress:     new Map(),
     alwaysItems:        [],
     triggeredItems:     [],
     loading:            true,
   })
-  const [checklistOpen, setChecklistOpen] = useState(false)
+  const [checklistOpen,   setChecklistOpen]   = useState(false)
+  const [notesReviewOpen, setNotesReviewOpen] = useState(false)
 
-  // Fetch weekly stats (gated on opt-in), today's notes-hit count, and the
-  // dependency-map rule sets in parallel. All fail open — a flaky network
-  // just hides the corresponding sub-block; the card itself still renders if
-  // any trigger remains.
+  // Fetch weekly stats (gated on opt-in), today's stop-note previews, and
+  // the dependency-map rule sets in parallel. All fail open — a flaky
+  // network just hides the corresponding sub-block; the card itself still
+  // renders if any trigger remains.
   useEffect(() => {
     let cancelled = false
     const addressKeys = dayStops.map(addressKey).filter(Boolean)
@@ -75,7 +81,8 @@ export default function AvaMorningCard({ profile, dayStops, todayKey }: AvaMorni
     const statsPromise = profile.stats_enabled
       ? fetchPersonalStats(profile.id).then((s) => s.weekStopsCompleted).catch(() => 0)
       : Promise.resolve(0)
-    const notesPromise = fetchTodayNotesHitCount(addressKeys).catch(() => 0)
+    const notesPromise = fetchLatestNotesByAddress(addressKeys)
+      .catch<Map<string, StopNoteRow>>(() => new Map())
     const alwaysPromise    = profile.checklist_enabled
       ? getAlwaysCarryItems().catch<DependencyMapRow[]>(() => [])
       : Promise.resolve<DependencyMapRow[]>([])
@@ -84,11 +91,11 @@ export default function AvaMorningCard({ profile, dayStops, todayKey }: AvaMorni
       : Promise.resolve<DependencyMapRow[]>([])
 
     Promise.all([statsPromise, notesPromise, alwaysPromise, triggeredPromise]).then(
-      ([weekStops, notesHits, alwaysItems, triggeredItems]) => {
+      ([weekStops, notesByAddress, alwaysItems, triggeredItems]) => {
         if (cancelled) return
         setSignals({
           weekStopsCompleted: weekStops,
-          notesHitCount:      notesHits,
+          notesByAddress,
           alwaysItems,
           triggeredItems,
           loading:            false,
@@ -111,7 +118,8 @@ export default function AvaMorningCard({ profile, dayStops, todayKey }: AvaMorni
 
   const checklistOffered = profile.checklist_enabled && checklistHits > 0
   const showStats        = profile.stats_enabled && (signals.weekStopsCompleted ?? 0) > 0
-  const showNotesNudge   = signals.notesHitCount > 0
+  const notesCount       = signals.notesByAddress.size
+  const showNotesNudge   = notesCount > 0
 
   // Trigger rule: render only when AVA has at least one thing to surface.
   // While the network is in flight, defer the gate to avoid a render+unmount
@@ -176,17 +184,40 @@ export default function AvaMorningCard({ profile, dayStops, todayKey }: AvaMorni
           {message}
         </p>
 
-        {/* Notes nudge — surfaces when today's stops have prior notes. Tap
-            action lands in Session 4 (AVA Remembers entry UI on stop detail).
-            For now it's a passive line. */}
+        {/* Notes nudge — AVA Remembers surface on the morning card. Tap the
+            Gold CTA to open the review sheet (per-address preview, deep-link
+            to each stop). Renders only when ≥1 stop has prior notes. */}
         {showNotesNudge && (
-          <p style={{
-            marginTop: 8, marginBottom: 0,
-            fontSize: 13, lineHeight: 1.4, color: C.muted,
+          <div style={{
+            marginTop: 12,
+            padding: '12px 14px',
+            background: 'rgba(255,184,0,0.06)',
+            border: '1px solid rgba(255,184,0,0.20)',
+            borderRadius: 12,
           }}>
-            Notes from prior visits at {signals.notesHitCount}{' '}
-            {signals.notesHitCount === 1 ? 'stop' : 'stops'} today.
-          </p>
+            <p style={{
+              margin: 0, fontSize: 13.5, lineHeight: 1.4, color: C.text,
+            }}>
+              I have notes on <strong>{notesCount}</strong>{' '}
+              {notesCount === 1 ? 'of your stops' : 'of your stops'} today.
+              Tap to review before you head out.
+            </p>
+            <button
+              type="button"
+              onClick={() => setNotesReviewOpen(true)}
+              style={{
+                marginTop: 10,
+                background: C.gold, color: C.ink,
+                border: 0, borderRadius: 999,
+                padding: '8px 16px', cursor: 'pointer',
+                fontSize: 12.5, fontWeight: 800,
+                fontFamily: FONT_DISPLAY,
+                letterSpacing: '0.02em',
+              }}
+            >
+              Review stop notes →
+            </button>
+          </div>
         )}
 
         {/* Checklist offer — conditional on dependency-map hits. Tap opens
@@ -268,6 +299,14 @@ export default function AvaMorningCard({ profile, dayStops, todayKey }: AvaMorni
         alwaysItems={signals.alwaysItems}
         triggeredItems={signals.triggeredItems}
         onClose={() => setChecklistOpen(false)}
+      />
+    )}
+
+    {notesReviewOpen && (
+      <AvaNotesReviewSheet
+        dayStops={dayStops}
+        notesByAddress={signals.notesByAddress}
+        onClose={() => setNotesReviewOpen(false)}
       />
     )}
     </>

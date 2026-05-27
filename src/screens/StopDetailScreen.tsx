@@ -25,6 +25,10 @@ import {
   isHardConstraintTier,
 } from '@/lib/stopConstraints'
 import { reportIssueSuccessKey } from '@/screens/workOrders/ReportIssueScreen'
+import { useAuthContext } from '@/context/AuthContext'
+import { normalizeAddressKey } from '@/lib/ava/addressKey'
+import { fetchTodayNotesHitCount } from '@/lib/ava/stopNotesClient'
+import AvaNoteSheet from '@/components/ava/AvaNoteSheet'
 
 // sessionStorage key — driver chose to proceed despite the pickup window
 // not yet being open. Set by the standby card's dismiss button AND by the
@@ -306,6 +310,29 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     const t = setTimeout(() => setReportIssueSuccess(null), 6000)
     return () => clearTimeout(t)
   }, [reportIssueSuccess])
+
+  // AVA Remembers — prior notes count for this address. Tier 3 pill renders
+  // when > 0; the entry surface below the action buttons swaps copy at the
+  // same threshold. `noteRefreshKey` re-runs the count fetch after a save so
+  // the surface updates without a page reload.
+  const { user: authUser } = useAuthContext()
+  const [avaNoteOpen,     setAvaNoteOpen]     = useState(false)
+  const [avaNoteCount,    setAvaNoteCount]    = useState(0)
+  const [avaNoteRefresh,  setAvaNoteRefresh]  = useState(0)
+  const avaAddressKey = stop?.address_line_1
+    ? normalizeAddressKey(stop.address_line_1)
+    : ''
+  useEffect(() => {
+    if (!avaAddressKey) return
+    let cancelled = false
+    fetchTodayNotesHitCount([avaAddressKey]).then((distinct) => {
+      if (cancelled) return
+      // Bucket of 1 — distinct returns 0 or 1 since we passed a single key.
+      // We just need to know "has any" for the surface gate.
+      setAvaNoteCount(distinct)
+    })
+    return () => { cancelled = true }
+  }, [avaAddressKey, avaNoteRefresh])
 
   useEffect(() => {
     if (stop) logEvent('STOP_VIEWED', routeId, stopId, stop.order_id)
@@ -1257,6 +1284,53 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
           </div>
         )}
 
+        {/* AVA Remembers — Tier 3 presence. Only renders when there's a
+            prior note for this address. Depot stops never surface notes. */}
+        {!isDepotStop && avaNoteCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setAvaNoteOpen(true)}
+            aria-label="AVA knows this stop — open notes"
+            style={{
+              marginTop: 10,
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+              background: 'rgba(255,184,0,0.14)',
+              color: '#FFB800',
+              border: '1px solid rgba(255,184,0,0.45)',
+              borderLeft: '3px solid #FFB800',
+              borderRadius: 10,
+              padding: '6px 12px 6px 10px',
+              fontSize: 12, fontWeight: 800, letterSpacing: '0.06em',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >
+            <span
+              aria-hidden="true"
+              style={{
+                width: 18, height: 18, borderRadius: 4,
+                background: C.blue,
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                gap: 1.5, flexShrink: 0,
+              }}
+            >
+              {[0, 1, 2, 3, 4].map((i) => (
+                <span
+                  key={i}
+                  className="ava-wave-bar"
+                  style={{
+                    width: 1.5, height: 9,
+                    background: '#fff', borderRadius: 1,
+                    animationDelay: `${i * 120}ms`,
+                  }}
+                />
+              ))}
+            </span>
+            AVA KNOWS THIS STOP
+            <span aria-hidden="true" style={{ marginLeft: 2 }}>›</span>
+          </button>
+        )}
+
       </div>
 
       {/* ── SCROLL BODY ──────────────────────────────────────────────────── */}
@@ -2052,6 +2126,59 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
                     <span style={{ fontSize: 16, lineHeight: 1, opacity: 0.85 }}>›</span>
                   </button>
                 )}
+
+                {/* AVA Remembers — entry surface. Faint link when no prior
+                    notes; amber button when a note exists (mirrors the Tier 3
+                    presence pill at the top of the hero). Tap opens the
+                    AvaNoteSheet (read + write). Hidden on depot stops. */}
+                {!isDepotStop && (
+                  avaNoteCount > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => setAvaNoteOpen(true)}
+                      style={{
+                        marginTop: 10,
+                        width: '100%',
+                        background: 'rgba(255,184,0,0.10)',
+                        border: '1px solid rgba(255,184,0,0.45)',
+                        borderRadius: 12,
+                        padding: '10px 14px',
+                        cursor: 'pointer',
+                        fontFamily: 'inherit',
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        fontSize: 13, fontWeight: 700, color: C.gold,
+                        letterSpacing: '0.01em',
+                      }}
+                      aria-label="AVA has a note about this stop"
+                    >
+                      <span>AVA has a note about this stop</span>
+                      <span style={{ fontSize: 16, lineHeight: 1, opacity: 0.85 }}>›</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setAvaNoteOpen(true)}
+                      style={{
+                        marginTop: 10,
+                        width: '100%',
+                        background: 'transparent',
+                        border: '1px dashed rgba(255,255,255,0.18)',
+                        borderRadius: 12,
+                        padding: '10px 14px',
+                        cursor: 'pointer',
+                        fontFamily: 'inherit',
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        fontSize: 12.5, fontWeight: 600,
+                        color: 'rgba(255,255,255,0.55)',
+                        letterSpacing: '0.01em',
+                      }}
+                      aria-label="Leave a note for the next driver"
+                    >
+                      <span>Leave a note for the next driver</span>
+                      <span style={{ fontSize: 14, lineHeight: 1, opacity: 0.7 }}>›</span>
+                    </button>
+                  )
+                )}
                 </>
                 )}
               </div>
@@ -2439,6 +2566,17 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
             </button>
           </div>
         </div>
+      )}
+
+      {avaNoteOpen && stop && authUser && (
+        <AvaNoteSheet
+          stopId={stopId}
+          addressKey={avaAddressKey}
+          rawAddress={stop.address_line_1}
+          authorId={authUser.id}
+          onClose={() => setAvaNoteOpen(false)}
+          onSaved={() => setAvaNoteRefresh((n) => n + 1)}
+        />
       )}
     </div>
   )
