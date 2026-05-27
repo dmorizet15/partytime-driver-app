@@ -110,9 +110,7 @@ export default function AvaMorningCard({ profile, dayStops, todayKey }: AvaMorni
   const stopCount     = dayStops.length
 
   const checklistOffered = profile.checklist_enabled && checklistHits > 0
-  // TEMP (Session 3 visual confirm): >= 0 so Darren can see his own card render.
-  // REVERT to > 0 before session close.
-  const showStats        = profile.stats_enabled && (signals.weekStopsCompleted ?? 0) >= 0
+  const showStats        = profile.stats_enabled && (signals.weekStopsCompleted ?? 0) > 0
   const showNotesNudge   = signals.notesHitCount > 0
 
   // Trigger rule: render only when AVA has at least one thing to surface.
