@@ -4,6 +4,18 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-05-27 — Auto-logout verification (no code shipped)
+
+**Scope.** Darren re-issued the Auto-Logout two-layer brief. CLAUDE.md already documented this as shipped on 2026-05-24 (commit `76bb769`). Read the three implicated files end-to-end against the spec, confirmed every requirement is met, no code changes needed.
+
+- **Layer 1 — `src/screens/StopDetailScreen.tsx:408-430`.** `welcomeBackAt` is set inside the warehouse_return geofence's `onArrive` after `/api/complete-stop` returns OK. A `useEffect` sets a 6000 ms timeout; only on the trailing edge it clears `localStorage.ptr_session_date`, awaits `signOut()`, and `router.replace('/login')`. Banner runs in full.
+- **Layer 2 stamp — `src/screens/LoginScreen.tsx:132-136`.** After successful `signIn`, before `router.push('/')`, writes `localStorage.ptr_session_date = new Date().toISOString().split('T')[0]`.
+- **Layer 2 gate — `src/context/AuthContext.tsx:37-48`.** Inside `onAuthStateChange`, on `INITIAL_SESSION` only (SIGNED_IN intentionally skipped to avoid racing the LoginScreen stamp): reads `ptr_session_date`, compares against today's `YYYY-MM-DD`, on mismatch removes the key → `supabase.auth.signOut()` → `window.location.replace('/login')` → returns before `setUser`. `loading` stays true until redirect, no consumer ever sees the stale session.
+
+No commits. No file modifications other than this entry.
+
+---
+
 ## 2026-05-26 — Work Orders & Field Issues (driver app, Session 2)
 
 **Scope.** Driver-app UI for the dashboard's Session 1 work-orders backend (`4e04ac9` — `field_work_orders` Migration 073, `profiles.work_order_technician`, POST/GET/PATCH `/api/work-orders`, `notifyNewFieldWorkOrder` email). Three driver-facing surfaces: a stop-detail "Report an issue" link, an ungated "Report an Issue" Tools Hub card, and a technician-gated "Work Orders" Tools Hub card → list → detail. All four flows share one `ReportIssueForm` component.
