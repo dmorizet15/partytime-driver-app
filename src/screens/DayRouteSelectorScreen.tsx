@@ -10,6 +10,7 @@ import BottomNav                        from '@/components/BottomNav'
 import PostTripDefectCard               from '@/components/PostTripDefectCard'
 import StopWindowBadge                  from '@/components/StopWindowBadge'
 import FleetAlertCard                   from '@/components/fleet/FleetAlertCard'
+import AvaChip                          from '@/components/AvaChip'
 
 // ─── Direction 03 (Editorial) tokens ──────────────────────────────────────────
 const C = {
@@ -375,18 +376,21 @@ export default function DayRouteSelectorScreen() {
           }}>
             {formatLiveEyebrow(now)}
           </div>
-          <div style={{
-            width: 32, height: 32, borderRadius: 9,
-            background: C.paper,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            overflow: 'hidden', flexShrink: 0,
-          }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/ptr-mark.png"
-              alt="PartyTime Rentals"
-              style={{ width: '74%', height: '74%', objectFit: 'contain' }}
-            />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{
+              width: 32, height: 32, borderRadius: 9,
+              background: C.paper,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              overflow: 'hidden', flexShrink: 0,
+            }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/ptr-mark.png"
+                alt="PartyTime Rentals"
+                style={{ width: '74%', height: '74%', objectFit: 'contain' }}
+              />
+            </div>
+            <AvaChip/>
           </div>
         </div>
 

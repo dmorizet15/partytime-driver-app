@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase'
 import type { Role } from '@/types/auth'
 import Image from 'next/image'
 import BottomNav from '@/components/BottomNav'
+import AvaChip from '@/components/AvaChip'
 import UploadComplianceDocModal from './UploadComplianceDocModal'
 import {
   DOCUMENT_LABELS,
@@ -529,7 +530,10 @@ export default function ProfileScreen() {
           >
             <BackIcon/>
           </button>
-          <BrandMark/>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <BrandMark/>
+            <AvaChip/>
+          </div>
         </div>
 
         <div style={{

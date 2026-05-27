@@ -88,6 +88,94 @@ export type Database = {
         }
         Relationships: []
       }
+      ava_conversations: {
+        Row: {
+          answer: string | null
+          confidence: string | null
+          context_id: string | null
+          created_at: string
+          driver_id: string
+          helpful: boolean | null
+          id: string
+          needs_review: boolean
+          question: string
+          surface: string
+        }
+        Insert: {
+          answer?: string | null
+          confidence?: string | null
+          context_id?: string | null
+          created_at?: string
+          driver_id: string
+          helpful?: boolean | null
+          id?: string
+          needs_review?: boolean
+          question: string
+          surface: string
+        }
+        Update: {
+          answer?: string | null
+          confidence?: string | null
+          context_id?: string | null
+          created_at?: string
+          driver_id?: string
+          helpful?: boolean | null
+          id?: string
+          needs_review?: boolean
+          question?: string
+          surface?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ava_conversations_driver_id_fkey"
+            columns: ["driver_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ava_stop_notes: {
+        Row: {
+          address_key: string
+          author_id: string | null
+          created_at: string
+          id: string
+          note: string
+          photo_urls: string[]
+          raw_address: string | null
+          updated_at: string
+        }
+        Insert: {
+          address_key: string
+          author_id?: string | null
+          created_at?: string
+          id?: string
+          note: string
+          photo_urls?: string[]
+          raw_address?: string | null
+          updated_at?: string
+        }
+        Update: {
+          address_key?: string
+          author_id?: string | null
+          created_at?: string
+          id?: string
+          note?: string
+          photo_urls?: string[]
+          raw_address?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ava_stop_notes_author_id_fkey"
+            columns: ["author_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       carrier_compliance: {
         Row: {
           created_at: string
@@ -1060,6 +1148,7 @@ export type Database = {
         Row: {
           archived_at: string | null
           archived_by_user_id: string | null
+          checklist_enabled: boolean
           created_at: string
           display_name: string | null
           fleet_maintenance_access: boolean
@@ -1067,14 +1156,17 @@ export type Database = {
           invited_at: string | null
           invited_by_user_id: string | null
           mobile_number: string | null
+          personality_preference: string
           receives_fleet_notifications: boolean
           roles: Database["public"]["Enums"]["user_role"][]
+          stats_enabled: boolean
           status: string
           work_order_technician: boolean
         }
         Insert: {
           archived_at?: string | null
           archived_by_user_id?: string | null
+          checklist_enabled?: boolean
           created_at?: string
           display_name?: string | null
           fleet_maintenance_access?: boolean
@@ -1082,14 +1174,17 @@ export type Database = {
           invited_at?: string | null
           invited_by_user_id?: string | null
           mobile_number?: string | null
+          personality_preference?: string
           receives_fleet_notifications?: boolean
           roles?: Database["public"]["Enums"]["user_role"][]
+          stats_enabled?: boolean
           status?: string
           work_order_technician?: boolean
         }
         Update: {
           archived_at?: string | null
           archived_by_user_id?: string | null
+          checklist_enabled?: boolean
           created_at?: string
           display_name?: string | null
           fleet_maintenance_access?: boolean
@@ -1097,8 +1192,10 @@ export type Database = {
           invited_at?: string | null
           invited_by_user_id?: string | null
           mobile_number?: string | null
+          personality_preference?: string
           receives_fleet_notifications?: boolean
           roles?: Database["public"]["Enums"]["user_role"][]
+          stats_enabled?: boolean
           status?: string
           work_order_technician?: boolean
         }

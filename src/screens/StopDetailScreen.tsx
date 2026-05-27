@@ -13,6 +13,7 @@ import type { StopSmsStatus } from '@/services/EtaSmsService'
 import { signOut } from '@/lib/auth'
 import BottomNav from '@/components/BottomNav'
 import StopWeatherModule from '@/components/weather/StopWeatherModule'
+import AvaChip from '@/components/AvaChip'
 import { HAS_STOP_LEVEL_BADGES } from '@/lib/weather/thresholds'
 import { formatEta } from '@/lib/formatEta'
 import { useArrivalGeofence } from '@/hooks/useArrivalGeofence'
@@ -1144,21 +1145,24 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
           >
             <BackIcon/>
           </button>
-          {/* Distance pill — Phase-2 stub (no GPS this pass) */}
-          <div
-            aria-label="Distance to stop"
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: 8,
-              background: C.ink, color: '#fff',
-              padding: '7px 13px', borderRadius: 999,
-              fontSize: 12, fontWeight: 800,
-              fontVariantNumeric: 'tabular-nums',
-            }}
-          >
-            <span style={{
-              width: 7, height: 7, borderRadius: '50%', background: C.gold,
-            }}/>
-            — mi
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {/* Distance pill — Phase-2 stub (no GPS this pass) */}
+            <div
+              aria-label="Distance to stop"
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 8,
+                background: C.ink, color: '#fff',
+                padding: '7px 13px', borderRadius: 999,
+                fontSize: 12, fontWeight: 800,
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              <span style={{
+                width: 7, height: 7, borderRadius: '50%', background: C.gold,
+              }}/>
+              — mi
+            </div>
+            <AvaChip/>
           </div>
         </div>
 

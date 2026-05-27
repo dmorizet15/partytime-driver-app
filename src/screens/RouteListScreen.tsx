@@ -10,6 +10,7 @@ import Image from 'next/image'
 import BottomNav from '@/components/BottomNav'
 import WeekScheduleView from '@/components/WeekScheduleView'
 import StopWindowBadge from '@/components/StopWindowBadge'
+import AvaChip from '@/components/AvaChip'
 import { formatEta } from '@/lib/formatEta'
 
 // Persisted per session — sessionStorage clears on cold app start, so the
@@ -280,7 +281,10 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
           >
             <BackIcon/>
           </button>
-          <BrandMark/>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <BrandMark/>
+            <AvaChip/>
+          </div>
         </div>
 
         {/* Eyebrow */}

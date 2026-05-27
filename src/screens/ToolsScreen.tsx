@@ -6,6 +6,7 @@ import BottomNav from '@/components/BottomNav'
 import { useOpenWorkOrders } from '@/hooks/fleet/useOpenWorkOrders'
 import { useOpenWorkOrdersCount } from '@/hooks/workOrders/useOpenWorkOrdersCount'
 import { WrenchIcon } from '@/components/fleet/fleetIcons'
+import AvaChip from '@/components/AvaChip'
 
 // ─── PTR design tokens — dark hub palette ───────────────────────────────────
 const C = {
@@ -556,18 +557,21 @@ export default function ToolsScreen() {
           }}>
             Driver tools
           </div>
-          <div style={{
-            width: 32, height: 32, borderRadius: 9,
-            background: C.paper,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            overflow: 'hidden', flexShrink: 0,
-          }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/ptr-mark.png"
-              alt="PartyTime Rentals"
-              style={{ width: '74%', height: '74%', objectFit: 'contain' }}
-            />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{
+              width: 32, height: 32, borderRadius: 9,
+              background: C.paper,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              overflow: 'hidden', flexShrink: 0,
+            }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/ptr-mark.png"
+                alt="PartyTime Rentals"
+                style={{ width: '74%', height: '74%', objectFit: 'contain' }}
+              />
+            </div>
+            <AvaChip/>
           </div>
         </div>
 
