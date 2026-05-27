@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { UserProfile } from '@/types/auth'
 import type { Stop }        from '@/types'
 import { fetchPersonalStats }       from '@/lib/personalStatsClient'
@@ -21,6 +21,7 @@ import {
   getMorningMessage,
   type PersonalityPreference,
 } from '@/lib/ava/getMorningMessage'
+import { speak, stopSpeaking } from '@/lib/ava/elevenLabs'
 
 // AVA Tier 2 morning brief card — Home screen only, conditional render.
 // Renders when AVA has at least one actionable signal:
@@ -68,6 +69,13 @@ export default function AvaMorningCard({ profile, dayStops, todayKey }: AvaMorni
   })
   const [checklistOpen,   setChecklistOpen]   = useState(false)
   const [notesReviewOpen, setNotesReviewOpen] = useState(false)
+  // Voice/text mode — session-only, defaults to voice. Resets to voice
+  // on every fresh card mount; no persistence to DB this session.
+  const [voiceMode,   setVoiceMode]   = useState(true)
+  const [isSpeaking,  setIsSpeaking]  = useState(false)
+  // Guards re-speak: AVA reads the morning message at most once per card mount,
+  // even if the toggle is flipped voice→text→voice within the same view.
+  const hasSpokenRef = useRef(false)
 
   // Fetch weekly stats (gated on opt-in), today's stop-note previews, and
   // the dependency-map rule sets in parallel. All fail open — a flaky
@@ -121,16 +129,6 @@ export default function AvaMorningCard({ profile, dayStops, todayKey }: AvaMorni
   const notesCount       = signals.notesByAddress.size
   const showNotesNudge   = notesCount > 0
 
-  // Trigger rule: render only when AVA has at least one thing to surface.
-  // While the network is in flight, defer the gate to avoid a render+unmount
-  // flicker for opted-in drivers whose stats haven't arrived yet.
-  if (signals.loading && (profile.stats_enabled || true /* notes always queried */)) {
-    return null
-  }
-  if (!checklistOffered && !showStats && !showNotesNudge) {
-    return null
-  }
-
   const preference: PersonalityPreference =
     profile.personality_preference === 'personality' ? 'personality' : 'direct'
 
@@ -146,6 +144,51 @@ export default function AvaMorningCard({ profile, dayStops, todayKey }: AvaMorni
     profile.id,
     todayKey,
   )
+
+  // Auto-speak the morning message on first paint when voice mode is on.
+  // Guard with hasSpokenRef so toggling voice→text→voice within the same
+  // mount doesn't re-trigger. Cleanup stops any in-progress audio when the
+  // card unmounts or the toggle flips to text mid-playback.
+  const shouldRender =
+    !signals.loading && (checklistOffered || showStats || showNotesNudge)
+
+  useEffect(() => {
+    if (!shouldRender) return
+    if (!voiceMode) return
+    if (hasSpokenRef.current) return
+    hasSpokenRef.current = true
+
+    let cancelled = false
+    setIsSpeaking(true)
+    speak(message).finally(() => {
+      if (!cancelled) setIsSpeaking(false)
+    })
+
+    return () => {
+      cancelled = true
+      stopSpeaking()
+    }
+  }, [shouldRender, voiceMode, message])
+
+  // Trigger rule: render only when AVA has at least one thing to surface.
+  // While the network is in flight, defer the gate to avoid a render+unmount
+  // flicker for opted-in drivers whose stats haven't arrived yet.
+  if (signals.loading && (profile.stats_enabled || true /* notes always queried */)) {
+    return null
+  }
+  if (!shouldRender) {
+    return null
+  }
+
+  const handleToggle = (next: boolean) => {
+    if (next === voiceMode) return
+    // Switching away from voice mid-playback → cancel speech immediately.
+    if (voiceMode && !next) {
+      stopSpeaking()
+      setIsSpeaking(false)
+    }
+    setVoiceMode(next)
+  }
 
   return (
     <>
@@ -183,6 +226,34 @@ export default function AvaMorningCard({ profile, dayStops, todayKey }: AvaMorni
         }}>
           {message}
         </p>
+
+        {/* Speaking indicator — small pulsing waveform + label while TTS
+            audio is in flight. Disappears on speak completion or stopSpeaking(). */}
+        {isSpeaking && (
+          <div style={{
+            marginTop: 8,
+            display: 'flex', alignItems: 'center', gap: 6,
+            color: C.muted, fontSize: 12, fontWeight: 600,
+            letterSpacing: '0.02em',
+          }}>
+            <span aria-hidden="true" style={{
+              display: 'inline-flex', alignItems: 'center', gap: 1.5, height: 12,
+            }}>
+              {[0, 1, 2, 3, 4].map((i) => (
+                <span
+                  key={i}
+                  className="ava-wave-bar"
+                  style={{
+                    width: 1.5, height: 8,
+                    background: C.muted, borderRadius: 1,
+                    animationDelay: `${i * 120}ms`,
+                  }}
+                />
+              ))}
+            </span>
+            <span>AVA is speaking…</span>
+          </div>
+        )}
 
         {/* Notes nudge — AVA Remembers surface on the morning card. Tap the
             Gold CTA to open the review sheet (per-address preview, deep-link
@@ -271,25 +342,56 @@ export default function AvaMorningCard({ profile, dayStops, todayKey }: AvaMorni
           </>
         )}
 
-        {/* Voice/Text toggle — non-functional this session. ElevenLabs wiring
-            + real toggle behavior lands Session 5. */}
+        {/* Voice/Text toggle — session-only state. Default voice; tap Text to
+            silence TTS (cancels any in-progress audio). Switching back to
+            Voice does NOT re-speak — the hasSpokenRef guard ensures auto-
+            speak only fires once per card mount. */}
         <div style={{
           marginTop: 12,
           display: 'flex', justifyContent: 'flex-end',
         }}>
-          <span
-            aria-hidden="true"
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-              padding: '4px 10px',
-              border: `1px solid ${C.border}`,
-              borderRadius: 999,
-              fontSize: 11, color: C.muted, fontWeight: 600,
-              letterSpacing: '0.04em',
-            }}
-          >
-            🎙 Voice · Text
-          </span>
+          <div style={{
+            display: 'inline-flex', alignItems: 'center',
+            border: `1px solid ${C.border}`,
+            borderRadius: 999,
+            padding: 2,
+            background: 'rgba(255,255,255,0.02)',
+          }}>
+            <button
+              type="button"
+              onClick={() => handleToggle(true)}
+              aria-pressed={voiceMode}
+              style={{
+                background: voiceMode ? C.gold : 'transparent',
+                color: voiceMode ? C.ink : C.muted,
+                border: 0, cursor: 'pointer',
+                padding: '4px 12px', borderRadius: 999,
+                fontSize: 11, fontWeight: 800,
+                letterSpacing: '0.04em',
+                fontFamily: FONT_DISPLAY,
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+              }}
+            >
+              <span aria-hidden="true">🎙</span>
+              VOICE
+            </button>
+            <button
+              type="button"
+              onClick={() => handleToggle(false)}
+              aria-pressed={!voiceMode}
+              style={{
+                background: !voiceMode ? C.gold : 'transparent',
+                color: !voiceMode ? C.ink : C.muted,
+                border: 0, cursor: 'pointer',
+                padding: '4px 12px', borderRadius: 999,
+                fontSize: 11, fontWeight: 800,
+                letterSpacing: '0.04em',
+                fontFamily: FONT_DISPLAY,
+              }}
+            >
+              TEXT
+            </button>
+          </div>
         </div>
       </section>
     </div>
