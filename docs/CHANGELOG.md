@@ -4,6 +4,84 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-05-27 — AVA Phase 1 — Bug Fix Pass (pre-merge) — branch `feature/ava-phase1` — commit `4ddcadb`
+
+**Scope.** Three bug fixes surfaced by the Session 5 preview deploy. No new features, no migrations.
+
+### Bug 1 — Stop Detail AVA note entry missing
+
+**Root cause.** The dashed "Leave a note for the next driver" link was nested inside the action-card branch (`!isCompleted` → `!isOnStandby` → `!isWarehouseReturn` → `!isWarehouse` → `!isDepotStop`). On completed stops the Delivered card replaced the action card; on standby stops the standby card replaced it; in both cases the note entry was unreachable. The Tier 3 hero pill (separate surface) was unaffected, but the user reported both missing because no notes could be authored to begin with.
+
+**Fix.** Moved the dashed-link / amber-button block out of the action-card fragment to a stop-level sibling positioned AFTER the manifest. Gate is now just `!isDepotStop`. Renders on every non-depot stop regardless of completion / standby / report-issue state. Tier 3 hero pill stays in place — both surfaces share `setAvaNoteOpen` and `avaNoteCount`. Colors retuned for the light/paper background outside the action card (border `rgba(10,11,20,0.20)`, text `C.muted` instead of dark-card variants).
+
+### Bug 2 — Home blank quiet-state after route delete+recreate
+
+**Root cause (two compounding).** (a) `AppStateContext.loadDay` short-circuits when `state.loadedDate === date && !state.error`. DayRouteSelectorScreen's soft `loadDay(today)` mount call never refetched after a dashboard-side route delete+recreate — `state.routes` still held the deleted Route A. `primaryRouteId` was stale → `useInspectionStatus` queried Route A's old inspection (rows survive route delete) → `inspected = true` → quiet state hid everything. (b) Even after `routeId` eventually changes, `useInspectionStatus`'s `useState<inspection>` was never reset — the previous route's inspection lingered while the new fetch was in flight, causing the "flash then collapse" pattern.
+
+**Fix (a).** Home now force-refreshes on mount via `loadDay(today, true)`, gated by `initialLoadRef` so the loadDay-identity churn from its own useCallback deps (state.loadedDate) doesn't double-fetch within a single mount. **Fix (b).** `useInspectionStatus` now calls `setInspection(null)` at the top of every effect run, so any routeId/truckId change clears the prior route's inspection before the new fetch resolves.
+
+### Bug 3 — iOS Safari blocked ElevenLabs on first Home mount
+
+**Root cause.** `AudioContext` starts in `'suspended'` state until a user gesture in the same task. The Session 5 auto-speak `useEffect` fired on card mount (not a gesture) → `ctx.resume()` failed silently → speak() rejected → fell through to the robotic WebSpeech synth. Result: drivers heard the brief on first load via WebSpeech, not ElevenLabs.
+
+**Fix (Option A — recommended).** Removed the auto-speak useEffect (and the `hasSpokenRef` guard it needed). The card now renders a "▶ HEAR YOUR MORNING BRIEF" gold-pill tap button below the message — visible only when `voiceMode === true && !isSpeaking`. Driver's tap fires `speak(message)` under a real user gesture → ElevenLabs unlocks cleanly. While `isSpeaking`, the button hides and the existing "AVA is speaking…" mini-waveform indicator shows. A separate cleanup `useEffect(() => () => stopSpeaking(), [])` still cancels in-flight audio on unmount. A `playTokenRef` invalidates stale `finally()` callbacks when the user double-taps or toggles to text mid-playback.
+
+### Files
+
+```
+src/screens/StopDetailScreen.tsx       — relocate AVA note entry block from action card to post-manifest
+src/screens/DayRouteSelectorScreen.tsx — ref-gated force-refresh on Home mount
+src/hooks/useInspectionStatus.ts       — reset inspection state on routeId change
+src/components/ava/AvaMorningCard.tsx  — replace auto-speak with manual play button + token-guarded handler
+```
+
+### NEXT
+
+Smoke-test the preview deploy (see `tasks/todo.md` for the 5 loops). With these three bugs resolved, the branch is ready to merge to `main` pending Darren's go-ahead.
+
+---
+
+## 2026-05-27 — AVA Phase 1 — Session 5 (ElevenLabs TTS + functional voice/text toggle) — branch `feature/ava-phase1`
+
+**Scope.** Session 5 of the AVA Phase 1 build, shipped on `feature/ava-phase1` at commit `a844a4d`. The Voice·Text toggle on the morning brief card was a muted non-functional stub since Session 2 — this session wires ElevenLabs TTS to the morning message and makes the toggle real. Branch still NOT merged to `main` — pending Darren's go-ahead now that all 9 Phase 1 components are in.
+
+### What landed
+
+- **`src/lib/ava/elevenLabs.ts`** (new) — Single entry point `speak(text)` that tries ElevenLabs first (`POST /v1/text-to-speech/{voice_id}` with `xi-api-key` header, `eleven_turbo_v2` model, `voice_settings: { stability: 0.5, similarity_boost: 0.75 }`, audio/mpeg decoded via Web Audio API + AudioContext + AudioBufferSourceNode), falls through silently to `window.speechSynthesis` on any error (no error toast, no log). `stopSpeaking()` cancels both layers — held in module-level refs (`currentSource.stop()` + `currentAudioCtx.close()` + `speechSynthesis.cancel()`). Voice ID `uYXf8XasLblADfZ2MB4u` is hardcoded; API key read from `NEXT_PUBLIC_ELEVENLABS_API_KEY`. iOS Safari autoplay is handled defensively — `ctx.resume()` is attempted before play, and a blocked play call resolves silently.
+- **`src/components/ava/AvaMorningCard.tsx`** — Added `voiceMode` (default `true`) + `isSpeaking` state, `hasSpokenRef` guard. New `useEffect([shouldRender, voiceMode, message])` fires `speak(message)` once per card mount when voice is on and the card is renderable. Cleanup calls `stopSpeaking()` on unmount and on toggle-away-from-voice. Below the message paragraph: a small flex row with five `ava-wave-bar` mini-bars + muted "AVA is speaking…" label that's visible while `isSpeaking === true`. The Voice·Text toggle is replaced with two functional buttons (gold/ink active, transparent/muted inactive); `handleToggle()` cancels speech on switch-away-from-voice. `preference` + `message` derivations moved above the early-return block so the TTS effect can depend on them while keeping hooks unconditional.
+- **`src/components/AvaChip.tsx`** — Added a full-width blue "HOLD TO TALK TO AVA" button inside the drawer body (below the placeholder copy), with an 18×18 inline-SVG mic glyph. Tap shows a fixed-position transient toast pill ("Voice input coming in the next update.") near the top safe area, auto-dismissed after 2 s via `setTimeout`. UI only — real STT + SOP lookup is Session 6.
+- **`.env.local.example`** — Documents `NEXT_PUBLIC_ELEVENLABS_API_KEY` with a note about the deliberate browser exposure (driver app is authenticated employees only).
+
+### Locked invariants
+
+- **`hasSpokenRef` guard** — AVA reads the morning message at most once per card mount, even if the user toggles voice→text→voice within the same view. Re-mount (e.g. by navigating away from Home and back) restarts the cycle.
+- **Toggle state is session-only** — defaults to voice on every fresh card mount. No DB persistence this session.
+- **Only the morning message is spoken.** Checklist offers, notes nudges, and stats blocks are deliberately silent. Per-item TTS may come later.
+- **All surfaces other than driver app are text-only.** No TTS in dashboard, SMS, or other apps.
+
+### Vercel env
+
+`NEXT_PUBLIC_ELEVENLABS_API_KEY` was already set on **Preview + Production** as of session start (confirmed via `vercel env ls` — created 8 min before the build ran). Without it, `speak()` falls through to WebSpeech silently — no driver-facing error.
+
+### Build + push
+
+`npx next build` initially failed on `WindowWithWebkit` not declaring `AudioContext` (TS's default `lib.dom.d.ts` puts `AudioContext` as a global `var`, not a `Window` property). Fixed by extending the cast to include both `AudioContext?` and `webkitAudioContext?`. Second build green (32/32 routes). `git push origin feature/ava-phase1` succeeded; Vercel auto-builds the branch as a **preview**.
+
+### Files
+
+```
+src/lib/ava/elevenLabs.ts                       (new)
+src/components/AvaChip.tsx                       (+ useEffect, mic glyph SVG, toast)
+src/components/ava/AvaMorningCard.tsx            (+ TTS hook, indicator, functional toggle)
+.env.local.example                               (+ NEXT_PUBLIC_ELEVENLABS_API_KEY block)
+```
+
+### NEXT
+
+Smoke test the preview deploy: morning card reads aloud via ElevenLabs (or WebSpeech if API key/network down), toggle silences mid-playback, mic button on the AvaChip drawer shows the "coming soon" toast. Flag the iOS Safari first-load autoplay block if encountered — the workaround is to gate auto-speak on a user-gesture proxy. With Session 5 done, all 9 AVA Phase 1 components are in on the branch; merge to `main` is pending Darren's go-ahead.
+
+---
+
 ## 2026-05-27 — AVA Phase 1 — Session 1 (schema + header chip) — branch `feature/ava-phase1`
 
 **Scope.** Session 1 of the AVA Phase 1 build. Shipped on the **feature branch** `feature/ava-phase1` (commit `c43192c`), not `main` — AVA Phase 1 must ship as a complete branch per the May 24 strategy decision (Notion `3550aa6451b881f19285e369387b75b6`). Vercel previews this branch; production stays on `main`. Subsequent sessions ship more components to the same branch; merge to `main` happens only when all 9 Phase 1 components are in.

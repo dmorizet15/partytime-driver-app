@@ -1,5 +1,22 @@
 # Open Tasks — partytime-driver-app
 
+## May 27, 2026 — AVA Phase 1 — Bug Fix Pass (branch `feature/ava-phase1`, commit `4ddcadb`)
+
+Three bug fixes on top of Session 5. Branch still **NOT merged to `main`** — pending Darren's smoke test on the preview deploy, then go-ahead.
+
+- [ ] **Smoke-test the bug fixes on the preview deploy:**
+  1. **Bug 1 — Stop Detail note entry.** Open any non-depot stop. Below the manifest block: dashed "Leave a note for the next driver →" link when no notes exist, OR amber "AVA has a note about this stop →" button when ≥1 note exists. Renders on completed stops too (regression from before the fix).
+  2. **Bug 1 — Tier 3 hero pill.** Open a stop where a note has been saved → amber "AVA KNOWS THIS STOP" pill below the address in the hero. Open a stop with no notes → no pill.
+  3. **Bug 1 — End-to-end note save.** Tap the dashed link → AvaNoteSheet opens → write a note → Save → toast confirms → close the sheet → re-open the stop. Both surfaces (hero pill + post-manifest button) should now show the amber state.
+  4. **Bug 2 — Route delete+recreate refresh.** Dashboard: delete the driver's route, create a new route for the same truck same date. Driver app: navigate to Home (or refresh). Home should render the full briefing (hero + day list + AVA card + weather + Gold CTA) for the new, uninspected route. No more blank quiet state.
+  5. **Bug 3 — TTS button.** Home → voice mode on (default) → "▶ HEAR YOUR MORNING BRIEF" gold pill button below the message. Tap → ElevenLabs reads the message in natural voice (no robotic WebSpeech fallback on iOS first load). Toggle to TEXT mid-playback → audio stops. Toggle back to VOICE → play button reappears, can replay.
+- [ ] **All 9 Phase 1 components + bug fixes landed on `feature/ava-phase1`. Branch is ready to merge to `main` when Darren approves the smoke test.** Don't merge until explicitly told.
+- [ ] **Profile-settings UI for the three opt-in toggles** is still pending — columns exist in the DB since Session 1, but the Profile screen has no switches for `checklist_enabled`, `personality_preference`, `stats_enabled`. Pair with whichever upcoming Profile-screen session lets a driver flip these without dashboard support.
+- [ ] **Persisting voice/text preference to DB** is deferred. Today it resets to voice default on every card mount. If drivers want a sticky preference, add a `voice_default` column (or extend `personality_preference`) and wire to it from the toggle.
+- [ ] **Session 6 — real STT + SOP lookup behind the AvaChip mic button.** Today the button is a stub with a "coming soon" toast. Session 6 wires browser STT (Web Speech API recognition or Whisper) + the SOP retrieval logic, and replaces the toast with the actual conversation UI inside the drawer.
+
+---
+
 ## May 27, 2026 — AVA Phase 1 — Session 2 (branch `feature/ava-phase1`)
 
 Morning brief card (Tier 2) + Home post-pre-trip quiet state + weather flag (Part 1). Design doc: `docs/ava/2026-05-27-ava-morning-brief-card.md`. Branch must NOT merge to `main` until all 9 Phase 1 components are in. Vercel auto-deploys as a **preview**.
