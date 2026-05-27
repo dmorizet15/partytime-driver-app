@@ -1,5 +1,22 @@
 # Open Tasks — partytime-driver-app
 
+## May 27, 2026 — AVA Phase 1 — Session 1 (branch `feature/ava-phase1`, commit `c43192c`)
+
+Schema (migrations 013/014/015) + Tier 1 header chip + placeholder drawer pushed to `feature/ava-phase1`. Branch must NOT be merged to `main` until all 9 Phase 1 components are in. Vercel auto-deploys this branch as a **preview**, not production.
+
+- [ ] **Smoke-test the preview deploy** on `feature/ava-phase1` once Vercel finishes:
+  1. Open any of Home / Route list / Stop detail / Tools / Training / Profile. Chip renders top-right (32 px blue square with five white waveform bars), bars pulse with staggered animation.
+  2. Tap chip → dark bottom-sheet slides up with "AVA coming soon" copy and an X button. Backdrop tap closes; X closes; both leave the screen state unchanged.
+  3. From an auth'd dashboard session, `SELECT column_name, column_default FROM information_schema.columns WHERE table_name='profiles' AND column_name IN ('checklist_enabled','personality_preference','stats_enabled');` — confirm all three rows with correct defaults.
+  4. `SELECT count(*) FROM public.ava_conversations;` and `SELECT count(*) FROM public.ava_stop_notes;` — both return 0 (tables exist + readable under RLS).
+  5. Attempt `INSERT INTO ava_conversations (driver_id, surface, question) VALUES ('<some-other-uuid>', 'driver_home', 'test');` from the driver-app client — should be rejected by RLS (only `driver_id = auth.uid()` allowed).
+- [ ] **Session 2 next up — Morning brief card (Tier 2).** Static summary card always renders on Home (driver name, stop count, COD flag, weather flag) — no API call needed, loads instantly. Conditional AVA card below renders only when AVA has something to say. Personality + stats logic per the locked May 24 decisions. Voice/TTS hookup is a separate later session.
+- [ ] **Dependency-map content authoring** is a Darren content task, not Claude Code. Driver-app dependency map has 4 driver interviews in (Lucas / Austin / Joey / Dylan); the seed rules in the Notion spec are usable. Dashboard side gets the Melissa voice session before it ships. Once the dependency-map DB rows exist, the checklist component is a session of its own (UI only).
+- [ ] **Profile-settings UI for the three new opt-in toggles.** Columns are in the DB (013); the Profile screen still needs the three switches (checklist on/off, personality direct/personality, stats off/on). Pair with the morning brief session so the toggles can be tested end-to-end.
+- [ ] **Decision needed before merge to `main`** — order/sequence of remaining Phase 1 sessions (morning brief vs AVA Remembers vs voice). Notion spec doesn't lock the order; pick what unblocks driver feedback fastest.
+
+---
+
 ## May 26, 2026 — Work Orders & Field Issues (driver app, Session 2)
 
 Shipped to `main` for Vercel auto-deploy. Driver-app surface on top of dashboard Session 1 (`4e04ac9` — `field_work_orders` Migration 073). Stop-detail link + two Tools Hub cards (ungated "Report an Issue" + technician-gated "Work Orders") + four new routes. One shared `ReportIssueForm` powers both Screen 2A (stop context) and 2B (standalone). Cross-app POSTs go to `${NEXT_PUBLIC_DASHBOARD_URL}/api/work-orders` with the user's bearer token so the assignee email fires; reads pull straight from supabase under RLS.

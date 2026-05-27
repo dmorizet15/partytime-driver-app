@@ -4,6 +4,69 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-05-27 — AVA Phase 1 — Session 1 (schema + header chip) — branch `feature/ava-phase1`
+
+**Scope.** Session 1 of the AVA Phase 1 build. Shipped on the **feature branch** `feature/ava-phase1` (commit `c43192c`), not `main` — AVA Phase 1 must ship as a complete branch per the May 24 strategy decision (Notion `3550aa6451b881f19285e369387b75b6`). Vercel previews this branch; production stays on `main`. Subsequent sessions ship more components to the same branch; merge to `main` happens only when all 9 Phase 1 components are in.
+
+This session lands two things: **schema** (3 migrations) and **Tier 1 presence chip** on every screen with a placeholder bottom-sheet drawer. Morning brief, checklist (post Darren+Melissa voice session), AVA Remembers UI, ElevenLabs TTS, and voice/text toggle come in later sessions.
+
+### Schema
+
+Three migrations applied via `supabase db query --linked --file`, then marked applied via `supabase migration repair --status applied …`.
+
+- **`20260527013_ava_profile_columns.sql`** — adds 3 per-driver opt-ins to `profiles`:
+  - `checklist_enabled boolean NOT NULL DEFAULT true` — Joey turns his off; everyone else leaves it on.
+  - `personality_preference text NOT NULL DEFAULT 'direct'` — `CHECK IN ('direct','personality')`. Only Dylan opted in for personality.
+  - `stats_enabled boolean NOT NULL DEFAULT false` — Joey opts in; others off.
+- **`20260527014_ava_conversations.sql`** — append-only Q&A log. Columns: `id`, `driver_id`, `surface` (5-value CHECK), `context_id`, `question`, `answer`, `confidence` (3-value CHECK), `needs_review`, `helpful`, `created_at`. Indexes: `(driver_id, created_at DESC)` and partial `(needs_review, created_at DESC) WHERE needs_review = true`. RLS: driver SELECT/INSERT own; super_admin SELECT all (`EXISTS … 'super_admin' = ANY(p.roles)`).
+- **`20260527015_ava_stop_notes.sql`** — address-keyed notes for AVA Remembers. Columns: `id`, `address_key` (normalized), `raw_address`, `note`, `author_id ON DELETE SET NULL`, `photo_urls text[] DEFAULT '{}'`, `created_at`, `updated_at`. Index on `address_key`. RLS: authenticated SELECT all, INSERT (with `author_id = auth.uid()`), and UPDATE/DELETE on rows the user authored.
+
+Filename convention adjusted: used `YYYYMMDD<NNN>_*.sql` (no underscore between date and sequence) instead of the recent `YYYYMMDD_NNN_*.sql` so all three files have unique CLI-visible versions on the same day. The existing convention only works one-file-per-day; today needed three. Confirmed clean via `supabase migration list --linked` (driver-app rows now show `20260527013/014/015` in both Local and Remote columns).
+
+Types regenerated via `supabase gen types typescript --project-id fumprcyavpefyupurvsv` with the standard CLI-noise strip; the two new tables + three new `profiles` columns surface in `src/types/supabase.ts`.
+
+### Tier 1 chip (`AvaChip`)
+
+`src/components/AvaChip.tsx` — 32 px blue square (`#0000FF`) with five 2 × 12 px white bars, CSS-staggered pulse (`ava-wave` keyframes in `globals.css`, 1 s ease-in-out infinite, 120 ms stagger between bars). Tap opens a fixed-position dark bottom-sheet (`#0F172A` background, max 448 px wide, safe-area-aware padding) with the same waveform at 40 px, "AVA" label, ×-close, and "AVA is coming soon — Phase 1 build in progress" body copy. Backdrop click and × button both close. No props except an optional `ariaLabel`.
+
+Wired into 6 screens — to the right of each screen's existing rightmost header element, wrapped in a `display:flex; gap:10` group:
+
+- `DayRouteSelectorScreen` (Home) — next to the 32 px PTR mark on the eyebrow row.
+- `ToolsScreen` — same shape.
+- `TrainingScreen` — same shape.
+- `ProfileScreen` — next to `<BrandMark/>`.
+- `RouteListScreen` — next to `<BrandMark/>`.
+- `StopDetailScreen` — next to the distance pill (Phase-2 stub). Stop detail is the one screen without a brand mark in the header; chip goes to the right of the pill.
+
+No centralized layout-shell change — each screen has its own hero/header, so wiring is per-screen. Single new import + single wrapping `<div>` per screen.
+
+### Build + push
+
+`npx next build` green (32/32 routes generated). `git push origin feature/ava-phase1` succeeded. Vercel auto-builds the branch as a preview; `main` is untouched.
+
+### Files
+
+```
+src/components/AvaChip.tsx                       (new)
+src/app/globals.css                              (+11 lines — ava-wave keyframes)
+src/types/supabase.ts                            (regenerated)
+src/screens/DayRouteSelectorScreen.tsx           (+ import + wrap)
+src/screens/ToolsScreen.tsx                      (+ import + wrap)
+src/screens/TrainingScreen.tsx                   (+ import + wrap)
+src/screens/ProfileScreen.tsx                    (+ import + wrap)
+src/screens/RouteListScreen.tsx                  (+ import + wrap)
+src/screens/StopDetailScreen.tsx                 (+ import + wrap)
+supabase/migrations/20260527013_ava_profile_columns.sql  (new)
+supabase/migrations/20260527014_ava_conversations.sql    (new)
+supabase/migrations/20260527015_ava_stop_notes.sql       (new)
+```
+
+### NEXT
+
+Branch preview deploy on Vercel — open any of the 6 screens, confirm the chip pulses top-right, tap opens the bottom-sheet, close clears. Session 2 (TBD) picks up the morning brief card; Darren + Melissa voice session is the gate before checklist content can be authored.
+
+---
+
 ## 2026-05-27 — Auto-logout verification (no code shipped)
 
 **Scope.** Darren re-issued the Auto-Logout two-layer brief. CLAUDE.md already documented this as shipped on 2026-05-24 (commit `76bb769`). Read the three implicated files end-to-end against the spec, confirmed every requirement is met, no code changes needed.

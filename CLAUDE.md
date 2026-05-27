@@ -6,10 +6,10 @@ Next.js 14 PWA for the driver mobile workflow. Downstream of `partytime-dashboar
 
 ## Current build state
 
-- **Active feature:** Work Orders & Field Issues (driver app) — shipped 2026-05-26. Driver-app UI on top of the dashboard's Session 1 (`field_work_orders` table — Migration 073 — and POST/GET/PATCH `/api/work-orders`). Adds three driver-facing surfaces (Stop Detail "Report an issue" link, ungated "Report an Issue" Tools Hub card, technician-gated "Work Orders" Tools Hub card → list → detail) sharing one `ReportIssueForm` component. Posts cross-app to the dashboard via a new `NEXT_PUBLIC_DASHBOARD_URL` env var so the assignee email fires. Access is keyed on a new stacked permission `profiles.work_order_technician`. No driver-app migrations; types regenerated. See "Work Orders & Field Issues (Driver App)" section below.
-- **Latest shipment:** Work Orders & Field Issues driver-app build, 2026-05-26. Two new Tools Hub cards, one new stop-detail link, four new App Router routes (`/route/[routeId]/stop/[stopId]/report-issue`, `/tools/report-issue`, `/tools/work-orders`, `/tools/work-orders/[id]`). Build green; pushed to `main` for Vercel auto-deploy. **Vercel env var `NEXT_PUBLIC_DASHBOARD_URL` must be set on the driver-app project before this surfaces work** — without it the form throws on submit.
-- **Latest migration:** **073** in the remote `schema_migrations` table (dashboard Session 1: `field_work_orders` + `profiles.work_order_technician`). Driver-app local `supabase/migrations/` is unchanged at 12 files (latest `20260515_012_game_scores`) — Session 2 added zero migrations; every table + column was already live from the dashboard side. The "migration count" is the remote table count, not the local file count.
-- **Branch strategy:** Commit directly to `main` — Vercel auto-deploys on every push.
+- **Active feature:** AVA Phase 1 — building on `feature/ava-phase1` branch (NOT main). Phase 1 ships as one complete branch per the May 24, 2026 strategy decision (Notion `3550aa6451b881f19285e369387b75b6`). Nine components must all land before merge: profile preference columns, ava_conversations table, ava_stop_notes table, header chip (Tier 1 presence), morning brief card (Tier 2), dependency-map + checklist (gated on Darren+Melissa voice session), AVA Remembers UI, ElevenLabs TTS, voice/text toggle.
+- **Latest shipment:** AVA Phase 1 — Session 1 (schema + Tier 1 chip), 2026-05-27 — branch commit `c43192c`. Three migrations (013/014/015) + new `<AvaChip />` waveform component wired into 6 screens with a placeholder bottom-sheet drawer. Build green; pushed to `feature/ava-phase1` for Vercel **preview deploy** (not production). See "AVA Phase 1 (Driver App)" section below.
+- **Latest migration:** **`20260527015_ava_stop_notes`** in the remote `_supabase_migrations` table. Driver-app local `supabase/migrations/` is now **15 files** (added 013/014/015 this session). The "migration count" still tracks the remote table; dashboard owns most of the count, but the driver-app rows are now in there too courtesy of the `migration repair` step.
+- **Branch strategy:** AVA Phase 1 commits to `feature/ava-phase1` ONLY. Other unrelated work continues to commit directly to `main`. Do NOT merge `feature/ava-phase1` to `main` until all 9 Phase 1 components are in.
 - **Next priority:** see `tasks/todo.md` (top of file).
 
 ---
@@ -169,6 +169,57 @@ Shipped 2026-05-26 — Session 2 of the Work Orders build, sitting on top of das
 6. Same flow, search returns no results → "Enter manually" → submit with manual name. Confirm `asset_id=null`, `asset_type='truck'`, `asset_name=<typed value>`.
 7. Toggle a profile's `work_order_technician=true` dashboard-side. Refresh driver app → Tools Hub now shows the "Work Orders" card. Open it → tabs render with counts → tap a card → detail screen.
 8. On detail: Mark In Progress → tab counts update. Mark Complete → moves to Done tab. + Note → modal → save → notes log shows timestamped entry.
+
+## AVA Phase 1 (Driver App)
+
+Spec: Notion `3550aa6451b881f19285e369387b75b6` ("Ava — AI Layer Master Spec"). Phase 1 ships as a **complete branch** — `feature/ava-phase1` — per the May 24, 2026 strategy decision. No partial rollouts. All nine components must be in before merging to `main`. Per-session work logs in `docs/CHANGELOG.md`.
+
+### Session 1 — 2026-05-27 (commit `c43192c`)
+
+**Schema (3 migrations).**
+
+- `20260527013_ava_profile_columns.sql` — `profiles.checklist_enabled` (default true), `personality_preference` text default `'direct'` with CHECK in `('direct','personality')`, `stats_enabled` default false. Driver-survey-derived defaults: most drivers leave checklist on, most prefer direct tone, most skip stats (Joey opts in on stats; Dylan opts in on personality; Joey opts out of checklist).
+- `20260527014_ava_conversations.sql` — append-only Q&A log. `surface` CHECK in `('driver_home','dispatch','will_call','fleet','warehouse')`. `confidence` CHECK in `('high','low','unanswered')`. Indexes: `(driver_id, created_at DESC)` + partial `(needs_review, created_at DESC) WHERE needs_review = true`. RLS: driver SELECT/INSERT own; super_admin SELECT all (`EXISTS … 'super_admin' = ANY(p.roles)`).
+- `20260527015_ava_stop_notes.sql` — address-keyed notes (NOT order/stop-keyed) for AVA Remembers. Notes persist across seasons/years. `author_id` REFERENCES profiles ON DELETE SET NULL. `photo_urls text[] DEFAULT '{}'`. Index on `address_key`. RLS: authenticated SELECT all, INSERT own (`author_id = auth.uid()`), UPDATE/DELETE only on rows the user authored.
+
+Filename convention this session: `YYYYMMDD<NNN>_*.sql` (no underscore between date and sequence). Required because three files on the same day all collide as version `YYYYMMDD` under the more recent `YYYYMMDD_NNN_*.sql` convention — the CLI parses everything before the first `_` as the version. The concat form gives unique versions (`20260527013/014/015`). Existing files stay on their original naming.
+
+**Tier 1 chip — `src/components/AvaChip.tsx`.** 32 px blue square (`#0000FF`) with five 2 × 12 px white bars; CSS-staggered pulse (`ava-wave` keyframes in `globals.css`, 1 s ease-in-out infinite, 120 ms stagger per bar). Tap opens a fixed-position dark bottom-sheet drawer (`#0F172A`, max-width 448 px, safe-area-aware padding) with a 40 px waveform, "AVA" label, ×-close, and the placeholder message. Backdrop or × dismisses. No state outside the component; no props except optional `ariaLabel`.
+
+Wired into 6 screens to the right of each screen's existing rightmost header element, inside a `display:flex; alignItems:center; gap:10` wrapper:
+- `DayRouteSelectorScreen` (Home) — next to the eyebrow-row PTR mark.
+- `ToolsScreen` / `TrainingScreen` — same pattern.
+- `ProfileScreen` / `RouteListScreen` — next to `<BrandMark/>`.
+- `StopDetailScreen` — next to the distance pill (the one screen without a brand mark in its header).
+
+No centralized layout shell — each screen owns its own hero/header, so wiring is per-screen. Future Tier 2 (morning card) and Tier 3 (per-stop intel button) ship in later sessions on the same branch.
+
+**Placeholder drawer is intentional** — full conversation UI lands in a later Phase 1 session. The drawer's shell (bottom-sheet, dark, safe-area-aware) is reusable for the real conversation view; the body copy just changes.
+
+### Out of scope for this session (Phase 1, future sessions)
+
+- Morning brief card (Tier 2) — static summary + conditional AVA card on Home.
+- Checklist UI + dependency-map content — gated on Darren+Melissa voice session for the dashboard side; driver-app dependency-map is content-complete (4 driver interviews) per the May 24 decision.
+- AVA Remembers UI — entry on stop detail + surface on arrival. Schema is in (015); UI lands later.
+- ElevenLabs TTS integration + voice/text toggle on the morning card.
+- Profile-settings UI for the three new opt-in toggles (columns are in the DB; the UI is later).
+
+### Branch hygiene rules (current and active)
+
+- ALL AVA Phase 1 work commits to `feature/ava-phase1` ONLY. Vercel previews this branch; production stays on `main`.
+- Unrelated work continues to commit to `main` (e.g. an urgent bug fix, an arcade tweak — anything outside the AVA scope).
+- Two-branch protocol from Notion: declare which branch each session is on at session start. No crossing branches mid-session.
+- Do NOT merge `feature/ava-phase1` to `main` until Darren explicitly says all 9 components are in.
+
+### NEXT smoke test (Vercel preview deploy, branch `feature/ava-phase1`)
+
+1. Visit any of Home / Route list / Stop detail / Tools / Training / Profile. Chip renders top-right, five bars pulse.
+2. Tap chip → bottom-sheet slides up, dark background, AVA label + placeholder copy. Backdrop tap closes; × button closes.
+3. Dashboard side: `SELECT column_name, column_default FROM information_schema.columns WHERE table_name='profiles' AND column_name IN ('checklist_enabled','personality_preference','stats_enabled');` returns the three rows with correct defaults.
+4. `SELECT count(*) FROM ava_conversations;` and `SELECT count(*) FROM ava_stop_notes;` both return 0 (no writers yet) — confirms tables exist and the user can read under RLS.
+5. Try to INSERT into `ava_conversations` with a `driver_id` that's not `auth.uid()` — should be rejected by RLS.
+
+---
 
 ## Session close (autonomous — no permission needed)
 
