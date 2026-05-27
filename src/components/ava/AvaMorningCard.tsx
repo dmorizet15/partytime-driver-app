@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { UserProfile } from '@/types/auth'
 import type { Stop }        from '@/types'
 import { fetchPersonalStats }       from '@/lib/personalStatsClient'
@@ -73,9 +73,9 @@ export default function AvaMorningCard({ profile, dayStops, todayKey }: AvaMorni
   // on every fresh card mount; no persistence to DB this session.
   const [voiceMode,   setVoiceMode]   = useState(true)
   const [isSpeaking,  setIsSpeaking]  = useState(false)
-  // Guards re-speak: AVA reads the morning message at most once per card mount,
-  // even if the toggle is flipped voice→text→voice within the same view.
-  const hasSpokenRef = useRef(false)
+  // Tracks the latest play attempt so a stale finally() from an interrupted
+  // speak() can't clobber isSpeaking after a fresh speak() has started.
+  const playTokenRef = useRef(0)
 
   // Fetch weekly stats (gated on opt-in), today's stop-note previews, and
   // the dependency-map rule sets in parallel. All fail open — a flaky
@@ -145,30 +145,27 @@ export default function AvaMorningCard({ profile, dayStops, todayKey }: AvaMorni
     todayKey,
   )
 
-  // Auto-speak the morning message on first paint when voice mode is on.
-  // Guard with hasSpokenRef so toggling voice→text→voice within the same
-  // mount doesn't re-trigger. Cleanup stops any in-progress audio when the
-  // card unmounts or the toggle flips to text mid-playback.
-  const shouldRender =
-    !signals.loading && (checklistOffered || showStats || showNotesNudge)
-
+  // No auto-speak on mount — iOS Safari blocks AudioContext.start() before
+  // the user gestures in the same task, so an effect-triggered speak() falls
+  // through to the WebSpeech synth (robotic) on first Home load. Instead,
+  // we render a "▶ Hear your morning brief" tap button below the message;
+  // the driver's tap is a real user gesture, so ElevenLabs unlocks cleanly.
+  // The cleanup effect below still cancels any in-flight audio on unmount.
   useEffect(() => {
-    if (!shouldRender) return
-    if (!voiceMode) return
-    if (hasSpokenRef.current) return
-    hasSpokenRef.current = true
+    return () => { stopSpeaking() }
+  }, [])
 
-    let cancelled = false
+  const handlePlayBrief = useCallback(() => {
+    // Cancel any prior playback (e.g. driver double-taps the button) and
+    // bump the token so the previous speak()'s .finally can't flip
+    // isSpeaking back to false after the new attempt has started.
+    stopSpeaking()
+    const myToken = ++playTokenRef.current
     setIsSpeaking(true)
     speak(message).finally(() => {
-      if (!cancelled) setIsSpeaking(false)
+      if (playTokenRef.current === myToken) setIsSpeaking(false)
     })
-
-    return () => {
-      cancelled = true
-      stopSpeaking()
-    }
-  }, [shouldRender, voiceMode, message])
+  }, [message])
 
   // Trigger rule: render only when AVA has at least one thing to surface.
   // While the network is in flight, defer the gate to avoid a render+unmount
@@ -176,7 +173,7 @@ export default function AvaMorningCard({ profile, dayStops, todayKey }: AvaMorni
   if (signals.loading && (profile.stats_enabled || true /* notes always queried */)) {
     return null
   }
-  if (!shouldRender) {
+  if (!checklistOffered && !showStats && !showNotesNudge) {
     return null
   }
 
@@ -185,6 +182,7 @@ export default function AvaMorningCard({ profile, dayStops, todayKey }: AvaMorni
     // Switching away from voice mid-playback → cancel speech immediately.
     if (voiceMode && !next) {
       stopSpeaking()
+      playTokenRef.current++  // invalidate any in-flight finally
       setIsSpeaking(false)
     }
     setVoiceMode(next)
@@ -226,6 +224,39 @@ export default function AvaMorningCard({ profile, dayStops, todayKey }: AvaMorni
         }}>
           {message}
         </p>
+
+        {/* Play button — only visible in voice mode. Tap fires speak() under
+            a real user gesture, so iOS Safari's AudioContext autoplay lock
+            unlocks and ElevenLabs plays in full (not the WebSpeech fallback).
+            Hidden while speaking so it doesn't compete with the indicator. */}
+        {voiceMode && !isSpeaking && (
+          <button
+            type="button"
+            onClick={handlePlayBrief}
+            aria-label="Hear your morning brief"
+            style={{
+              marginTop: 12,
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+              background: 'rgba(255,184,0,0.10)',
+              color: C.gold,
+              border: '1px solid rgba(255,184,0,0.35)',
+              borderRadius: 999,
+              padding: '7px 14px 7px 12px',
+              cursor: 'pointer',
+              fontFamily: FONT_DISPLAY,
+              fontSize: 12.5, fontWeight: 800,
+              letterSpacing: '0.04em',
+            }}
+          >
+            <span aria-hidden="true" style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              width: 18, height: 18, borderRadius: '50%',
+              background: C.gold, color: C.ink,
+              fontSize: 10, fontWeight: 900,
+            }}>▶</span>
+            <span>HEAR YOUR MORNING BRIEF</span>
+          </button>
+        )}
 
         {/* Speaking indicator — small pulsing waveform + label while TTS
             audio is in flight. Disappears on speak completion or stopSpeaking(). */}

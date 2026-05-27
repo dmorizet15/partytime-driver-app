@@ -25,10 +25,15 @@ export function useInspectionStatus(
   const [inspection, setInspection] = useState<InspectionStatus>(null)
 
   useEffect(() => {
-    if (!routeId || !truckId) {
-      setInspection(null)
-      return
-    }
+    // Reset to null on every routeId/truckId change so the previous
+    // route's inspection state doesn't linger while the new fetch is
+    // in flight. Without this, the gate flickers as: brief → blank
+    // (stale "inspected") → brief (after new fetch resolves to null).
+    // With this, the gate goes brief → brief consistently.
+    setInspection(null)
+
+    if (!routeId || !truckId) return
+
     let cancelled = false
     fetch(`/api/inspection/status?route_id=${routeId}&truck_id=${truckId}`)
       .then((r) => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))

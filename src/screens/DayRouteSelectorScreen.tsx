@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useRouter }                    from 'next/navigation'
 import { useAppState }                  from '@/context/AppStateContext'
 import { useAuth }                      from '@/hooks/useAuth'
@@ -207,11 +207,23 @@ export default function DayRouteSelectorScreen() {
     return () => clearInterval(id)
   }, [])
 
-  // Load today's routes once on mount. Home is driver-scoped to today only —
-  // no date picker, so no need to refetch on date change.
+  // Force-refresh today's routes on every Home mount. AppState's loadDay
+  // short-circuits when (state.loadedDate === date && !state.error), so a
+  // soft loadDay(today) call after a dashboard-side route delete+recreate
+  // would keep the stale Route A in memory — `primaryRouteId` would point
+  // at the deleted route, `useInspectionStatus` would query its old
+  // inspection, and the quiet-state gate would hide the briefing on a
+  // freshly-uninspected route. Force=true skips the cache check. The ref
+  // gate ensures we only fetch once per mount even though `loadDay`'s
+  // identity changes after a successful fetch (useCallback dep on
+  // state.loadedDate), which would otherwise re-fire the effect.
+  const initialLoadRef = useRef(false)
   useEffect(() => {
-    loadDay(today)
-  }, [today, loadDay])
+    if (initialLoadRef.current) return
+    initialLoadRef.current = true
+    loadDay(today, true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [today])
 
   const routes = getRoutesForDate(today)
 
