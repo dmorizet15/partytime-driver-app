@@ -13,7 +13,7 @@
 // gesture in the same task. Auto-speak on mount may be blocked on first load;
 // the toggle press is itself a gesture so subsequent voice playback works.
 
-const ELEVENLABS_VOICE_ID = 'uYXf8XasLblADfZ2MB4u'
+const ELEVENLABS_VOICE_ID = 'uYXf8XasLslADfZ2MB4u'
 const ELEVENLABS_API_URL  = 'https://api.elevenlabs.io/v1/text-to-speech'
 
 let currentAudioCtx: AudioContext | null = null
