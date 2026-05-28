@@ -1,5 +1,20 @@
 # Open Tasks — partytime-driver-app
 
+## May 28, 2026 — AVA Phase 1 — Profile Settings UI (branch `feature/ava-phase1`, commit `35eb566`)
+
+Driver-self-service "AVA Preferences" section on the Profile screen for the three opt-in columns. Branch still **NOT merged to `main`** — pending Darren's go-ahead.
+
+- [ ] **Smoke-test the preview deploy:**
+  1. Profile screen → "AVA Preferences" section renders between "My Activity" and "Account": Morning checklist toggle, AVA voice style (Direct | Personality), Weekly stats toggle. Initial states reflect the driver's current DB values.
+  2. Flip a toggle → it animates immediately (optimistic). Reload the app → the new value persists (DB write landed). Confirm via dashboard `SELECT checklist_enabled, personality_preference, stats_enabled FROM profiles WHERE id = '<driver>';`.
+  3. Flip Weekly stats ON (for a driver with completed stops this week) → return to Home → the AVA morning card now shows the stats line without a logout/login.
+  4. Switch AVA voice style to Personality → Home → the morning message uses the personality-variant copy on next mount.
+  5. **Failure path:** kill network (DevTools offline) → flip a toggle → it should snap back to the prior state and show the red "Couldn't save preference — try again" toast.
+- [ ] **`profiles` has no RLS UPDATE policy (by design).** Driver-editable profile fields must go through `PATCH /api/profile/ava-preferences` (admin client, scoped allow-list). If a future feature needs another driver-editable column, extend that route's allow-list — do NOT add a table-level UPDATE policy (would expose roles / fleet_maintenance_access / work_order_technician to self-mutation).
+- [x] ~~**Profile-settings UI for the three opt-in toggles.**~~ Shipped 2026-05-28 (commit `35eb566`).
+
+---
+
 ## May 27, 2026 — AVA Phase 1 — Bug Fix Pass (branch `feature/ava-phase1`, commit `4ddcadb`)
 
 Three bug fixes on top of Session 5. Branch still **NOT merged to `main`** — pending Darren's smoke test on the preview deploy, then go-ahead.

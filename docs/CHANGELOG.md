@@ -4,6 +4,35 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-05-28 — AVA Phase 1 — Profile Settings UI — branch `feature/ava-phase1` — commit `35eb566`
+
+**Scope.** Driver-self-service controls for the three AVA preference columns (`checklist_enabled`, `personality_preference`, `stats_enabled`), which existed since Session 1 but were only changeable via SQL. No new migrations. New "AVA Preferences" section on the Profile screen.
+
+### What landed
+
+- **`src/components/ava/AvaPreferencesSection.tsx`** (new) — Section with three controls, matching the Profile screen's card pattern (`C.paper` + `1.5px solid C.ink` + radius 16): Morning checklist toggle (`checklist_enabled`), AVA voice style segmented control Direct|Personality (`personality_preference`), Weekly stats toggle (`stats_enabled`). Inline `ToggleSwitch` (gold-on / grey-off, 48×28 track) and `Segmented` (gold-active pill) — no shared component existed, so they're built to the app's visual language. Section sits between "My Activity" and "Account".
+- **`src/app/api/profile/ava-preferences/route.ts`** (new) — `PATCH` handler. Session client identifies the caller (`getUser()`), admin client UPDATEs `profiles` WHERE `id = user.id`. Builds the patch from ONLY the three allowed columns with per-field validation (boolean / enum); rejects empty or invalid bodies with 400.
+- **`src/context/AuthContext.tsx`** — Added `updateProfile(patch: Partial<UserProfile>)` to the context value; merges a partial into the in-memory profile state via `setProfile`.
+- **`src/screens/ProfileScreen.tsx`** — Import + render `<AvaPreferencesSection />`.
+
+### Why a server route instead of a direct client UPDATE (key decision)
+
+Queried `pg_policies` before building (per the repo's "generated types don't encode RLS" lesson). `profiles` has RLS **enabled** with **SELECT-only policies** (`profiles_authenticated_read_all`, `users_read_own_profile`) — **no UPDATE policy**. A `supabase.from('profiles').update(...)` from the browser would silently affect 0 rows. Adding a broad `auth.uid() = id` UPDATE policy was rejected: it would let a driver mutate `roles` / `fleet_maintenance_access` / `work_order_technician` on their own row — a privilege-escalation hole. The session+admin route scopes the write to the three known columns server-side, matching the `/api/inspection/*` pattern. **Rule for future sessions:** extend the route's allow-list for any new driver-editable profile field; never add a table-level UPDATE policy.
+
+### Optimistic + revert
+
+Each control flips the profile optimistically via `updateProfile`, PATCHes the server, and on failure reverts (`updateProfile` with the prior value) + shows a "Couldn't save preference — try again" toast. Because `AvaMorningCard` / `getMorningMessage` read `profile.*` from the same context, changes apply on the next Home mount with no logout/login.
+
+### Build + push
+
+`npx next build` green (route registered as `ƒ /api/profile/ava-preferences`). Pushed to `feature/ava-phase1` (built on top of `ba3c6c9`, an out-of-session morning-message-template tweak — no overlap). Vercel auto-builds the branch as a preview.
+
+### NEXT
+
+Smoke-test the 5 loops in `tasks/todo.md` (section render + initial states, optimistic flip + persistence, stats opt-in reflected on Home, personality variant on Home, offline-revert toast).
+
+---
+
 ## 2026-05-27 — AVA Phase 1 — Bug Fix Pass (pre-merge) — branch `feature/ava-phase1` — commit `4ddcadb`
 
 **Scope.** Three bug fixes surfaced by the Session 5 preview deploy. No new features, no migrations.

@@ -7,7 +7,7 @@ Next.js 14 PWA for the driver mobile workflow. Downstream of `partytime-dashboar
 ## Current build state
 
 - **Active feature:** AVA Phase 1 — building on `feature/ava-phase1` branch (NOT main). Phase 1 ships as one complete branch per the May 24, 2026 strategy decision (Notion `3550aa6451b881f19285e369387b75b6`). Nine components must all land before merge: profile preference columns ✅, ava_conversations table ✅, ava_stop_notes table ✅, header chip (Tier 1 presence) ✅, morning brief card (Tier 2) ✅, dependency-map + checklist ✅ (driver-app side; dashboard gated on Darren+Melissa voice session), AVA Remembers UI ✅, ElevenLabs TTS ✅ (Session 5), voice/text toggle ✅ (Session 5). All 9 components are now in on the branch — pending Darren's go-ahead to merge to `main`.
-- **Latest shipment:** AVA Phase 1 — Bug Fix Pass (pre-merge), 2026-05-27 — branch commit `4ddcadb`. Three bug fixes on top of Session 5: (1) Stop Detail note entry relocated from inside the action card to below the manifest so it survives completed/standby/depot states; (2) Home no-longer-blank after dashboard-side route delete+recreate — force-refresh on Home mount + reset inspection state on routeId change; (3) iOS TTS autoplay block resolved by replacing auto-speak with a "▶ HEAR YOUR MORNING BRIEF" tap button (gesture-triggered → ElevenLabs unlocks). Build green; pushed to `feature/ava-phase1` for Vercel **preview deploy** (not production). See "AVA Phase 1 (Driver App)" section below.
+- **Latest shipment:** AVA Phase 1 — Profile Settings UI, 2026-05-28 — branch commit `35eb566`. New "AVA Preferences" section on the Profile screen with three driver-self-service controls (Morning checklist toggle → `checklist_enabled`; AVA voice style segmented Direct|Personality → `personality_preference`; Weekly stats toggle → `stats_enabled`). Writes go through a new `PATCH /api/profile/ava-preferences` admin-client route (profiles has RLS SELECT-only — no UPDATE policy — and a broad one would be a privilege-escalation hole). Optimistic UI via new `AuthContext.updateProfile`; reverts + toast on failure. Build green; pushed to `feature/ava-phase1` for Vercel **preview deploy** (not production). See "AVA Phase 1 (Driver App)" section below.
 - **Latest migration:** **`20260527015_ava_stop_notes`** in the remote `_supabase_migrations` table. Driver-app local `supabase/migrations/` is now **15 files** (added 013/014/015 this session). The "migration count" still tracks the remote table; dashboard owns most of the count, but the driver-app rows are now in there too courtesy of the `migration repair` step.
 - **Branch strategy:** AVA Phase 1 commits to `feature/ava-phase1` ONLY. Other unrelated work continues to commit directly to `main`. Do NOT merge `feature/ava-phase1` to `main` until all 9 Phase 1 components are in.
 - **Next priority:** see `tasks/todo.md` (top of file).
@@ -195,6 +195,22 @@ Wired into 6 screens to the right of each screen's existing rightmost header ele
 No centralized layout shell — each screen owns its own hero/header, so wiring is per-screen. Future Tier 2 (morning card) and Tier 3 (per-stop intel button) ship in later sessions on the same branch.
 
 **Placeholder drawer is intentional** — full conversation UI lands in a later Phase 1 session. The drawer's shell (bottom-sheet, dark, safe-area-aware) is reusable for the real conversation view; the body copy just changes.
+
+### Profile Settings UI — 2026-05-28 (commit `35eb566`)
+
+Driver-self-service controls for the three AVA preference columns, which until now were only changeable via SQL. New "AVA Preferences" section on the Profile screen (between "My Activity" and "Account").
+
+- **Three controls** (`src/components/ava/AvaPreferencesSection.tsx`): Morning checklist toggle → `checklist_enabled`; AVA voice style segmented control (Direct | Personality) → `personality_preference`; Weekly stats toggle → `stats_enabled`. Toggles are gold-when-on / grey-when-off; the segmented control matches the gold-active pattern used on the morning card's voice/text toggle. Card styling mirrors the existing Profile sections (`C.paper` + `1.5px solid C.ink` + radius 16).
+- **Write path is a server route, NOT a direct client UPDATE — important.** `profiles` has RLS enabled with **SELECT-only policies** (`profiles_authenticated_read_all`, `users_read_own_profile`); there is **no UPDATE policy**, so a `supabase.from('profiles').update(...)` from the browser client silently affects 0 rows. Adding a broad `auth.uid() = id` UPDATE policy was rejected because it would let a driver mutate `roles` / `fleet_maintenance_access` / `work_order_technician` on their own row — a privilege-escalation hole. Instead, **`PATCH /api/profile/ava-preferences`** (`src/app/api/profile/ava-preferences/route.ts`) identifies the caller via the cookie session client (`getUser()` — id can't be spoofed) and performs an **admin-client UPDATE scoped to the three known columns only**, with per-field validation. Same session+admin pattern as `/api/inspection/*`. If a future session needs more driver-editable profile fields, extend this route's allow-list — do **not** add a table-level UPDATE policy.
+- **Optimistic updates via `AuthContext.updateProfile(patch)`** (new). The provider exposes a `updateProfile` that merges a `Partial<UserProfile>` into the in-memory profile state. Each control flips the value optimistically, PATCHes the server, and on failure reverts + shows a "Couldn't save preference — try again" toast. Because `AvaMorningCard` / `getMorningMessage` read `profile.*` from the same context, preference changes take effect on the next Home mount with **no logout/login**.
+
+**Files.**
+```
+src/app/api/profile/ava-preferences/route.ts   (new — PATCH, admin-client, 3-column allow-list)
+src/components/ava/AvaPreferencesSection.tsx    (new — section + toggle + segmented control)
+src/context/AuthContext.tsx                      (+ updateProfile in the context value)
+src/screens/ProfileScreen.tsx                    (+ import + <AvaPreferencesSection/>)
+```
 
 ### Bug Fix Pass — 2026-05-27 (commit `4ddcadb`) — pre-merge
 
