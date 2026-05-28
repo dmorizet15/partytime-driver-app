@@ -124,8 +124,13 @@ export default function AvaMorningCard({ profile, dayStops, todayKey }: AvaMorni
   ).length
   const stopCount     = dayStops.length
 
+  // Card-visibility triggers. Each is independent — the card renders if ANY
+  // is true (see the early-return gate below). checklist_enabled gates only
+  // its own offer block, never the card; stats_enabled shows the stats block
+  // whenever opted in (zero state handles a slow day / Monday morning), so an
+  // opted-in driver always sees the card even with 0 stops and checklist off.
   const checklistOffered = profile.checklist_enabled && checklistHits > 0
-  const showStats        = profile.stats_enabled && (signals.weekStopsCompleted ?? 0) > 0
+  const showStats        = profile.stats_enabled
   const notesCount       = signals.notesByAddress.size
   const showNotesNudge   = notesCount > 0
 
@@ -357,7 +362,10 @@ export default function AvaMorningCard({ profile, dayStops, todayKey }: AvaMorni
           </div>
         )}
 
-        {/* Stats block — opt-in, divider above when shown */}
+        {/* Stats block — opt-in, divider above when shown. Always renders when
+            stats_enabled (count is resolved by the time the card paints — the
+            loading gate above defers render). Zero state on a slow day so the
+            block never vanishes for a driver who opted in to see it. */}
         {showStats && (
           <>
             <div style={{
@@ -367,8 +375,14 @@ export default function AvaMorningCard({ profile, dayStops, todayKey }: AvaMorni
             <p style={{
               margin: 0, fontSize: 13.5, color: C.text, lineHeight: 1.4,
             }}>
-              <strong style={{ fontWeight: 800 }}>{signals.weekStopsCompleted}</strong>{' '}
-              {signals.weekStopsCompleted === 1 ? 'stop' : 'stops'} this week.
+              {(signals.weekStopsCompleted ?? 0) > 0 ? (
+                <>
+                  <strong style={{ fontWeight: 800 }}>{signals.weekStopsCompleted}</strong>{' '}
+                  {signals.weekStopsCompleted === 1 ? 'stop' : 'stops'} this week.
+                </>
+              ) : (
+                <span style={{ color: C.muted }}>No stops completed yet this week.</span>
+              )}
             </p>
           </>
         )}
