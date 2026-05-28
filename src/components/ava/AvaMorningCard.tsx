@@ -12,6 +12,7 @@ import {
 } from '@/lib/ava/dependencyHits'
 import AvaChecklistSheet from '@/components/ava/AvaChecklistSheet'
 import AvaNotesReviewSheet from '@/components/ava/AvaNotesReviewSheet'
+import AvaDispatchNotesSheet from '@/components/ava/AvaDispatchNotesSheet'
 import {
   addressKey,
   fetchLatestNotesByAddress,
@@ -68,8 +69,9 @@ export default function AvaMorningCard({ profile, dayStops, todayKey, routeDispa
     triggeredItems:     [],
     loading:            true,
   })
-  const [checklistOpen,   setChecklistOpen]   = useState(false)
-  const [notesReviewOpen, setNotesReviewOpen] = useState(false)
+  const [checklistOpen,    setChecklistOpen]    = useState(false)
+  const [notesReviewOpen,  setNotesReviewOpen]  = useState(false)
+  const [dispatchNotesOpen, setDispatchNotesOpen] = useState(false)
   // Voice/text mode — session-only, defaults to voice. Resets to voice
   // on every fresh card mount; no persistence to DB this session.
   const [voiceMode,   setVoiceMode]   = useState(true)
@@ -270,6 +272,31 @@ export default function AvaMorningCard({ profile, dayStops, todayKey, routeDispa
               {routeNote}
             </p>
           </div>
+        )}
+
+        {/* Stop-level dispatcher notes count — tap to review each one. */}
+        {dispatchNotesCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setDispatchNotesOpen(true)}
+            style={{
+              marginTop: 12, width: '100%', textAlign: 'left',
+              padding: '11px 14px',
+              background: 'rgba(255,184,0,0.06)',
+              border: '1px solid rgba(255,184,0,0.20)',
+              borderRadius: 12, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+              fontFamily: 'inherit',
+            }}
+            aria-label="Review stops with notes from dispatch"
+          >
+            <span style={{ fontSize: 13.5, lineHeight: 1.4, color: C.text }}>
+              <strong>{dispatchNotesCount}</strong> of your stops{' '}
+              {dispatchNotesCount === 1 ? 'has a note' : 'have notes'} from dispatch.
+              I&rsquo;ll remind you on the way to each one.
+            </span>
+            <span aria-hidden="true" style={{ color: C.gold, fontSize: 16, lineHeight: 1 }}>›</span>
+          </button>
         )}
 
         {/* Morning message — 1-2 sentences, personality-aware */}
@@ -505,6 +532,13 @@ export default function AvaMorningCard({ profile, dayStops, todayKey, routeDispa
         dayStops={dayStops}
         notesByAddress={signals.notesByAddress}
         onClose={() => setNotesReviewOpen(false)}
+      />
+    )}
+
+    {dispatchNotesOpen && (
+      <AvaDispatchNotesSheet
+        stops={stopsWithDispatchNotes}
+        onClose={() => setDispatchNotesOpen(false)}
       />
     )}
     </>
