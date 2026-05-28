@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { getUserRole } from '../lib/auth'
@@ -12,6 +12,10 @@ interface AuthContextValue {
   profile: UserProfile | null
   roles:   Role[] | null
   loading: boolean
+  // Merge a partial into the in-memory profile without a re-fetch. Used for
+  // optimistic preference updates (and reverts) on the Profile screen so
+  // getMorningMessage / the AVA card reflect the change immediately.
+  updateProfile: (patch: Partial<UserProfile>) => void
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -76,8 +80,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
+  const updateProfile = useCallback((patch: Partial<UserProfile>) => {
+    setProfile((prev) => (prev ? { ...prev, ...patch } : prev))
+  }, [])
+
   return (
-    <AuthContext.Provider value={{ user, profile, roles: profile?.roles ?? null, loading }}>
+    <AuthContext.Provider value={{ user, profile, roles: profile?.roles ?? null, loading, updateProfile }}>
       {children}
     </AuthContext.Provider>
   )

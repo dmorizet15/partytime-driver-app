@@ -9,6 +9,7 @@ import type { Role } from '@/types/auth'
 import Image from 'next/image'
 import BottomNav from '@/components/BottomNav'
 import AvaChip from '@/components/AvaChip'
+import AvaPreferencesSection from '@/components/ava/AvaPreferencesSection'
 import UploadComplianceDocModal from './UploadComplianceDocModal'
 import {
   DOCUMENT_LABELS,
@@ -683,6 +684,9 @@ export default function ProfileScreen() {
             </div>
           </>
         )}
+
+        {/* AVA preferences */}
+        <AvaPreferencesSection />
 
         {/* Account */}
         <SectionEyebrow>Account</SectionEyebrow>
