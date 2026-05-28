@@ -4,6 +4,30 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-05-28 — AVA Phase 1 — Dispatcher notes + stop notes surface — branch `feature/ava-phase1` — commits `104e652`, `943aec0`, `2673f3c`, `af69ed2`, `48ab75c`
+
+**Scope.** Surface dispatcher notes (route + stop level) and TapGoods order notes to drivers across three surfaces — the AVA morning brief, a pre-launch notes sheet, and the Stop Detail screen. All reads, **no migrations, no new API routes, no new tables**. Branch still **NOT merged to `main`**. Plan: `docs/superpowers/plans/2026-05-28-ava-dispatch-and-stop-notes.md`.
+
+### `104e652` — data plumbing
+The existing `GET /api/routes` query did **not** return `routes.dispatcher_notes`, and `dispatch_stops` returned `dispatcher_notes`/`notes` but **not** the five TapGoods note fields. Extended the existing SELECTs (no new endpoint), then threaded the columns through `SupabaseRouteRow`/`SupabaseStopRow` + the `transformSupabase` builders onto `Route.dispatcher_notes` and `Stop.{notes_additional_delivery,notes_employee_authored,notes_flip,notes_set_by_time,notes_strike_time}`.
+
+### `943aec0` — Morning brief: FROM DISPATCH block (Component 1)
+`AvaMorningCard` takes a new `routeDispatcherNote` prop (passed from `DayRouteSelectorScreen` as `primaryRoute?.dispatcher_notes`). When present it renders a gold "FROM DISPATCH" block as the **first** content block (after the AVA identity row, above the message) and is **prepended to the spoken brief** (`From dispatch: … . <message>`). A route note is now an independent **card-visibility trigger** — a day with only a dispatch note still shows the card.
+
+### `2673f3c` — Morning brief: stop-notes count line + review sheet (Component 2)
+Counts customer stops whose `dispatch_stops.dispatcher_notes` is non-null (already on the `Stop` object — no query change). When > 0, a tappable line ("N of your stops have notes from dispatch. I'll remind you on the way to each one.") opens **`AvaDispatchNotesSheet`** (new, read-only; mirrors `AvaChecklistSheet` dark sheet pattern) listing each stop + its note. Also a card-visibility trigger.
+
+### `af69ed2` — Pre-launch notes sheet on Send-ETA + Navigate (Component 3)
+New **`StopNotesPreSheet`** (labeled sections: DISPATCHER NOTE / DELIVERY INSTRUCTIONS / STAFF NOTE / FLIP-TEARDOWN NOTE / TIMING NOTE / AVA REMEMBERS; no backdrop-dismiss, no auto-dismiss). Per Darren's revised spec, wired to **both** `handleSendEta` and `handleNavigateRequest` with a **once-per-stop guard** (`seenNoteStopsRef` Set keyed by `stop_id`). Context-aware CTA: `"Got it"` (ETA path → ETA send proceeds) / `"Got it — Navigate Now"` (navigate path → maps launch). `handleNavigateRequest` was split — the notes sheet is the outer gate, then `proceedNavigateRequest` runs the existing early-pickup gate, so neither bypasses the other. `notes_flip` is **pickup-only** in this sheet. AVA Remembers text is fetched via `listNotesForAddress(avaAddressKey)` and gated on the existing `avaNoteCount`. Null notes → no sheet, both actions proceed with zero friction.
+
+### `48ab75c` — Stop Detail Order Notes section + route-list indicator (Component 4)
+Collapsible **"Order Notes (N)"** section on Stop Detail (above the AVA Remembers entry surface) listing all non-null TapGoods note fields; hidden on depot stops and when empty. Here `notes_flip` shows on **all** stop types (informational) — the pickup-only gate is specific to the pre-launch sheet. The existing blue **"Note from dispatch"** auto-modal + persistent card are untouched (label wording left as-is per Darren). Route list (`RouteListScreen`) shows a small blue note glyph next to the customer name when `dispatcher_notes` is present.
+
+### Build + push
+`npx next build` green after each task (EXIT=0); all five commits pushed to `feature/ava-phase1` (Vercel **preview**, not production).
+
+---
+
 ## 2026-05-28 — AVA Phase 1 — Morning-card count fixes — branch `feature/ava-phase1` — commits `71ec8a1`, `dec52c8`
 
 **Scope.** Two correctness fixes to `src/components/ava/AvaMorningCard.tsx` (one helper change in `src/lib/ava/dependencyHits.ts`) after Darren tested the morning card against a live route. No migrations, no new files. Branch still **NOT merged to `main`**.
