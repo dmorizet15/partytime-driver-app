@@ -1,5 +1,19 @@
 # Open Tasks — partytime-driver-app
 
+## May 28, 2026 — AVA Phase 1 — Morning-card count fixes (branch `feature/ava-phase1`, commits `71ec8a1`, `dec52c8`)
+
+Two correctness fixes to `AvaMorningCard.tsx` after a live-route test: card visibility decoupled from `checklist_enabled` + stats zero-state; depot stops excluded from all counts; tent count gated on category AND name. Branch still **NOT merged to `main`**.
+
+- [ ] **Smoke-test on the preview deploy:**
+  1. **Stop count.** Driver whose route ends at the depot (`warehouse_return`) → Home AVA card / hero stop count excludes the return leg (a 3-leg route reads "2 stops").
+  2. **Tent count.** Route with a real tent plus sidewalls/wind walls/door walls (all TapGoods category "TENTS") → checklist/tent count reflects only the actual tent(s), not the accessories. Verify a 20×20 frame tent + walls reads "1 tent", not 5.
+  3. **Checklist off, stats on.** Driver with `checklist_enabled=false`, `stats_enabled=true` → AVA card still renders (stats block visible); no checklist offer block.
+  4. **Checklist off, stats off, a stop note exists** → card still renders (notes nudge present).
+  5. **Stats on, zero completed stops this week** (Monday morning) → stats block shows "No stops completed yet this week." instead of the card vanishing.
+- [ ] **Tent/accessory taxonomy is keyword-based, not authoritative.** `countTentItems` name gate (`tent`/`canopy`/`marquee`) is a heuristic over TapGoods names. If a tent product is named without any of those keywords (e.g. a branded "PartyPeak 20×20") it will be missed. The principled fix is TapGoods data hygiene (same root cause as the `resolveCategory` overrides) — revisit if a real tent slips the count. See `tasks/lessons.md`.
+
+---
+
 ## May 28, 2026 — AVA Phase 1 — Profile Settings UI (branch `feature/ava-phase1`, commit `35eb566`)
 
 Driver-self-service "AVA Preferences" section on the Profile screen for the three opt-in columns. Branch still **NOT merged to `main`** — pending Darren's go-ahead.

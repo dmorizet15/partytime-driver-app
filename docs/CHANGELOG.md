@@ -4,6 +4,26 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-05-28 — AVA Phase 1 — Morning-card count fixes — branch `feature/ava-phase1` — commits `71ec8a1`, `dec52c8`
+
+**Scope.** Two correctness fixes to `src/components/ava/AvaMorningCard.tsx` (one helper change in `src/lib/ava/dependencyHits.ts`) after Darren tested the morning card against a live route. No migrations, no new files. Branch still **NOT merged to `main`**.
+
+### `71ec8a1` — checklist toggle gates the block, not the card; stats zero-state
+
+- **Bug A — `checklist_enabled` no longer affects card visibility.** The card renders when ANY trigger is true: `stats_enabled`, `ava_stop_notes` hits > 0, or (`checklist_enabled` AND dependency hits > 0). Turning the checklist off hides only its offer block; the card stays as long as stats is on or notes exist.
+- **Bug B — stats block renders whenever `stats_enabled`** (was gated on `weekStopsCompleted > 0`). On a slow day / Monday morning it shows a zero-state ("No stops completed yet this week.") instead of vanishing. This also makes `stats_enabled` a count-independent card trigger, which fixes Bug A's symptom for opted-in drivers with 0 stops and the checklist off.
+
+### `dec52c8` — exclude depot stops from counts; tent count requires category AND name
+
+- **Fix 1 — single `customerStops` source.** `AvaMorningCard` derives `customerStops` (= `dayStops` minus `warehouse_return` / `warehouse`) via `useMemo` and routes every count through it: `stopCount`, `codCount`, the `tentCount` item source, the checklist manifest, and the stop-note address lookup. The live test route went 3 → 2 stops (the return-to-warehouse leg no longer counts). Defensive even though depot stops carry no customer manifest today.
+- **Fix 2 — `countTentItems` name gate.** `isTentItem` (`src/lib/ava/dependencyHits.ts`) now requires `category` contains `tent` **AND** name contains one of `tent` / `canopy` / `marquee`. The category-only match was pulling sidewalls, wind walls, and door walls (all filed under TapGoods category "TENTS") into the count — 3 false positives, qty-summed to 5 on the test route. Name gate drops accessories; the category gate still drops e.g. a "tent heater" filed in a non-TENTS category. Test route now reports 1 tent (the 20×20 cross-cable frame tent) instead of 5.
+
+### Build + push
+
+`npx next build` green; both commits pushed to `feature/ava-phase1` (Vercel preview, not production).
+
+---
+
 ## 2026-05-28 — AVA Phase 1 — Profile Settings UI — branch `feature/ava-phase1` — commit `35eb566`
 
 **Scope.** Driver-self-service controls for the three AVA preference columns (`checklist_enabled`, `personality_preference`, `stats_enabled`), which existed since Session 1 but were only changeable via SQL. No new migrations. New "AVA Preferences" section on the Profile screen.
