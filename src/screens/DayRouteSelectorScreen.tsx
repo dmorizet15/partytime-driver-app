@@ -756,6 +756,7 @@ export default function DayRouteSelectorScreen() {
                 profile={profile}
                 dayStops={dayStops}
                 todayKey={today}
+                routeDispatcherNote={primaryRoute?.dispatcher_notes ?? null}
               />
             )}
 

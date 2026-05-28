@@ -46,9 +46,10 @@ const C = {
 const FONT_DISPLAY = "var(--font-archivo), 'Archivo', 'Inter', system-ui, -apple-system, sans-serif"
 
 interface AvaMorningCardProps {
-  profile:   UserProfile
-  dayStops:  Stop[]
-  todayKey:  string  // YYYY-MM-DD — drives stable personality-variant selection
+  profile:             UserProfile
+  dayStops:            Stop[]
+  todayKey:            string  // YYYY-MM-DD — drives stable personality-variant selection
+  routeDispatcherNote: string | null  // routes.dispatcher_notes for the active route
 }
 
 interface CardSignals {
@@ -59,7 +60,7 @@ interface CardSignals {
   loading:            boolean
 }
 
-export default function AvaMorningCard({ profile, dayStops, todayKey }: AvaMorningCardProps) {
+export default function AvaMorningCard({ profile, dayStops, todayKey, routeDispatcherNote }: AvaMorningCardProps) {
   const [signals, setSignals] = useState<CardSignals>({
     weekStopsCompleted: null,
     notesByAddress:     new Map(),
@@ -87,6 +88,13 @@ export default function AvaMorningCard({ profile, dayStops, todayKey }: AvaMorni
       (s) => s.stop_type !== 'warehouse_return' && s.stop_type !== 'warehouse'
     ),
     [dayStops],
+  )
+
+  // Customer stops carrying a stop-level dispatcher note — drives the
+  // morning-card count line + read-only review sheet (Component 2).
+  const stopsWithDispatchNotes = useMemo(
+    () => customerStops.filter((s) => s.dispatcher_notes && s.dispatcher_notes.trim().length > 0),
+    [customerStops],
   )
 
   // Fetch weekly stats (gated on opt-in), today's stop-note previews, and
@@ -146,6 +154,8 @@ export default function AvaMorningCard({ profile, dayStops, todayKey }: AvaMorni
   const showStats        = profile.stats_enabled
   const notesCount       = signals.notesByAddress.size
   const showNotesNudge   = notesCount > 0
+  const routeNote          = routeDispatcherNote?.trim() ? routeDispatcherNote.trim() : null
+  const dispatchNotesCount = stopsWithDispatchNotes.length
 
   const preference: PersonalityPreference =
     profile.personality_preference === 'personality' ? 'personality' : 'direct'
@@ -180,10 +190,11 @@ export default function AvaMorningCard({ profile, dayStops, todayKey }: AvaMorni
     stopSpeaking()
     const myToken = ++playTokenRef.current
     setIsSpeaking(true)
-    speak(message).finally(() => {
+    const spoken = routeNote ? `From dispatch: ${routeNote}. ${message}` : message
+    speak(spoken).finally(() => {
       if (playTokenRef.current === myToken) setIsSpeaking(false)
     })
-  }, [message])
+  }, [message, routeNote])
 
   // Trigger rule: render only when AVA has at least one thing to surface.
   // While the network is in flight, defer the gate to avoid a render+unmount
@@ -191,7 +202,7 @@ export default function AvaMorningCard({ profile, dayStops, todayKey }: AvaMorni
   if (signals.loading && (profile.stats_enabled || true /* notes always queried */)) {
     return null
   }
-  if (!checklistOffered && !showStats && !showNotesNudge) {
+  if (!checklistOffered && !showStats && !showNotesNudge && !routeNote && dispatchNotesCount === 0) {
     return null
   }
 
@@ -233,6 +244,33 @@ export default function AvaMorningCard({ profile, dayStops, todayKey }: AvaMorni
             AVA
           </span>
         </div>
+
+        {/* FROM DISPATCH — route-level dispatcher note. First content block;
+            AVA speaks it first (see handlePlayBrief). Amber treatment adapted
+            to this dark card (same family as the checklist/notes blocks). */}
+        {routeNote && (
+          <div style={{
+            marginTop: 12,
+            padding: '11px 14px',
+            background: 'rgba(255,184,0,0.12)',
+            border: '1px solid rgba(255,184,0,0.35)',
+            borderRadius: 12,
+          }}>
+            <div style={{
+              fontSize: 10.5, fontWeight: 900, letterSpacing: '0.18em',
+              textTransform: 'uppercase', color: C.gold,
+              fontFamily: FONT_DISPLAY,
+            }}>
+              From Dispatch
+            </div>
+            <p style={{
+              margin: '6px 0 0', fontSize: 14, lineHeight: 1.45, color: C.text,
+              whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+            }}>
+              {routeNote}
+            </p>
+          </div>
+        )}
 
         {/* Morning message — 1-2 sentences, personality-aware */}
         <p style={{
