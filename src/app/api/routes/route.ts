@@ -137,6 +137,7 @@ export async function GET(req: NextRequest) {
       truck_id,
       truck_id_2,
       break_blocks,
+      dispatcher_notes,
       truck:trucks!routes_truck_id_fkey(id, name, plate, dvir_requirement, current_defect_status),
       truck_2:trucks!routes_truck_id_2_fkey(id, name, plate)
     `)
@@ -183,6 +184,8 @@ export async function GET(req: NextRequest) {
         pickup_window_start, pickup_window_end,
         event_start, event_end,
         notes_classification,
+        notes_additional_delivery, notes_employee_authored, notes_flip,
+        notes_set_by_time, notes_strike_time,
         dispatcher_time_override, dispatcher_constraint_dismissed
       `)
       .in('route_id', routeIds)
