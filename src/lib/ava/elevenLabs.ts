@@ -13,8 +13,13 @@
 // gesture in the same task. Auto-speak on mount may be blocked on first load;
 // the toggle press is itself a gesture so subsequent voice playback works.
 
-const ELEVENLABS_VOICE_ID = 'uYXf8XasLslADfZ2MB4u'
+const ELEVENLABS_VOICE_ID = 'gJx1vCzNCD1EQHT212Ls'
 const ELEVENLABS_API_URL  = 'https://api.elevenlabs.io/v1/text-to-speech'
+
+const VOICE_STABILITY     = 0.35
+const VOICE_SIMILARITY    = 0.75
+const VOICE_STYLE         = 0.0
+const VOICE_SPEAKER_BOOST = true
 
 let currentAudioCtx: AudioContext | null = null
 let currentSource:   AudioBufferSourceNode | null = null
@@ -48,7 +53,12 @@ export async function speakWithElevenLabs(text: string): Promise<void> {
     body: JSON.stringify({
       text,
       model_id: 'eleven_turbo_v2',
-      voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+      voice_settings: {
+        stability:         VOICE_STABILITY,
+        similarity_boost:  VOICE_SIMILARITY,
+        style:             VOICE_STYLE,
+        use_speaker_boost: VOICE_SPEAKER_BOOST,
+      },
     }),
   })
   if (!resp.ok) throw new Error(`ElevenLabs HTTP ${resp.status}`)
