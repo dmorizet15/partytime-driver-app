@@ -395,6 +395,7 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
               const sentAt      = stop.on_the_way_sent_at ? formatSentAt(stop.on_the_way_sent_at) : null
               const addressLine = [stop.address_line_1, stop.city].filter(Boolean).join(', ')
               const hasChips    = isOtw || isCompleted || !!payLabel || isWarehouse
+              const hasDispatchNote = !!stop.dispatcher_notes && stop.dispatcher_notes.trim().length > 0
 
               return (
                 <button
@@ -465,13 +466,32 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
 
                     <div style={{
                       marginTop: stop.company_name ? 2 : 0,
-                      fontSize: 16, fontWeight: 800,
-                      color: isCompleted ? C.muted : C.ink,
-                      fontFamily: FONT_DISPLAY, lineHeight: 1.2,
-                      letterSpacing: '-0.01em',
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      display: 'flex', alignItems: 'center', gap: 6,
                     }}>
-                      {stop.customer_name}
+                      <span style={{
+                        fontSize: 16, fontWeight: 800,
+                        color: isCompleted ? C.muted : C.ink,
+                        fontFamily: FONT_DISPLAY, lineHeight: 1.2,
+                        letterSpacing: '-0.01em',
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      }}>
+                        {stop.customer_name}
+                      </span>
+                      {hasDispatchNote && (
+                        <span
+                          aria-label="Has a note from dispatch"
+                          title="Note from dispatch"
+                          style={{
+                            flexShrink: 0,
+                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                            width: 16, height: 16, borderRadius: 4, background: C.blue,
+                          }}
+                        >
+                          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path d="M4 5h16M4 12h16M4 19h10" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/>
+                          </svg>
+                        </span>
+                      )}
                     </div>
 
                     {stop.client_company && (

@@ -325,6 +325,7 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   // per stop per mount; resets naturally on unmount / route reload.
   const [preSheet, setPreSheet] = useState<{ sections: StopNotesSections; mode: 'eta' | 'navigate' } | null>(null)
   const seenNoteStopsRef = useRef<Set<string>>(new Set())
+  const [orderNotesOpen, setOrderNotesOpen] = useState(false)
   const avaAddressKey = stop?.address_line_1
     ? normalizeAddressKey(stop.address_line_1)
     : ''
@@ -614,6 +615,16 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   const isWarehouseReturn = stop.stop_type === 'warehouse_return'
   // Either one suppresses customer-facing UI (SMS, payment, POD).
   const isDepotStop = isWarehouse || isWarehouseReturn
+
+  // TapGoods-synced order notes for the collapsible "Order Notes" section.
+  // Only non-empty fields are shown; section hidden entirely when empty.
+  const orderNotes: Array<{ label: string; text: string }> = [
+    { label: 'Delivery instructions', text: stop.notes_additional_delivery ?? '' },
+    { label: 'Staff note',            text: stop.notes_employee_authored ?? '' },
+    { label: 'Flip / teardown note',  text: stop.notes_flip ?? '' },
+    { label: 'Set-by time',           text: stop.notes_set_by_time ?? '' },
+    { label: 'Strike time',           text: stop.notes_strike_time ?? '' },
+  ].filter((n) => n.text.trim().length > 0)
 
   // Headline = venue/business if available, else customer name. Trailing period
   // applied in JSX so the period color can be toned independently if needed.
@@ -2267,6 +2278,60 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
               </div>
             </div>
           </>
+        )}
+
+        {/* Order Notes — TapGoods-synced notes for this order. Collapsed by
+            default; hidden entirely when there are none or on depot stops. The
+            blue "Note from dispatch" surfaces above are separate and stay. */}
+        {!isDepotStop && orderNotes.length > 0 && (
+          <div style={{ padding: '14px 18px 0' }}>
+            <button
+              type="button"
+              onClick={() => setOrderNotesOpen((v) => !v)}
+              aria-expanded={orderNotesOpen}
+              style={{
+                width: '100%', textAlign: 'left',
+                background: C.paper, border: `1.5px solid ${C.ink}`, borderRadius: 14,
+                padding: '12px 14px', cursor: 'pointer', fontFamily: 'inherit',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+              }}
+            >
+              <div style={{
+                fontSize: 10.5, fontWeight: 900, letterSpacing: '0.18em',
+                color: C.ink, textTransform: 'uppercase',
+              }}>
+                Order Notes ({orderNotes.length})
+              </div>
+              <span aria-hidden="true" style={{
+                fontSize: 14, color: C.muted,
+                transform: orderNotesOpen ? 'rotate(90deg)' : 'none',
+                transition: 'transform 120ms ease',
+              }}>›</span>
+            </button>
+            {orderNotesOpen && (
+              <div style={{
+                marginTop: 8, padding: '12px 14px',
+                background: C.off, borderRadius: 12,
+              }}>
+                {orderNotes.map((n, i) => (
+                  <div key={n.label} style={{ marginTop: i === 0 ? 0 : 14 }}>
+                    <div style={{
+                      fontSize: 10.5, fontWeight: 900, letterSpacing: '0.14em',
+                      textTransform: 'uppercase', color: C.muted, marginBottom: 4,
+                    }}>
+                      {n.label}
+                    </div>
+                    <div style={{
+                      fontSize: 14, lineHeight: 1.45, color: C.ink,
+                      whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                    }}>
+                      {n.text}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         )}
 
         {/* AVA Remembers — entry surface, rendered below the manifest so it
