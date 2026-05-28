@@ -1,5 +1,14 @@
 # Open Tasks — partytime-driver-app
 
+## May 28, 2026 — AVA Phase 1 MERGED to `main` + live in production (merge commit `37f83a9`)
+
+`feature/ava-phase1` merged via `--no-ff` and pushed to `main`; Vercel production deploy READY; branch deleted (local + remote). **All the "NOT merged to main" caveats in the entries below are now historical — the work is live.** The dispatcher/stop-notes smoke matrix (CLAUDE.md → "Dispatcher Notes + Stop Notes surface") now runs against production, not a preview.
+
+- [ ] **TTS sentence-pause — confirm on production.** `src/lib/ava/elevenLabs.ts` inserts `<break time="0.5s" />` after sentence-ending punctuation on the ElevenLabs request (commit `9560fb7`). Darren is listening on the live app and will report back. Tunable via the `SENTENCE_PAUSE` constant. If ElevenLabs ever reads the tag *aloud* on turbo_v2 (vs. just pausing/ignoring), fall back to splitting the brief into separate audio clips with a real silent gap. No date set — driver-confirmed item.
+- [ ] **Next AVA work goes on a NEW branch** (`feature/ava-phaseN`), not `main` and not the deleted `feature/ava-phase1`.
+
+---
+
 ## May 28, 2026 — AVA Phase 1 — Morning-card count fixes (branch `feature/ava-phase1`, commits `71ec8a1`, `dec52c8`)
 
 Two correctness fixes to `AvaMorningCard.tsx` after a live-route test: card visibility decoupled from `checklist_enabled` + stats zero-state; depot stops excluded from all counts; tent count gated on category AND name. Branch still **NOT merged to `main`**.

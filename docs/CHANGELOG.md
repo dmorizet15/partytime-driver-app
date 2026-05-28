@@ -4,6 +4,12 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-05-28 — AVA Phase 1 MERGED to `main` (production release) — merge commit `37f83a9`
+
+`feature/ava-phase1` merged into `main` via `git merge --no-ff` (27 commits, 10 components) and pushed to production. Vercel deployed the merge to `target: production` (state READY — verified via the Vercel API, deployment `dpl_5cUDqcSHeo6vLFhbzDNcdpzWiA71`). Branch deleted local + remote. Pre-merge gates all passed: build green (EXIT=0), `main` had not diverged (zero commits behind), migrations clean (17 files, highest `20260527017`). Follow-up docs commit `b84f4ca` updated the CLAUDE.md build-state header (Phase 1 live, branch deleted, next AVA work on a new branch). Also shipped earlier this session: the TTS sentence-pause fix (`9560fb7`) — pending Darren's listen on production.
+
+---
+
 ## 2026-05-28 — AVA Phase 1 — Dispatcher notes + stop notes surface — branch `feature/ava-phase1` — commits `104e652`, `943aec0`, `2673f3c`, `af69ed2`, `48ab75c`
 
 **Scope.** Surface dispatcher notes (route + stop level) and TapGoods order notes to drivers across three surfaces — the AVA morning brief, a pre-launch notes sheet, and the Stop Detail screen. All reads, **no migrations, no new API routes, no new tables**. Branch still **NOT merged to `main`**. Plan: `docs/superpowers/plans/2026-05-28-ava-dispatch-and-stop-notes.md`.
