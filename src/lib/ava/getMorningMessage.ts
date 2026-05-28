@@ -24,30 +24,47 @@ function pickVariantIndex(seed: string, variantCount: number): number {
 }
 
 // ─── Direct mode ─────────────────────────────────────────────────────────────
-// Single template per condition set, route-weight-aware. Joey + Austin + Lucas
-// default. The driver who said "straight and to the point" gets exactly that.
-function directMessage(s: MorningSummary): string {
-  if (s.stopCount === 0) return 'No stops today. Take it easy.'
+// Spoken-first copy: these lines are read aloud by a voice AI, so they're
+// conversational and warm rather than terse text-notification fragments. Tent
+// days and wind advisories hash-pick across variants (seeded by driver + date,
+// stable within a day); the rest are single lines. Joey + Austin + Lucas
+// default. Read every line aloud before changing it — if it sounds like a text
+// notification, rewrite it.
+function directMessage(s: MorningSummary, seed: string): string {
+  if (s.stopCount === 0) return 'No stops on your route today. Enjoy the day.'
 
   const stops = s.stopCount === 1 ? '1 stop' : `${s.stopCount} stops`
-  const weather = s.hasWeatherFlag ? ' Watch the weather.' : ''
+
+  // Wind is woven in as a natural, hash-picked sentence rather than a flat tail.
+  const windVariants = [
+    'Heads up — wind is an issue today. Stake everything twice.',
+    'Wind advisory on the route today. Make sure tents are secure and use extra stakes and ratchets as needed depending on soil conditions and wind exposure.',
+    "It's breezy out there. Double-check every stake and anchor.",
+  ]
+  const windTail = s.hasWeatherFlag
+    ? ` ${windVariants[pickVariantIndex(`${seed}|wind`, windVariants.length)]}`
+    : ''
 
   if (s.tentCount >= 2) {
-    const tents = s.tentCount === 1 ? '1 tent' : `${s.tentCount} tents`
-    return `Heavy tent day — ${stops}, ${tents}. Steady wins.${weather}`
+    const tentDay = [
+      `Big tent day — ${s.tentCount} tents across ${stops}. You can do it. Make Darren see why you're the best tent installer he has.`,
+      `${stops}, ${s.tentCount} tents. It's a heavy load day — work smart and you'll crush it.`,
+      `Heavy setup day. ${s.tentCount} tents, ${stops}. Do it right the first time.`,
+    ]
+    return `${tentDay[pickVariantIndex(seed, tentDay.length)]}${windTail}`
   }
   if (s.stopCount >= 4) {
-    return `Big day — ${stops}. Let's get to it.${weather}`
+    return `Full day ahead — ${stops} on your route. Get rolling early and you'll stay ahead of it.${windTail}`
   }
   if (s.codCount >= 2) {
-    return `${stops} today. ${s.codCount} CODs. Let's go.${weather}`
+    return `${stops} today — ${s.codCount} cash collections. Keep the money side organized.${windTail}`
   }
   if (s.codCount === 1) {
-    if (s.stopCount === 1) return `1 stop today, cash on arrival. Let's go.${weather}`
-    return `${stops} today. One COD. Let's go.${weather}`
+    if (s.stopCount === 1) return `One stop today, and it's a cash collection. Quick one — grab the money and you're done.${windTail}`
+    return `${stops} today, one's a cash collection. Knock them out in order and you're set.${windTail}`
   }
-  if (s.stopCount === 1) return `1 stop today. Easy.${weather}`
-  return `${stops} today. Let's go.${weather}`
+  if (s.stopCount === 1) return `Just one stop today. Get in, set it up right, and you're done.${windTail}`
+  return `${stops} on your route today. Nothing wild — get rolling and keep it moving.${windTail}`
 }
 
 // ─── Personality mode ────────────────────────────────────────────────────────
@@ -123,7 +140,7 @@ export function getMorningMessage(
   driverId: string,
   dateKey: string,
 ): string {
-  if (preference === 'direct') return directMessage(summary)
+  if (preference === 'direct') return directMessage(summary, `${driverId}|${dateKey}`)
   const variants = personalityVariants(summary)
   return variants[pickVariantIndex(`${driverId}|${dateKey}`, variants.length)]
 }
