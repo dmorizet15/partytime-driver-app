@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { UserProfile } from '@/types/auth'
 import type { Stop }        from '@/types'
 import { fetchPersonalStats }       from '@/lib/personalStatsClient'
@@ -77,14 +77,26 @@ export default function AvaMorningCard({ profile, dayStops, todayKey }: AvaMorni
   // speak() can't clobber isSpeaking after a fresh speak() has started.
   const playTokenRef = useRef(0)
 
+  // Customer stops only — warehouse_return / warehouse depot stops are not
+  // part of the driver's delivery work and must not inflate stop counts,
+  // COD counts, the tent tally, or note lookups. Depot stops carry no
+  // customer manifest today, but filtering defensively keeps every count
+  // honest if that ever changes.
+  const customerStops = useMemo(
+    () => dayStops.filter(
+      (s) => s.stop_type !== 'warehouse_return' && s.stop_type !== 'warehouse'
+    ),
+    [dayStops],
+  )
+
   // Fetch weekly stats (gated on opt-in), today's stop-note previews, and
   // the dependency-map rule sets in parallel. All fail open — a flaky
   // network just hides the corresponding sub-block; the card itself still
   // renders if any trigger remains.
   useEffect(() => {
     let cancelled = false
-    const addressKeys = dayStops.map(addressKey).filter(Boolean)
-    const allItems    = dayStops.flatMap((s) => s.items ?? [])
+    const addressKeys = customerStops.map(addressKey).filter(Boolean)
+    const allItems    = customerStops.flatMap((s) => s.items ?? [])
 
     const statsPromise = profile.stats_enabled
       ? fetchPersonalStats(profile.id).then((s) => s.weekStopsCompleted).catch(() => 0)
@@ -112,17 +124,18 @@ export default function AvaMorningCard({ profile, dayStops, todayKey }: AvaMorni
     )
 
     return () => { cancelled = true }
-  }, [profile.id, profile.stats_enabled, profile.checklist_enabled, dayStops])
+  }, [profile.id, profile.stats_enabled, profile.checklist_enabled, customerStops])
 
-  // Derive surface conditions (all sync, no awaits).
-  const allItems = dayStops.flatMap((s) => s.items ?? [])
+  // Derive surface conditions (all sync, no awaits). All counts run over
+  // customerStops so depot stops never inflate them.
+  const allItems = customerStops.flatMap((s) => s.items ?? [])
   const tentCount     = countTentItems(allItems)
   const triggeredCount = new Set(signals.triggeredItems.map((r) => r.required_item)).size
   const checklistHits  = signals.alwaysItems.length + triggeredCount
-  const codCount      = dayStops.filter(
+  const codCount      = customerStops.filter(
     (s) => s.stop_type === 'delivery' && COD_PAYMENT_STATES.has(s.payment_state ?? '')
   ).length
-  const stopCount     = dayStops.length
+  const stopCount     = customerStops.length
 
   // Card-visibility triggers. Each is independent — the card renders if ANY
   // is true (see the early-return gate below). checklist_enabled gates only

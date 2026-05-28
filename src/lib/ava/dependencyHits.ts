@@ -84,20 +84,32 @@ export async function getTriggeredItems(items: ManifestItem[]): Promise<Dependen
 }
 
 // ---------------------------------------------------------------------------
-// Lightweight category sniff — used by the morning-message generator to pick
-// the "heavy tent day" template. Independent of the dependency map; based on
-// the same item-name keywords the rest of the app uses (see `lib/inflatable.ts`
-// for the pattern). Conservative — counts any item whose name or category
-// contains a tent keyword.
-const TENT_KEYWORDS = ['tent', 'canopy', 'marquee']
+// Lightweight tent sniff — used by the morning-message generator to pick the
+// "heavy tent day" template and to display the tent count.
+//
+// An item counts as a tent only when BOTH hold:
+//   - category contains 'tent'   (it's filed under the TENTS family), AND
+//   - name contains 'tent' | 'canopy' | 'marquee'  (it's an actual tent, not
+//     an accessory)
+//
+// Why both: items filed under category "TENTS" include walls, wind walls, and
+// doors — accessories whose NAME has no tent keyword, so the name gate drops
+// them. Conversely a "tent heater" filed under a non-TENTS category has the
+// name keyword but fails the category gate, so it's dropped too. Qty is summed
+// on matched items (3 units of one tent model = 3, which is correct copy).
+const TENT_NAME_KEYWORDS = ['tent', 'canopy', 'marquee']
+
+function isTentItem(it: ManifestItem): boolean {
+  const name     = (it.name ?? '').toLowerCase()
+  const category = (it.category ?? '').toLowerCase()
+  return category.includes('tent')
+    && TENT_NAME_KEYWORDS.some((kw) => name.includes(kw))
+}
 
 export function countTentItems(items: ManifestItem[]): number {
   let total = 0
   for (const it of items) {
-    const blob = `${it.name ?? ''} ${it.category ?? ''}`.toLowerCase()
-    if (TENT_KEYWORDS.some((kw) => blob.includes(kw))) {
-      total += Math.max(1, it.qty ?? 1)
-    }
+    if (isTentItem(it)) total += Math.max(1, it.qty ?? 1)
   }
   return total
 }
