@@ -27,8 +27,9 @@ import {
 import { reportIssueSuccessKey } from '@/screens/workOrders/ReportIssueScreen'
 import { useAuthContext } from '@/context/AuthContext'
 import { normalizeAddressKey } from '@/lib/ava/addressKey'
-import { fetchTodayNotesHitCount } from '@/lib/ava/stopNotesClient'
+import { fetchTodayNotesHitCount, listNotesForAddress } from '@/lib/ava/stopNotesClient'
 import AvaNoteSheet from '@/components/ava/AvaNoteSheet'
+import StopNotesPreSheet, { type StopNotesSections } from '@/components/ava/StopNotesPreSheet'
 
 // sessionStorage key — driver chose to proceed despite the pickup window
 // not yet being open. Set by the standby card's dismiss button AND by the
@@ -319,6 +320,11 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   const [avaNoteOpen,     setAvaNoteOpen]     = useState(false)
   const [avaNoteCount,    setAvaNoteCount]    = useState(0)
   const [avaNoteRefresh,  setAvaNoteRefresh]  = useState(0)
+  // Pre-launch notes sheet — fires before Send-ETA or Navigate when the stop
+  // has any note. Once-per-stop guard via a ref Set so it shows at most once
+  // per stop per mount; resets naturally on unmount / route reload.
+  const [preSheet, setPreSheet] = useState<{ sections: StopNotesSections; mode: 'eta' | 'navigate' } | null>(null)
+  const seenNoteStopsRef = useRef<Set<string>>(new Set())
   const avaAddressKey = stop?.address_line_1
     ? normalizeAddressKey(stop.address_line_1)
     : ''
@@ -631,7 +637,18 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   // choose to wait or override. Override sticks for the session. We re-
   // evaluate against Date.now() here so the gate uses fresh time even
   // when the screen's `now` state hasn't ticked recently.
-  function handleNavigateRequest() {
+  async function handleNavigateRequest() {
+    if (!stop || navLoading) return
+    // Notes sheet is the OUTER gate. When it fires, its "Navigate Now" button
+    // resumes the flow via proceedNavigateRequest (which still runs the
+    // early-pickup gate). When there's nothing to show (or already seen this
+    // stop), fall straight through to proceedNavigateRequest.
+    const shown = await maybeShowPreSheet('navigate')
+    if (shown) return
+    proceedNavigateRequest()
+  }
+
+  function proceedNavigateRequest() {
     if (!stop || navLoading) return
     const nowMs = Date.now()
     const shouldGate =
@@ -883,6 +900,46 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     }
     logEvent('ETA_SMS_FAILED', routeId, stopId, stop.order_id, { error: result.error })
     return { success: false, error: result.error ?? 'Failed to send ETA text.' }
+  }
+
+  // Returns the assembled note sections for the current stop, or null if the
+  // stop has no notes at all. notes_flip is pickup-only per spec.
+  async function buildStopNoteSections(): Promise<StopNotesSections | null> {
+    if (!stop) return null
+    const timing = stop.notes_set_by_time?.trim() || stop.notes_strike_time?.trim() || null
+    let avaText: string | null = null
+    if (avaNoteCount > 0 && avaAddressKey) {
+      const rows = await listNotesForAddress(avaAddressKey)
+      avaText = rows[0]?.note?.trim() || null
+    }
+    const sections: StopNotesSections = {
+      dispatcherNote: stop.dispatcher_notes?.trim() || null,
+      deliveryInstr:  stop.notes_additional_delivery?.trim() || null,
+      staffNote:      stop.notes_employee_authored?.trim() || null,
+      flipNote:       stop.stop_type === 'pickup' ? (stop.notes_flip?.trim() || null) : null,
+      timingNote:     timing,
+      avaRemembers:   avaText,
+    }
+    const hasAny = Object.values(sections).some((v) => typeof v === 'string' && v.trim().length > 0)
+    return hasAny ? sections : null
+  }
+
+  // Returns true if the sheet was shown (action should pause); false if there's
+  // nothing to show or it's already been seen for this stop (action proceeds).
+  async function maybeShowPreSheet(mode: 'eta' | 'navigate'): Promise<boolean> {
+    if (!stop) return false
+    if (seenNoteStopsRef.current.has(stop.stop_id)) return false
+    const sections = await buildStopNoteSections()
+    if (!sections) return false
+    seenNoteStopsRef.current.add(stop.stop_id)
+    setPreSheet({ sections, mode })
+    return true
+  }
+
+  async function handleSendEtaRequest() {
+    if (!stop || etaStatus === 'sending') return
+    const shown = await maybeShowPreSheet('eta')
+    if (!shown) void handleSendEta()
   }
 
   async function handleSendEta() {
@@ -1617,7 +1674,7 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
                 <>
                   {/* Send ETA Text — small gold pill button when idle/sending/error */}
                   <button
-                    onClick={handleSendEta}
+                    onClick={handleSendEtaRequest}
                     disabled={etaStatus === 'sending'}
                     style={{
                       width: '100%', height: 50, borderRadius: 999,
@@ -2293,6 +2350,20 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
           cancelLabel="I'll wait"
           onConfirm={handleConfirmEarlyNavigate}
           onCancel={() => setShowEarlyPickupGate(false)}
+        />
+      )}
+
+      {preSheet && stop && (
+        <StopNotesPreSheet
+          customerName={stop.customer_name}
+          sections={preSheet.sections}
+          ctaLabel={preSheet.mode === 'navigate' ? 'Got it — Navigate Now' : 'Got it'}
+          onProceed={() => {
+            const mode = preSheet.mode
+            setPreSheet(null)
+            if (mode === 'navigate') proceedNavigateRequest()
+            else                     void handleSendEta()
+          }}
         />
       )}
 
