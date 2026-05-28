@@ -21,6 +21,9 @@ export interface Route {
   truck_dvir_requirement?:      'always' | 'when_towing' | 'never'
   truck_current_defect_status?: 'ok' | 'non_oos_defect' | 'oos_defect'
   truck_2_name?: string
+  // Route-level dispatcher note (dashboard-owned). Surfaced in the AVA
+  // morning brief "FROM DISPATCH" block. Read-only here.
+  dispatcher_notes?: string
 }
 
 // ─── Equipment summary ───────────────────────────────────────────────────────
@@ -71,6 +74,13 @@ export interface Stop {
   dispatcher_notes?: string  // dashboard-owned internal dispatch note; surfaces as a
                              //   "Note from dispatch" modal on stop open + persistent
                              //   re-open card. Distinct from TapGoods notes above.
+  // TapGoods-synced order notes (dashboard/TG-owned, read-only here). Surfaced
+  // in the Stop Detail "Order Notes" section and the pre-launch notes sheet.
+  notes_additional_delivery?: string  // TG additionalDeliveryInfo
+  notes_employee_authored?:   string  // concatenated employee-authored TG notes
+  notes_flip?:                string  // TG flipNotes (teardown)
+  notes_set_by_time?:         string  // TG setByTimeNotes
+  notes_strike_time?:         string  // TG strikeTimeNotes
   equipment: EquipmentSummary
   items?: Array<{ category?: string | null; name?: string | null; qty?: number | null }>
   payment_state?: PaymentState

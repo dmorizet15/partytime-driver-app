@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useRouter }                    from 'next/navigation'
 import { useAppState }                  from '@/context/AppStateContext'
 import { useAuth }                      from '@/hooks/useAuth'
@@ -10,6 +10,9 @@ import BottomNav                        from '@/components/BottomNav'
 import PostTripDefectCard               from '@/components/PostTripDefectCard'
 import StopWindowBadge                  from '@/components/StopWindowBadge'
 import FleetAlertCard                   from '@/components/fleet/FleetAlertCard'
+import AvaChip                          from '@/components/AvaChip'
+import WeatherFlagCard                  from '@/components/WeatherFlagCard'
+import AvaMorningCard                   from '@/components/ava/AvaMorningCard'
 
 // ─── Direction 03 (Editorial) tokens ──────────────────────────────────────────
 const C = {
@@ -79,18 +82,6 @@ function formatLiveEyebrow(d: Date): string {
   const hh = String(d.getHours()).padStart(2, '0')
   const mm = String(d.getMinutes()).padStart(2, '0')
   return `${wd} · ${hh}:${mm}`
-}
-
-// "7:42 AM" — used by the pre-trip inspected receipt. 12-hour with AM/PM
-// matches the brief's locked copy. Falls back to empty string on bad ISO.
-function formatSignedAt(iso: string): string {
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  let h = d.getHours()
-  const m = d.getMinutes()
-  const ampm = h >= 12 ? 'PM' : 'AM'
-  h = h % 12 || 12
-  return `${h}:${String(m).padStart(2, '0')} ${ampm}`
 }
 
 function timeGreeting(): string {
@@ -201,15 +192,6 @@ function ChevronRightIcon({ size = 16, color = C.muted }: IconProps) {
   )
 }
 
-function CheckIcon({ size = 18, color = C.ink }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
-         strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M4 12l5 5L20 6"/>
-    </svg>
-  )
-}
-
 // ─── Screen ───────────────────────────────────────────────────────────────────
 export default function DayRouteSelectorScreen() {
   const router = useRouter()
@@ -218,7 +200,6 @@ export default function DayRouteSelectorScreen() {
 
   const today = todayStr()
   const [now, setNow]         = useState<Date>(() => new Date())
-  const [toast, setToast]     = useState<string | null>(null)
 
   // Live eyebrow tick — refresh every 60s so the displayed time stays accurate
   useEffect(() => {
@@ -226,18 +207,23 @@ export default function DayRouteSelectorScreen() {
     return () => clearInterval(id)
   }, [])
 
-  // Toast auto-dismiss after 3s
+  // Force-refresh today's routes on every Home mount. AppState's loadDay
+  // short-circuits when (state.loadedDate === date && !state.error), so a
+  // soft loadDay(today) call after a dashboard-side route delete+recreate
+  // would keep the stale Route A in memory — `primaryRouteId` would point
+  // at the deleted route, `useInspectionStatus` would query its old
+  // inspection, and the quiet-state gate would hide the briefing on a
+  // freshly-uninspected route. Force=true skips the cache check. The ref
+  // gate ensures we only fetch once per mount even though `loadDay`'s
+  // identity changes after a successful fetch (useCallback dep on
+  // state.loadedDate), which would otherwise re-fire the effect.
+  const initialLoadRef = useRef(false)
   useEffect(() => {
-    if (!toast) return
-    const t = setTimeout(() => setToast(null), 3000)
-    return () => clearTimeout(t)
-  }, [toast])
-
-  // Load today's routes once on mount. Home is driver-scoped to today only —
-  // no date picker, so no need to refetch on date change.
-  useEffect(() => {
-    loadDay(today)
-  }, [today, loadDay])
+    if (initialLoadRef.current) return
+    initialLoadRef.current = true
+    loadDay(today, true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [today])
 
   const routes = getRoutesForDate(today)
 
@@ -313,32 +299,19 @@ export default function DayRouteSelectorScreen() {
   const truckName    = primaryRoute?.truck_name?.trim() || null
   const truckPlate   = primaryRoute?.truck_plate?.trim() || null
 
-  function showToast(msg: string) { setToast(msg) }
-
-  // Pre-inspection gate: stop taps are no-ops while the gate is closed. The
-  // visual treatment (40% opacity + pointer-events: none) handles affordance;
-  // this guard is belt-and-braces against keyboard/screen-reader bypass.
+  // Pre-trip-complete gate. AVA Phase 1 / Session 2 reuses this single boolean
+  // to flip Home from "morning briefing" (full layout) to "quiet state" (hero
+  // + operational flags only — see post-pre-trip block below).
   const inspected = inspection !== null
   function handleStopTap(stop: Stop) {
     if (!inspected) return
     router.push(`/route/${stop.route_id}/stop/${stop.stop_id}`)
   }
 
-  // Pre-inspection: card tap and gold CTA both launch the inspection flow
-  // (per the May 9 two-button consolidation decision).
+  // Pre-trip card and Gold CTA both launch the inspection flow.
   function handleInspect() {
     if (!primaryRouteId) return
     router.push(`/inspection?route_id=${primaryRouteId}`)
-  }
-
-  // Post-inspection: gold CTA navigates to Stop 1 detail. The brief locks
-  // "App stays on Home — driver taps Stop 1 themselves when ready" for
-  // inspection completion; this is the explicit user-initiated start, which
-  // does jump to the first stop.
-  function handleStartRoute() {
-    if (!inspected || dayStops.length === 0) return
-    const first = dayStops[0]
-    router.push(`/route/${first.route_id}/stop/${first.stop_id}`)
   }
 
   return (
@@ -375,18 +348,21 @@ export default function DayRouteSelectorScreen() {
           }}>
             {formatLiveEyebrow(now)}
           </div>
-          <div style={{
-            width: 32, height: 32, borderRadius: 9,
-            background: C.paper,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            overflow: 'hidden', flexShrink: 0,
-          }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/ptr-mark.png"
-              alt="PartyTime Rentals"
-              style={{ width: '74%', height: '74%', objectFit: 'contain' }}
-            />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{
+              width: 32, height: 32, borderRadius: 9,
+              background: C.paper,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              overflow: 'hidden', flexShrink: 0,
+            }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/ptr-mark.png"
+                alt="PartyTime Rentals"
+                style={{ width: '74%', height: '74%', objectFit: 'contain' }}
+              />
+            </div>
+            <AvaChip/>
           </div>
         </div>
 
@@ -407,27 +383,32 @@ export default function DayRouteSelectorScreen() {
           )}
         </div>
 
-        {/* Sub-copy */}
-        <div style={{
-          marginTop: 14, position: 'relative',
-          fontSize: 15, color: 'rgba(255,255,255,0.85)',
-          lineHeight: 1.4,
-        }}>
-          {isLoading ? (
-            'Loading today…'
-          ) : error ? (
-            'Could not load routes.'
-          ) : totalStopCount === 0 ? (
-            'No stops scheduled today.'
-          ) : (
-            <>
-              {sub.opener}{' '}
-              <strong style={{ color: '#fff', fontWeight: 800 }}>{sub.count}</strong>
-              {sub.suffix}
-              {breakdown && <> {breakdown}.</>}
-            </>
-          )}
-        </div>
+        {/* Sub-copy — hidden in post-pre-trip quiet state (AVA Phase 1 / Session 2
+            decision): once the route is active, Home becomes a quiet status
+            surface; planning context like the day's stop count belongs on the
+            Routes tab. Loading / error / empty states still surface here. */}
+        {!inspected && (
+          <div style={{
+            marginTop: 14, position: 'relative',
+            fontSize: 15, color: 'rgba(255,255,255,0.85)',
+            lineHeight: 1.4,
+          }}>
+            {isLoading ? (
+              'Loading today…'
+            ) : error ? (
+              'Could not load routes.'
+            ) : totalStopCount === 0 ? (
+              'No stops scheduled today.'
+            ) : (
+              <>
+                {sub.opener}{' '}
+                <strong style={{ color: '#fff', fontWeight: 800 }}>{sub.count}</strong>
+                {sub.suffix}
+                {breakdown && <> {breakdown}.</>}
+              </>
+            )}
+          </div>
+        )}
 
         {/* Truck pill — primary truck for today's route (driver app is single-truck
             per login, so truck_2 is intentionally ignored). Hidden when there's
@@ -569,14 +550,11 @@ export default function DayRouteSelectorScreen() {
         {/* Populated body — pre-trip + COD cards + day list + Ava + CTA */}
         {!isLoading && !error && totalStopCount > 0 && (
           <>
-            {/* Pre-trip inspection card — two states locked May 9, 2026:
-                State A (no inspection): tappable CTA, launches /inspection
-                State B (inspected): persistent receipt, gold check, non-tappable.
-                The card stays in place all day post-inspection — the receipt is
-                a deliberate "communication hub" element on Home, not a transient
-                affordance. */}
-            <div style={{ padding: '14px 18px 0' }}>
-              {!inspected ? (
+            {/* Pre-trip inspection card — only renders pre-pre-trip. AVA Phase 1
+                Session 2 dropped the post-inspection "receipt" branch: once the
+                route is active, Home goes quiet. Pre-trip → /inspection. */}
+            {!inspected && (
+              <div style={{ padding: '14px 18px 0' }}>
                 <button
                   onClick={handleInspect}
                   style={{
@@ -614,45 +592,8 @@ export default function DayRouteSelectorScreen() {
                   </div>
                   <ChevronRightIcon size={18} color="rgba(255,255,255,0.55)"/>
                 </button>
-              ) : (
-                <div
-                  role="status"
-                  aria-label={`Pre-trip inspected at ${formatSignedAt(inspection.signed_at)}`}
-                  style={{
-                    width: '100%',
-                    background: C.ink,
-                    borderRadius: 18,
-                    padding: '14px 16px',
-                    display: 'flex', alignItems: 'center', gap: 14,
-                    fontFamily: 'inherit',
-                  }}
-                >
-                  <div style={{
-                    width: 44, height: 44, borderRadius: '50%',
-                    background: C.gold,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    flexShrink: 0,
-                  }}>
-                    <CheckIcon size={22} color={C.ink}/>
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{
-                      fontSize: 10.5, fontWeight: 900, letterSpacing: '0.18em',
-                      color: C.gold, textTransform: 'uppercase',
-                    }}>
-                      Pre-trip Inspected
-                    </div>
-                    <div style={{
-                      marginTop: 2, fontSize: 15, fontWeight: 800, color: '#fff',
-                      fontFamily: FONT_DISPLAY, letterSpacing: '-0.01em',
-                      fontVariantNumeric: 'tabular-nums',
-                    }}>
-                      Signed off · {formatSignedAt(inspection.signed_at)}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
+              </div>
+            )}
 
             {/* Post-trip defect card — appears only after the route is complete
                 and the driver hasn't already submitted a post-trip defect today.
@@ -802,7 +743,26 @@ export default function DayRouteSelectorScreen() {
                 open work order; self-fetches, hidden otherwise */}
             <FleetAlertCard />
 
-            {/* Day list eyebrow */}
+            {/* Weather heads-up — static-summary card; renders only when wind /
+                rain / snow forecast ≥caution at first delivery stop. Hidden in
+                quiet state per AVA Phase 1 / Session 2 architecture. */}
+            {!inspected && <WeatherFlagCard dayStops={dayStops} />}
+
+            {/* AVA morning brief (Tier 2) — conditional, hidden in quiet state.
+                Self-gates internally on (checklist hits | stats opt-in | notes
+                match); returns null when AVA has nothing to surface. */}
+            {!inspected && profile && (
+              <AvaMorningCard
+                profile={profile}
+                dayStops={dayStops}
+                todayKey={today}
+                routeDispatcherNote={primaryRoute?.dispatcher_notes ?? null}
+              />
+            )}
+
+            {/* Day list eyebrow — hidden post-pre-trip; Routes tab is the
+                entry point for the active route. */}
+            {!inspected && (
             <div style={{
               padding: '20px 22px 8px',
               fontFamily: FONT_DISPLAY,
@@ -811,8 +771,11 @@ export default function DayRouteSelectorScreen() {
             }}>
               The day, in {totalStopCount}
             </div>
+            )}
 
-            {/* Day stop list — vertical line + numbered circles */}
+            {/* Day stop list — vertical line + numbered circles. Hidden in
+                quiet state per AVA Phase 1 / Session 2 architecture. */}
+            {!inspected && (
             <div style={{ padding: '0 18px', position: 'relative' }}>
               {/* connector line — sits behind circles (z-index 0). Center
                   alignment: container padding-left=18, circle width=32 → center
@@ -1012,54 +975,20 @@ export default function DayRouteSelectorScreen() {
                 )
               })}
             </div>
+            )}
 
-            {/* Ask Ava chip — designed stub, right-aligned */}
-            <div style={{
-              padding: '18px 18px 0',
-              display: 'flex', justifyContent: 'flex-end',
-            }}>
-              <button
-                onClick={() => showToast('Coming soon — this feature is in development.')}
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 10,
-                  background: C.paper,
-                  border: `1.5px solid rgba(10,11,20,0.10)`,
-                  padding: '6px 14px 6px 6px',
-                  borderRadius: 999,
-                  cursor: 'pointer',
-                  fontFamily: 'inherit',
-                  color: C.ink,
-                  boxShadow: '0 6px 16px -8px rgba(10,11,20,0.18)',
-                }}
-              >
-                <span style={{
-                  width: 28, height: 28, borderRadius: '50%',
-                  background: C.coral,
-                  color: '#fff',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  flexShrink: 0,
-                  fontSize: 14, fontWeight: 900,
-                  fontFamily: FONT_DISPLAY,
-                  lineHeight: 1,
-                }}>
-                  +
-                </span>
-                <span style={{
-                  fontSize: 13, fontWeight: 700, color: C.ink, letterSpacing: '-0.005em',
-                }}>
-                  Ask Ava about today
-                </span>
-              </button>
-            </div>
+            {/* "Ask Ava about today" stub deleted — AvaChip in the header is
+                the permanent Tier 1 entry point; Tier 2 morning brief above
+                covers the proactive surface. */}
 
-            {/* Gold CTA — two states locked May 9, 2026:
-                State A (no inspection): "Inspect & Start Route" → /inspection
-                State B (inspected):     "Start Route"           → Stop 1 detail
-                Both share the same gold pill — the label and onClick swap, the
-                visual treatment stays constant so muscle memory holds. */}
+            {/* Gold CTA — pre-pre-trip only. Once inspected, Home goes quiet
+                and the Routes tab becomes the active-route entry point.
+                Original (May 9, 2026) two-state design (Inspect → Start Route
+                in place) superseded by AVA Phase 1 / Session 2. */}
+            {!inspected && (
             <div style={{ padding: '18px 18px 0' }}>
               <button
-                onClick={inspected ? handleStartRoute : handleInspect}
+                onClick={handleInspect}
                 disabled={routes.length === 0}
                 style={{
                   width: '100%', height: 60, borderRadius: 999,
@@ -1074,7 +1003,7 @@ export default function DayRouteSelectorScreen() {
                   boxShadow: '0 14px 30px -10px rgba(255,184,0,0.55)',
                 }}
               >
-                <span>{inspected ? 'Start Route' : 'Inspect & Start Route'}</span>
+                <span>Inspect & Start Route</span>
                 <span style={{
                   width: 44, height: 44, borderRadius: '50%',
                   background: C.ink,
@@ -1085,37 +1014,12 @@ export default function DayRouteSelectorScreen() {
                 </span>
               </button>
             </div>
+            )}
           </>
         )}
       </div>
 
       <BottomNav/>
-
-      {/* Toast — fixed bottom, ephemeral. Single state slot, auto-dismiss 3s.
-          Bottom offset clears the 80px BottomNav + iOS safe-area inset. */}
-      {toast && (
-        <div
-          role="status"
-          aria-live="polite"
-          style={{
-            position: 'fixed',
-            left: '50%',
-            bottom: 'calc(108px + env(safe-area-inset-bottom))',
-            transform: 'translateX(-50%)',
-            background: C.ink, color: '#fff',
-            padding: '12px 18px', borderRadius: 999,
-            fontSize: 13, fontWeight: 700,
-            borderLeft: `4px solid ${C.gold}`,
-            boxShadow: '0 12px 30px -10px rgba(0,0,0,0.45)',
-            zIndex: 100,
-            maxWidth: '80vw',
-            fontFamily: 'inherit',
-            textAlign: 'center',
-          }}
-        >
-          {toast}
-        </div>
-      )}
     </div>
   )
 }

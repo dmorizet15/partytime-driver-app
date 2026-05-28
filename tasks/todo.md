@@ -1,5 +1,83 @@
 # Open Tasks — partytime-driver-app
 
+## May 28, 2026 — AVA Phase 1 — Morning-card count fixes (branch `feature/ava-phase1`, commits `71ec8a1`, `dec52c8`)
+
+Two correctness fixes to `AvaMorningCard.tsx` after a live-route test: card visibility decoupled from `checklist_enabled` + stats zero-state; depot stops excluded from all counts; tent count gated on category AND name. Branch still **NOT merged to `main`**.
+
+- [ ] **Smoke-test on the preview deploy:**
+  1. **Stop count.** Driver whose route ends at the depot (`warehouse_return`) → Home AVA card / hero stop count excludes the return leg (a 3-leg route reads "2 stops").
+  2. **Tent count.** Route with a real tent plus sidewalls/wind walls/door walls (all TapGoods category "TENTS") → checklist/tent count reflects only the actual tent(s), not the accessories. Verify a 20×20 frame tent + walls reads "1 tent", not 5.
+  3. **Checklist off, stats on.** Driver with `checklist_enabled=false`, `stats_enabled=true` → AVA card still renders (stats block visible); no checklist offer block.
+  4. **Checklist off, stats off, a stop note exists** → card still renders (notes nudge present).
+  5. **Stats on, zero completed stops this week** (Monday morning) → stats block shows "No stops completed yet this week." instead of the card vanishing.
+- [ ] **Tent/accessory taxonomy is keyword-based, not authoritative.** `countTentItems` name gate (`tent`/`canopy`/`marquee`) is a heuristic over TapGoods names. If a tent product is named without any of those keywords (e.g. a branded "PartyPeak 20×20") it will be missed. The principled fix is TapGoods data hygiene (same root cause as the `resolveCategory` overrides) — revisit if a real tent slips the count. See `tasks/lessons.md`.
+
+---
+
+## May 28, 2026 — AVA Phase 1 — Profile Settings UI (branch `feature/ava-phase1`, commit `35eb566`)
+
+Driver-self-service "AVA Preferences" section on the Profile screen for the three opt-in columns. Branch still **NOT merged to `main`** — pending Darren's go-ahead.
+
+- [ ] **Smoke-test the preview deploy:**
+  1. Profile screen → "AVA Preferences" section renders between "My Activity" and "Account": Morning checklist toggle, AVA voice style (Direct | Personality), Weekly stats toggle. Initial states reflect the driver's current DB values.
+  2. Flip a toggle → it animates immediately (optimistic). Reload the app → the new value persists (DB write landed). Confirm via dashboard `SELECT checklist_enabled, personality_preference, stats_enabled FROM profiles WHERE id = '<driver>';`.
+  3. Flip Weekly stats ON (for a driver with completed stops this week) → return to Home → the AVA morning card now shows the stats line without a logout/login.
+  4. Switch AVA voice style to Personality → Home → the morning message uses the personality-variant copy on next mount.
+  5. **Failure path:** kill network (DevTools offline) → flip a toggle → it should snap back to the prior state and show the red "Couldn't save preference — try again" toast.
+- [ ] **`profiles` has no RLS UPDATE policy (by design).** Driver-editable profile fields must go through `PATCH /api/profile/ava-preferences` (admin client, scoped allow-list). If a future feature needs another driver-editable column, extend that route's allow-list — do NOT add a table-level UPDATE policy (would expose roles / fleet_maintenance_access / work_order_technician to self-mutation).
+- [x] ~~**Profile-settings UI for the three opt-in toggles.**~~ Shipped 2026-05-28 (commit `35eb566`).
+
+---
+
+## May 27, 2026 — AVA Phase 1 — Bug Fix Pass (branch `feature/ava-phase1`, commit `4ddcadb`)
+
+Three bug fixes on top of Session 5. Branch still **NOT merged to `main`** — pending Darren's smoke test on the preview deploy, then go-ahead.
+
+- [ ] **Smoke-test the bug fixes on the preview deploy:**
+  1. **Bug 1 — Stop Detail note entry.** Open any non-depot stop. Below the manifest block: dashed "Leave a note for the next driver →" link when no notes exist, OR amber "AVA has a note about this stop →" button when ≥1 note exists. Renders on completed stops too (regression from before the fix).
+  2. **Bug 1 — Tier 3 hero pill.** Open a stop where a note has been saved → amber "AVA KNOWS THIS STOP" pill below the address in the hero. Open a stop with no notes → no pill.
+  3. **Bug 1 — End-to-end note save.** Tap the dashed link → AvaNoteSheet opens → write a note → Save → toast confirms → close the sheet → re-open the stop. Both surfaces (hero pill + post-manifest button) should now show the amber state.
+  4. **Bug 2 — Route delete+recreate refresh.** Dashboard: delete the driver's route, create a new route for the same truck same date. Driver app: navigate to Home (or refresh). Home should render the full briefing (hero + day list + AVA card + weather + Gold CTA) for the new, uninspected route. No more blank quiet state.
+  5. **Bug 3 — TTS button.** Home → voice mode on (default) → "▶ HEAR YOUR MORNING BRIEF" gold pill button below the message. Tap → ElevenLabs reads the message in natural voice (no robotic WebSpeech fallback on iOS first load). Toggle to TEXT mid-playback → audio stops. Toggle back to VOICE → play button reappears, can replay.
+- [ ] **All 9 Phase 1 components + bug fixes landed on `feature/ava-phase1`. Branch is ready to merge to `main` when Darren approves the smoke test.** Don't merge until explicitly told.
+- [ ] **Profile-settings UI for the three opt-in toggles** is still pending — columns exist in the DB since Session 1, but the Profile screen has no switches for `checklist_enabled`, `personality_preference`, `stats_enabled`. Pair with whichever upcoming Profile-screen session lets a driver flip these without dashboard support.
+- [ ] **Persisting voice/text preference to DB** is deferred. Today it resets to voice default on every card mount. If drivers want a sticky preference, add a `voice_default` column (or extend `personality_preference`) and wire to it from the toggle.
+- [ ] **Session 6 — real STT + SOP lookup behind the AvaChip mic button.** Today the button is a stub with a "coming soon" toast. Session 6 wires browser STT (Web Speech API recognition or Whisper) + the SOP retrieval logic, and replaces the toast with the actual conversation UI inside the drawer.
+
+---
+
+## May 27, 2026 — AVA Phase 1 — Session 2 (branch `feature/ava-phase1`)
+
+Morning brief card (Tier 2) + Home post-pre-trip quiet state + weather flag (Part 1). Design doc: `docs/ava/2026-05-27-ava-morning-brief-card.md`. Branch must NOT merge to `main` until all 9 Phase 1 components are in. Vercel auto-deploys as a **preview**.
+
+- [ ] **Smoke-test the preview deploy** once Vercel finishes:
+  1. Pre-pre-trip Home: hero (greeting + stop count + truck), day list, "Inspect & Start Route" CTA. AVA card renders only for `stats_enabled=true` drivers (Joey default). Weather card renders only on ≥amber wind/rain/snow at first delivery stop.
+  2. Complete pre-trip → return to Home: hero shows greeting + truck only (no sub-copy). Pre-trip receipt, day list, AVA card, weather card, Gold CTA all hidden. FleetAlert + COD still render if applicable.
+  3. The "Ask Ava about today" stub button is gone.
+  4. Toggle `stats_enabled=true` on a non-Joey profile → AVA card appears on next Home mount.
+- [ ] **COD-collected-this-week stat — follow-up.** Stats block currently shows weekly stops only. Adding COD-collected-this-week needs a separate query against `cash_collections` (no FK to dispatch_stops yet — see the Cash Collection v2 follow-up below). When picked up, the field name to use on `PersonalStats` is `weekCodCollectedCents: number | null`. Render line: "$X COD collected this week." appended below the stops line.
+- [ ] **Dependency map content authoring** — Darren content task. Until rows exist, `dependencyHits.countHitsForItems` returns 0 and the checklist offer never appears on the AVA card. The helper signature is ready; swap is one file.
+- [ ] **Profile-settings UI for the three new toggles** — columns are in the DB (013); the Profile screen still needs the three switches (checklist on/off, personality direct/personality, stats off/on). Pair with this session so Joey can flip his own stats opt-in instead of needing dashboard-side.
+
+---
+
+## May 27, 2026 — AVA Phase 1 — Session 1 (branch `feature/ava-phase1`, commit `c43192c`)
+
+Schema (migrations 013/014/015) + Tier 1 header chip + placeholder drawer pushed to `feature/ava-phase1`. Branch must NOT be merged to `main` until all 9 Phase 1 components are in. Vercel auto-deploys this branch as a **preview**, not production.
+
+- [ ] **Smoke-test the preview deploy** on `feature/ava-phase1` once Vercel finishes:
+  1. Open any of Home / Route list / Stop detail / Tools / Training / Profile. Chip renders top-right (32 px blue square with five white waveform bars), bars pulse with staggered animation.
+  2. Tap chip → dark bottom-sheet slides up with "AVA coming soon" copy and an X button. Backdrop tap closes; X closes; both leave the screen state unchanged.
+  3. From an auth'd dashboard session, `SELECT column_name, column_default FROM information_schema.columns WHERE table_name='profiles' AND column_name IN ('checklist_enabled','personality_preference','stats_enabled');` — confirm all three rows with correct defaults.
+  4. `SELECT count(*) FROM public.ava_conversations;` and `SELECT count(*) FROM public.ava_stop_notes;` — both return 0 (tables exist + readable under RLS).
+  5. Attempt `INSERT INTO ava_conversations (driver_id, surface, question) VALUES ('<some-other-uuid>', 'driver_home', 'test');` from the driver-app client — should be rejected by RLS (only `driver_id = auth.uid()` allowed).
+- [ ] **Session 2 next up — Morning brief card (Tier 2).** Static summary card always renders on Home (driver name, stop count, COD flag, weather flag) — no API call needed, loads instantly. Conditional AVA card below renders only when AVA has something to say. Personality + stats logic per the locked May 24 decisions. Voice/TTS hookup is a separate later session.
+- [ ] **Dependency-map content authoring** is a Darren content task, not Claude Code. Driver-app dependency map has 4 driver interviews in (Lucas / Austin / Joey / Dylan); the seed rules in the Notion spec are usable. Dashboard side gets the Melissa voice session before it ships. Once the dependency-map DB rows exist, the checklist component is a session of its own (UI only).
+- [ ] **Profile-settings UI for the three new opt-in toggles.** Columns are in the DB (013); the Profile screen still needs the three switches (checklist on/off, personality direct/personality, stats off/on). Pair with the morning brief session so the toggles can be tested end-to-end.
+- [ ] **Decision needed before merge to `main`** — order/sequence of remaining Phase 1 sessions (morning brief vs AVA Remembers vs voice). Notion spec doesn't lock the order; pick what unblocks driver feedback fastest.
+
+---
+
 ## May 26, 2026 — Work Orders & Field Issues (driver app, Session 2)
 
 Shipped to `main` for Vercel auto-deploy. Driver-app surface on top of dashboard Session 1 (`4e04ac9` — `field_work_orders` Migration 073). Stop-detail link + two Tools Hub cards (ungated "Report an Issue" + technician-gated "Work Orders") + four new routes. One shared `ReportIssueForm` powers both Screen 2A (stop context) and 2B (standalone). Cross-app POSTs go to `${NEXT_PUBLIC_DASHBOARD_URL}/api/work-orders` with the user's bearer token so the assignee email fires; reads pull straight from supabase under RLS.

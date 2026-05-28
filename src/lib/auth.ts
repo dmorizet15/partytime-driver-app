@@ -12,7 +12,7 @@ export async function getSession() {
 export async function getUserRole(userId: string, accessToken: string): Promise<UserProfile | null> {
   try {
     const res = await fetch(
-      `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}&select=id,roles,display_name,fleet_maintenance_access,work_order_technician&limit=1`,
+      `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}&select=id,roles,display_name,fleet_maintenance_access,work_order_technician,checklist_enabled,personality_preference,stats_enabled&limit=1`,
       {
         headers: {
           apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,

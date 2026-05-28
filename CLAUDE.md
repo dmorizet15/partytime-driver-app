@@ -6,10 +6,11 @@ Next.js 14 PWA for the driver mobile workflow. Downstream of `partytime-dashboar
 
 ## Current build state
 
-- **Active feature:** Work Orders & Field Issues (driver app) — shipped 2026-05-26. Driver-app UI on top of the dashboard's Session 1 (`field_work_orders` table — Migration 073 — and POST/GET/PATCH `/api/work-orders`). Adds three driver-facing surfaces (Stop Detail "Report an issue" link, ungated "Report an Issue" Tools Hub card, technician-gated "Work Orders" Tools Hub card → list → detail) sharing one `ReportIssueForm` component. Posts cross-app to the dashboard via a new `NEXT_PUBLIC_DASHBOARD_URL` env var so the assignee email fires. Access is keyed on a new stacked permission `profiles.work_order_technician`. No driver-app migrations; types regenerated. See "Work Orders & Field Issues (Driver App)" section below.
-- **Latest shipment:** Work Orders & Field Issues driver-app build, 2026-05-26. Two new Tools Hub cards, one new stop-detail link, four new App Router routes (`/route/[routeId]/stop/[stopId]/report-issue`, `/tools/report-issue`, `/tools/work-orders`, `/tools/work-orders/[id]`). Build green; pushed to `main` for Vercel auto-deploy. **Vercel env var `NEXT_PUBLIC_DASHBOARD_URL` must be set on the driver-app project before this surfaces work** — without it the form throws on submit.
-- **Latest migration:** **073** in the remote `schema_migrations` table (dashboard Session 1: `field_work_orders` + `profiles.work_order_technician`). Driver-app local `supabase/migrations/` is unchanged at 12 files (latest `20260515_012_game_scores`) — Session 2 added zero migrations; every table + column was already live from the dashboard side. The "migration count" is the remote table count, not the local file count.
-- **Branch strategy:** Commit directly to `main` — Vercel auto-deploys on every push.
+- **Active feature:** AVA Phase 1 — building on `feature/ava-phase1` branch (NOT main). Phase 1 ships as one complete branch per the May 24, 2026 strategy decision (Notion `3550aa6451b881f19285e369387b75b6`). Nine components must all land before merge: profile preference columns ✅, ava_conversations table ✅, ava_stop_notes table ✅, header chip (Tier 1 presence) ✅, morning brief card (Tier 2) ✅, dependency-map + checklist ✅ (driver-app side; dashboard gated on Darren+Melissa voice session), AVA Remembers UI ✅, ElevenLabs TTS ✅ (Session 5), voice/text toggle ✅ (Session 5). All 9 components are now in on the branch — pending Darren's go-ahead to merge to `main`.
+- **Latest shipment:** AVA Phase 1 — dispatcher notes + stop notes surface, 2026-05-28 — branch commits `104e652` → `48ab75c` (5 commits). New scope added to the branch (beyond the original 9 components): surfaces route + stop dispatcher notes and TapGoods order notes across the morning brief (FROM DISPATCH block + stop-notes count line), a pre-launch notes sheet (fires on Send-ETA AND Open-in-Maps, once per stop), and Stop Detail (collapsible Order Notes section + route-list note glyph). All reads — no migrations, no new API routes (extended the existing `/api/routes` SELECT). Build green; pushed to `feature/ava-phase1` for Vercel **preview deploy**. See the "Dispatcher Notes + Stop Notes surface" subsection under "AVA Phase 1 (Driver App)" below. The prior shipment was the morning-card count fixes (`71ec8a1` + `dec52c8`).
+- **Prior shipment (context):** AVA Phase 1 — morning-card count fixes, 2026-05-28 — branch commits `71ec8a1` + `dec52c8`. Two correctness fixes to `AvaMorningCard.tsx` after a live-route test: (1) card visibility decoupled from `checklist_enabled` — the card renders on any of stats-on / notes-exist / (checklist-on AND dependency hits); stats block shows a zero-state instead of vanishing on a slow day; (2) all counts (stops, COD, tents, checklist manifest, stop-note lookup) now run through `customerStops` = day stops minus depot (`warehouse`/`warehouse_return`), and `countTentItems` now requires category AND name match so sidewalls/walls filed under TapGoods "TENTS" stop inflating the tent count. The prior shipment was the Profile Settings UI (`35eb566`). Build green; pushed to `feature/ava-phase1` for Vercel **preview deploy** (not production). See "AVA Phase 1 (Driver App)" section below.
+- **Latest migration:** **`20260527017_ava_stop_notes_storage`** (the `ava-stop-notes` Storage bucket + RLS, Session 4). Driver-app local `supabase/migrations/` is now **17 files** — AVA added 013/014/015 (Session 1), 016 `dependency_map` (Session 3), 017 storage bucket (Session 4). 016 and 017 were each applied via `supabase db query --linked --file` then `migration repair --status applied <version>`. The "migration count" still tracks the remote table; dashboard owns most of the count, but the driver-app rows are in there too courtesy of the `migration repair` step.
+- **Branch strategy:** AVA Phase 1 commits to `feature/ava-phase1` ONLY. Other unrelated work continues to commit directly to `main`. Do NOT merge `feature/ava-phase1` to `main` until all 9 Phase 1 components are in.
 - **Next priority:** see `tasks/todo.md` (top of file).
 
 ---
@@ -169,6 +170,165 @@ Shipped 2026-05-26 — Session 2 of the Work Orders build, sitting on top of das
 6. Same flow, search returns no results → "Enter manually" → submit with manual name. Confirm `asset_id=null`, `asset_type='truck'`, `asset_name=<typed value>`.
 7. Toggle a profile's `work_order_technician=true` dashboard-side. Refresh driver app → Tools Hub now shows the "Work Orders" card. Open it → tabs render with counts → tap a card → detail screen.
 8. On detail: Mark In Progress → tab counts update. Mark Complete → moves to Done tab. + Note → modal → save → notes log shows timestamped entry.
+
+## AVA Phase 1 (Driver App)
+
+Spec: Notion `3550aa6451b881f19285e369387b75b6` ("Ava — AI Layer Master Spec"). Phase 1 ships as a **complete branch** — `feature/ava-phase1` — per the May 24, 2026 strategy decision. No partial rollouts. All nine components must be in before merging to `main`. Per-session work logs in `docs/CHANGELOG.md`.
+
+### Session 1 — 2026-05-27 (commit `c43192c`)
+
+**Schema (3 migrations).**
+
+- `20260527013_ava_profile_columns.sql` — `profiles.checklist_enabled` (default true), `personality_preference` text default `'direct'` with CHECK in `('direct','personality')`, `stats_enabled` default false. Driver-survey-derived defaults: most drivers leave checklist on, most prefer direct tone, most skip stats (Joey opts in on stats; Dylan opts in on personality; Joey opts out of checklist).
+- `20260527014_ava_conversations.sql` — append-only Q&A log. `surface` CHECK in `('driver_home','dispatch','will_call','fleet','warehouse')`. `confidence` CHECK in `('high','low','unanswered')`. Indexes: `(driver_id, created_at DESC)` + partial `(needs_review, created_at DESC) WHERE needs_review = true`. RLS: driver SELECT/INSERT own; super_admin SELECT all (`EXISTS … 'super_admin' = ANY(p.roles)`).
+- `20260527015_ava_stop_notes.sql` — address-keyed notes (NOT order/stop-keyed) for AVA Remembers. Notes persist across seasons/years. `author_id` REFERENCES profiles ON DELETE SET NULL. `photo_urls text[] DEFAULT '{}'`. Index on `address_key`. RLS: authenticated SELECT all, INSERT own (`author_id = auth.uid()`), UPDATE/DELETE only on rows the user authored.
+
+Filename convention this session: `YYYYMMDD<NNN>_*.sql` (no underscore between date and sequence). Required because three files on the same day all collide as version `YYYYMMDD` under the more recent `YYYYMMDD_NNN_*.sql` convention — the CLI parses everything before the first `_` as the version. The concat form gives unique versions (`20260527013/014/015`). Existing files stay on their original naming.
+
+**Tier 1 chip — `src/components/AvaChip.tsx`.** 32 px blue square (`#0000FF`) with five 2 × 12 px white bars; CSS-staggered pulse (`ava-wave` keyframes in `globals.css`, 1 s ease-in-out infinite, 120 ms stagger per bar). Tap opens a fixed-position dark bottom-sheet drawer (`#0F172A`, max-width 448 px, safe-area-aware padding) with a 40 px waveform, "AVA" label, ×-close, and the placeholder message. Backdrop or × dismisses. No state outside the component; no props except optional `ariaLabel`.
+
+Wired into 6 screens to the right of each screen's existing rightmost header element, inside a `display:flex; alignItems:center; gap:10` wrapper:
+- `DayRouteSelectorScreen` (Home) — next to the eyebrow-row PTR mark.
+- `ToolsScreen` / `TrainingScreen` — same pattern.
+- `ProfileScreen` / `RouteListScreen` — next to `<BrandMark/>`.
+- `StopDetailScreen` — next to the distance pill (the one screen without a brand mark in its header).
+
+No centralized layout shell — each screen owns its own hero/header, so wiring is per-screen. Future Tier 2 (morning card) and Tier 3 (per-stop intel button) ship in later sessions on the same branch.
+
+**Placeholder drawer is intentional** — full conversation UI lands in a later Phase 1 session. The drawer's shell (bottom-sheet, dark, safe-area-aware) is reusable for the real conversation view; the body copy just changes.
+
+### Dispatcher Notes + Stop Notes surface — 2026-05-28 (commits `104e652`, `943aec0`, `2673f3c`, `af69ed2`, `48ab75c`)
+
+New scope on the branch (not one of the original 9 components). Surfaces dispatcher notes (route + stop) and TapGoods order notes to drivers. **All reads — no migrations, no new tables, no new API routes.** Plan: `docs/superpowers/plans/2026-05-28-ava-dispatch-and-stop-notes.md`.
+
+**Data plumbing (`104e652`) — the one schema-adjacent change.** The existing `GET /api/routes` query did NOT return `routes.dispatcher_notes`, and `dispatch_stops` returned `dispatcher_notes`/`notes` but NOT the five TapGoods note fields. We extended the **existing** SELECTs (never a separate endpoint) and threaded the columns through `SupabaseRouteRow`/`SupabaseStopRow` + the `transformSupabase` builders onto `Route.dispatcher_notes` and `Stop.{notes_additional_delivery, notes_employee_authored, notes_flip, notes_set_by_time, notes_strike_time}`. **Rule for future sessions:** if a screen needs a `routes`/`dispatch_stops` column, add it to this SELECT + `supabaseTransform` — do not spin up a new endpoint. (`dispatcher_notes` on stops was already returned; `dispatch_stops.dispatcher_notes` ≠ `routes.dispatcher_notes` — the former is the per-stop note already shown on Stop Detail, the latter is the route-level note that had no driver-app surface before this work.)
+
+**Field ownership (do not re-derive):** `dispatcher_notes` (route + stop) is dashboard/dispatcher-owned and never written by TapGoods sync. The five `notes_*` fields are TapGoods-synced (written by `partytime-dashboard/src/services/tapgoodsSync.ts`, NOT this repo). `ava_stop_notes.note` is driver-authored AVA Remembers, address-keyed.
+
+**Component 1 — Morning brief FROM DISPATCH (`943aec0`).** `AvaMorningCard` takes a new `routeDispatcherNote` prop (passed from `DayRouteSelectorScreen` as `primaryRoute?.dispatcher_notes`; driver app is single-route per login). Renders a gold "FROM DISPATCH" block as the **first** content block (after the AVA identity row, before the message) and **prepends it to `speak()`** in `handlePlayBrief`. A route note is an independent **card-visibility trigger** (a day with only a dispatch note still shows the card).
+
+**Component 2 — stop-notes count line + review sheet (`2673f3c`).** `stopsWithDispatchNotes` = customer stops (depot excluded) whose `dispatcher_notes` is non-null. When > 0, a tappable count line opens **`AvaDispatchNotesSheet`** (new, read-only, mirrors the `AvaChecklistSheet` dark sheet). Also a card-visibility trigger. No query change — `dispatch_stops.dispatcher_notes` was already returned.
+
+**Component 3 — pre-launch notes sheet (`af69ed2`).** **`StopNotesPreSheet`** (labeled sections: DISPATCHER NOTE / DELIVERY INSTRUCTIONS / STAFF NOTE / FLIP-TEARDOWN NOTE / TIMING NOTE / AVA REMEMBERS; **no backdrop-dismiss, no auto-dismiss** — driver controls close). Wired to **BOTH** `handleSendEta` (Send ETA Text) and `handleNavigateRequest` (Open in Maps) with a **once-per-stop guard** (`seenNoteStopsRef` Set keyed by `stop_id`, resets on unmount). Context-aware CTA: `"Got it"` (ETA path → ETA send proceeds) / `"Got it — Navigate Now"` (navigate path → maps launch). **`handleNavigateRequest` was split** into the notes-gate wrapper → `proceedNavigateRequest` (the original early-pickup-gate body) so the notes sheet and the early-pickup gate chain instead of bypassing each other. `notes_flip` is **pickup-only** in this sheet. AVA Remembers text fetched via `listNotesForAddress(avaAddressKey)`, gated on the existing `avaNoteCount`. Null notes → no sheet, action proceeds friction-free.
+
+**Component 4 — Stop Detail Order Notes + route-list glyph (`48ab75c`).** Collapsible **"Order Notes (N)"** section on Stop Detail (above the AVA Remembers entry surface; hidden on depot stops + when empty) listing all non-null TapGoods note fields. Here `notes_flip` shows on **all** stop types (informational) — the pickup-only gate is specific to Component 3. The existing blue **"Note from dispatch"** auto-modal + persistent card are untouched — **label wording stays "Note from dispatch"** (Darren confirmed; matches dashboard precedent, despite the spec saying "Dispatcher Note"). `RouteListScreen` shows a small blue note glyph next to the customer name when `dispatcher_notes` is present.
+
+**Files (new):** `src/components/ava/AvaDispatchNotesSheet.tsx`, `src/components/ava/StopNotesPreSheet.tsx`.
+**Files (modified):** `src/app/api/routes/route.ts`, `src/lib/supabaseTransform.ts`, `src/types/index.ts`, `src/components/ava/AvaMorningCard.tsx`, `src/screens/DayRouteSelectorScreen.tsx`, `src/screens/StopDetailScreen.tsx`, `src/screens/RouteListScreen.tsx`.
+
+**NEXT smoke test (Vercel preview, branch `feature/ava-phase1`):**
+1. Route with `routes.dispatcher_notes` set → Home AVA card shows "FROM DISPATCH" first; "Hear your morning brief" speaks the dispatch note first, then the brief. Null → no block.
+2. ≥1 stop with `dispatch_stops.dispatcher_notes` → count line renders; tap → read-only sheet lists each stop + note. Zero → no line.
+3. Day with ONLY a route note (no checklist/stats/AVA-notes/stop-notes) → card still renders (new-trigger regression guard).
+4. Stop with a note → "Open in Maps" → pre-launch sheet with correct sections; "Got it — Navigate Now" launches maps. Re-tap same stop → no sheet (seen-guard), early-pickup gate still applies on a hard-tier pickup.
+5. Stop with a note (re-open to reset guard) → "Send ETA Text" → sheet; "Got it" → ETA sends. Then "Open in Maps" → no sheet (already seen this stop).
+6. Stop with NO notes → neither button shows a sheet; both proceed.
+7. Pickup stop with `notes_flip` → FLIP/TEARDOWN NOTE in the sheet; delivery stop with `notes_flip` → NOT in the sheet, but DOES appear in Order Notes.
+8. Stop with ≥1 TapGoods note → collapsed "Order Notes (N)" on Stop Detail; expand → labeled notes. None / depot → hidden.
+9. `dispatcher_notes` stop → blue "Note from dispatch" auto-modal + persistent card still work.
+10. Route list → stops with `dispatcher_notes` show the blue note glyph; others don't.
+
+### Morning-card count fixes — 2026-05-28 (commits `71ec8a1`, `dec52c8`)
+
+Two correctness fixes to `src/components/ava/AvaMorningCard.tsx` after Darren tested the card against a live route. Both are about **what counts**, and both are invariants to preserve in future sessions.
+
+- **Card visibility is decoupled from `checklist_enabled` (`71ec8a1`).** The card renders when ANY trigger is true: `stats_enabled`, `ava_stop_notes` hits > 0, OR (`checklist_enabled` AND dependency hits > 0). Turning the checklist off hides only its offer **block**, not the whole card. The stats block now renders whenever `stats_enabled` (was gated on `weekStopsCompleted > 0`), showing a zero-state ("No stops completed yet this week.") on a slow day instead of vanishing — which also makes `stats_enabled` a count-independent card trigger.
+- **All counts run through `customerStops`, not raw `dayStops` (`dec52c8`).** `customerStops` = `dayStops` minus `warehouse_return` / `warehouse` depot stops, derived once via `useMemo`. Every count routes through it: `stopCount`, `codCount`, the `tentCount` item source, the checklist manifest, and the stop-note address lookup. A route ending at the depot no longer counts the return leg as a stop.
+- **`countTentItems` requires category AND name match (`dec52c8`).** `src/lib/ava/dependencyHits.ts` → `isTentItem` gates on `category.includes('tent')` **AND** name contains one of `tent` / `canopy` / `marquee`. The old category-only match pulled sidewalls, wind walls, and door walls (all filed under TapGoods category "TENTS") into the tent count. Qty is still summed on matched items. See lessons.md → TapGoods "TENTS" category miscategorization.
+
+### Profile Settings UI — 2026-05-28 (commit `35eb566`)
+
+Driver-self-service controls for the three AVA preference columns, which until now were only changeable via SQL. New "AVA Preferences" section on the Profile screen (between "My Activity" and "Account").
+
+- **Three controls** (`src/components/ava/AvaPreferencesSection.tsx`): Morning checklist toggle → `checklist_enabled`; AVA voice style segmented control (Direct | Personality) → `personality_preference`; Weekly stats toggle → `stats_enabled`. Toggles are gold-when-on / grey-when-off; the segmented control matches the gold-active pattern used on the morning card's voice/text toggle. Card styling mirrors the existing Profile sections (`C.paper` + `1.5px solid C.ink` + radius 16).
+- **Write path is a server route, NOT a direct client UPDATE — important.** `profiles` has RLS enabled with **SELECT-only policies** (`profiles_authenticated_read_all`, `users_read_own_profile`); there is **no UPDATE policy**, so a `supabase.from('profiles').update(...)` from the browser client silently affects 0 rows. Adding a broad `auth.uid() = id` UPDATE policy was rejected because it would let a driver mutate `roles` / `fleet_maintenance_access` / `work_order_technician` on their own row — a privilege-escalation hole. Instead, **`PATCH /api/profile/ava-preferences`** (`src/app/api/profile/ava-preferences/route.ts`) identifies the caller via the cookie session client (`getUser()` — id can't be spoofed) and performs an **admin-client UPDATE scoped to the three known columns only**, with per-field validation. Same session+admin pattern as `/api/inspection/*`. If a future session needs more driver-editable profile fields, extend this route's allow-list — do **not** add a table-level UPDATE policy.
+- **Optimistic updates via `AuthContext.updateProfile(patch)`** (new). The provider exposes a `updateProfile` that merges a `Partial<UserProfile>` into the in-memory profile state. Each control flips the value optimistically, PATCHes the server, and on failure reverts + shows a "Couldn't save preference — try again" toast. Because `AvaMorningCard` / `getMorningMessage` read `profile.*` from the same context, preference changes take effect on the next Home mount with **no logout/login**.
+
+**Files.**
+```
+src/app/api/profile/ava-preferences/route.ts   (new — PATCH, admin-client, 3-column allow-list)
+src/components/ava/AvaPreferencesSection.tsx    (new — section + toggle + segmented control)
+src/context/AuthContext.tsx                      (+ updateProfile in the context value)
+src/screens/ProfileScreen.tsx                    (+ import + <AvaPreferencesSection/>)
+```
+
+### Bug Fix Pass — 2026-05-27 (commit `4ddcadb`) — pre-merge
+
+Three bug fixes surfaced by the Session 5 preview deploy. No new features, no migrations.
+
+- **Bug 1 — Stop Detail note entry missing.** The dashed "Leave a note for the next driver" link was nested inside the action-card branch (`!isCompleted` → `!isOnStandby` → `!isWarehouseReturn` → `!isWarehouse` → `!isDepotStop`), so completed/standby stops dropped it entirely. Relocated the block to sit AFTER the manifest as a stop-level sibling, gated only on `!isDepotStop`. The Tier 3 hero pill (top of screen, `avaNoteCount > 0`) stays in place — both surfaces share the same `setAvaNoteOpen` handler and the same `avaNoteCount` source. Colors retuned for the light/paper surface (dashed link was originally styled for the dark action card).
+- **Bug 2 — Home quiet-state after route delete+recreate.** Two compounding stale-state bugs. (a) `AppStateContext.loadDay` short-circuits when `state.loadedDate === date && !state.error`, so the soft `loadDay(today)` mount call in DayRouteSelectorScreen never refetched after a dashboard-side route swap. `routes` still held the deleted Route A → `primaryRouteId` was stale → `useInspectionStatus` queried the old route's inspection (rows survive route delete) → `inspected = true` → quiet state hid everything. **Fix:** Home now force-refreshes via `loadDay(today, true)` on mount, gated by `initialLoadRef` so the loadDay-identity churn from its own `useCallback` deps doesn't double-fetch. (b) `useInspectionStatus` never reset `inspection` to null when routeId changed — the previous route's inspection lingered in `useState` while the new fetch was in flight, causing the "flash then collapse" pattern. **Fix:** `setInspection(null)` at the top of every effect run.
+- **Bug 3 — iOS Safari TTS autoplay block.** `AudioContext` starts in `'suspended'` state until a user gesture in the same task; the Session 5 auto-speak `useEffect` fell through to the robotic WebSpeech synth on first Home load. **Fix (Option A):** removed the auto-speak effect entirely. The morning card now shows a "▶ HEAR YOUR MORNING BRIEF" gold-pill tap button below the message (visible only in voice mode). The driver's tap is a real user gesture, so AudioContext unlocks cleanly and ElevenLabs plays in full. Cleanup `useEffect` still calls `stopSpeaking()` on unmount. A `playTokenRef` invalidates stale `finally()` callbacks when the user double-taps the button or toggles to text mid-playback.
+
+**Files.**
+```
+src/screens/StopDetailScreen.tsx       — relocate AVA note entry block from action card to post-manifest
+src/screens/DayRouteSelectorScreen.tsx — ref-gated force-refresh on Home mount
+src/hooks/useInspectionStatus.ts       — reset inspection state on routeId change
+src/components/ava/AvaMorningCard.tsx  — replace auto-speak with manual play button
+```
+
+### Session 5 — 2026-05-27 (commit `a844a4d`) — ElevenLabs TTS + functional voice/text toggle
+
+**`src/lib/ava/elevenLabs.ts` (new).** Single call site is `speak(text)` — tries ElevenLabs (`POST /v1/text-to-speech/{voice_id}` with `xi-api-key` header, `eleven_turbo_v2` model, `voice_settings: { stability: 0.5, similarity_boost: 0.75 }`), falls through to `window.speechSynthesis` on any error (no toast, no log). `stopSpeaking()` cancels both layers — held in module-level refs (current AudioBufferSourceNode + current AudioContext + `speechSynthesis.cancel()`). Voice ID `uYXf8XasLblADfZ2MB4u` is hardcoded. API key read from `NEXT_PUBLIC_ELEVENLABS_API_KEY` — exposed in the browser bundle, acceptable for Phase 1 because the driver app is gated to authenticated PTR employees, not the public.
+
+**AvaMorningCard wiring.** New `voiceMode` (default `true`) + `isSpeaking` `useState`, plus a `hasSpokenRef` guard so AVA reads the morning message **at most once per card mount**, even if the user toggles voice→text→voice within the same mount. A `useEffect([shouldRender, voiceMode, message])` fires the speak call when the card is first visible AND voice is on AND `hasSpokenRef.current` is false; cleanup calls `stopSpeaking()` on unmount or when the toggle flips away from voice. Only the morning **message** is spoken — checklist offers, notes nudges, and stats blocks are deliberately silent (Session 6 may wire per-item TTS).
+
+**Speaking indicator.** Below the morning message paragraph, a small flex row with five pulsing mini-bars (1.5×8px, same `ava-wave-bar` class as the chip) + muted "AVA is speaking…" label. Visible only while `isSpeaking === true`.
+
+**Voice/Text toggle (functional).** Two-button pill anchored bottom-right of the card. Active button is `C.gold` (#FFB800) with `C.ink` text; inactive is transparent with `C.muted` text. Tapping the inactive button calls `handleToggle(next)`, which: (a) returns early if same mode, (b) calls `stopSpeaking()` + `setIsSpeaking(false)` if switching away from voice mid-playback, (c) `setVoiceMode(next)`. State is session-only (`useState`); no DB write this session. Toggle resets to voice default on every fresh card mount.
+
+**AvaChip drawer mic stub.** Inside the bottom-sheet drawer body (below the placeholder copy), a full-width blue "HOLD TO TALK TO AVA" button with a 18×18 mic SVG glyph. UI only — `onClick` shows a fixed-position toast pill near the top safe area ("Voice input coming in the next update."), auto-dismissed after 2s via `setTimeout`. Session 6 wires real STT + SOP lookup behind this button.
+
+**iOS Safari autoplay caveat.** `AudioContext` on iOS Safari starts in `'suspended'` state until a user gesture in the same task. Auto-speak on first card mount (post-login navigation) may be blocked there — `elevenLabs.ts` attempts `ctx.resume()` defensively, and if the play call is still blocked, the call fails silently and the message stays visible as text. Subsequent voice plays after any user gesture (toggle press, navigation) are unaffected.
+
+**Files.**
+```
+src/lib/ava/elevenLabs.ts                       (new)
+src/components/AvaChip.tsx                       (+ useEffect, mic glyph SVG, toast)
+src/components/ava/AvaMorningCard.tsx            (+ TTS hook, indicator, functional toggle)
+.env.local.example                               (+ NEXT_PUBLIC_ELEVENLABS_API_KEY block)
+```
+
+Vercel env var `NEXT_PUBLIC_ELEVENLABS_API_KEY` is set on **Preview + Production** as of 2026-05-27 (confirmed via `vercel env ls`).
+
+### Out of scope for this session (Phase 1, future sessions)
+
+- Profile-settings UI for the three new opt-in toggles (columns are in the DB; the UI is later — pair with whichever screen lets a driver flip their own stats opt-in).
+- Persisting voice/text preference to DB (today it's session-only).
+- TTS on checklist items, stop notes, or per-stop arrival intel.
+- Real STT/voice input + SOP lookup behind the AvaChip mic button (Session 6).
+
+### Branch hygiene rules (current and active)
+
+- ALL AVA Phase 1 work commits to `feature/ava-phase1` ONLY. Vercel previews this branch; production stays on `main`.
+- Unrelated work continues to commit to `main` (e.g. an urgent bug fix, an arcade tweak — anything outside the AVA scope).
+- Two-branch protocol from Notion: declare which branch each session is on at session start. No crossing branches mid-session.
+- Do NOT merge `feature/ava-phase1` to `main` until Darren explicitly says all 9 components are in.
+
+### NEXT smoke test (Vercel preview deploy, branch `feature/ava-phase1`)
+
+**Session 1 — chip + schema** (already deployed; smoke-test list preserved for completeness):
+
+1. Visit any of Home / Route list / Stop detail / Tools / Training / Profile. Chip renders top-right, five bars pulse.
+2. Tap chip → bottom-sheet slides up, dark background, AVA label + placeholder copy. Backdrop tap closes; × button closes.
+3. Dashboard side: `SELECT column_name, column_default FROM information_schema.columns WHERE table_name='profiles' AND column_name IN ('checklist_enabled','personality_preference','stats_enabled');` returns the three rows with correct defaults.
+4. `SELECT count(*) FROM ava_conversations;` and `SELECT count(*) FROM ava_stop_notes;` both return 0 (no writers yet) — confirms tables exist and the user can read under RLS.
+5. Try to INSERT into `ava_conversations` with a `driver_id` that's not `auth.uid()` — should be rejected by RLS.
+
+**Session 5 + Bug Fix Pass — TTS + voice/text toggle + relocated note entry + route-change refresh:**
+
+1. Load Home as a driver whose AVA morning card is eligible to render. With **voice mode on** (default), the message renders silently with a "▶ HEAR YOUR MORNING BRIEF" gold-pill tap button below the message. **No auto-speak** — Option A intentionally.
+2. Tap the play button → ElevenLabs reads the message in full (natural, non-robotic). "AVA is speaking…" indicator with mini-waveform appears in place of the button. iOS Safari works because the tap is a real gesture.
+3. Tap **TEXT** mid-playback → audio stops, indicator disappears, play button disappears (voice mode is off).
+4. Tap **VOICE** again → play button reappears. Tap it → ElevenLabs replays.
+5. Disconnect from internet (DevTools → Network → Offline) → reload → tap play → WebSpeech fallback fires (robotic system voice). Same fallback if `NEXT_PUBLIC_ELEVENLABS_API_KEY` is unset on the deploy.
+6. Tap the **AVA chip** (any screen) → drawer opens → tap blue "HOLD TO TALK TO AVA" → "Voice input coming in the next update." toast pill near the top → auto-dismisses after 2s.
+7. **Stop Detail — note entry placement.** On any non-depot stop (delivery / pickup / service), scroll past the manifest. A dashed "Leave a note for the next driver →" link (muted color) renders directly below the manifest when no notes exist; an amber "AVA has a note about this stop →" button when ≥1 note exists. This now renders on completed stops too (was previously gated inside the action card).
+8. **Tier 3 hero pill.** Open a stop with a saved note → the amber "AVA KNOWS THIS STOP" pill renders below the address in the hero. Open a stop with no notes → no pill (correct).
+9. **Home — route delete+recreate refresh.** Dashboard-side: delete the driver's route and recreate it for the same truck on the same date. Driver-side: navigate from Home → Routes → Home. Home should now show the full briefing (hero + day list + AVA card + Gold CTA) for the new, uninspected route. Before the fix, Home stayed quiet because `loadDay` short-circuited on the cache and the stale Route A's inspection lingered.
+
+---
 
 ## Session close (autonomous — no permission needed)
 

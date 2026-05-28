@@ -33,14 +33,15 @@ export interface BreakBlock {
 }
 
 export interface SupabaseRouteRow {
-  id:           string
-  route_date:   string
-  label:        string
-  truck_id:     string | null
-  truck_id_2:   string | null
-  break_blocks: BreakBlock[] | null
-  truck:        SupabaseTruckRow | SupabaseTruckRow[] | null
-  truck_2:      SupabaseTruckRow | SupabaseTruckRow[] | null
+  id:               string
+  route_date:       string
+  label:            string
+  truck_id:         string | null
+  truck_id_2:       string | null
+  break_blocks:     BreakBlock[] | null
+  dispatcher_notes: string | null
+  truck:            SupabaseTruckRow | SupabaseTruckRow[] | null
+  truck_2:          SupabaseTruckRow | SupabaseTruckRow[] | null
 }
 
 export interface SupabaseAssignmentRow {
@@ -85,6 +86,11 @@ export interface SupabaseStopRow {
   event_start:                     string | null
   event_end:                       string | null
   notes_classification:            unknown | null
+  notes_additional_delivery:       string | null
+  notes_employee_authored:         string | null
+  notes_flip:                      string | null
+  notes_set_by_time:               string | null
+  notes_strike_time:               string | null
   dispatcher_time_override:        unknown | null
   dispatcher_constraint_dismissed: boolean | null
 }
@@ -167,6 +173,11 @@ function toRealStop(s: SupabaseStopRow, routeId: string, seq: number): Stop {
     event_start:                     s.event_start,
     event_end:                       s.event_end,
     notes_classification:            s.notes_classification as NotesClassification | null,
+    notes_additional_delivery:       s.notes_additional_delivery?.trim() ? s.notes_additional_delivery : undefined,
+    notes_employee_authored:         s.notes_employee_authored?.trim()   ? s.notes_employee_authored   : undefined,
+    notes_flip:                      s.notes_flip?.trim()                ? s.notes_flip                : undefined,
+    notes_set_by_time:               s.notes_set_by_time?.trim()         ? s.notes_set_by_time         : undefined,
+    notes_strike_time:               s.notes_strike_time?.trim()         ? s.notes_strike_time         : undefined,
     dispatcher_time_override:        s.dispatcher_time_override as DispatcherTimeOverride | null,
     dispatcher_constraint_dismissed: s.dispatcher_constraint_dismissed ?? false,
   }
@@ -288,6 +299,7 @@ export function transformSupabase({ routes: routeRows, assignments, stops: stopR
       truck_dvir_requirement:      truck?.dvir_requirement      ?? undefined,
       truck_current_defect_status: truck?.current_defect_status ?? undefined,
       truck_2_name:                truck_2?.name,
+      dispatcher_notes:            r.dispatcher_notes?.trim() ? r.dispatcher_notes : undefined,
     }
   })
 

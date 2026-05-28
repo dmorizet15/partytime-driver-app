@@ -23,4 +23,10 @@ export interface UserProfile {
    *  ungated "Report an Issue" Tools Hub card — but they can't see the
    *  technician queue or transition status. */
   work_order_technician: boolean
+  /** AVA per-driver preferences (Phase 1 — Session 1 schema). Drive the
+   *  conditional Tier 2 morning brief card on Home. Defaults from migration
+   *  013: checklist on, direct tone, stats off. */
+  checklist_enabled: boolean
+  personality_preference: 'direct' | 'personality'
+  stats_enabled: boolean
 }

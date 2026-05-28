@@ -8,6 +8,8 @@ import { supabase } from '@/lib/supabase'
 import type { Role } from '@/types/auth'
 import Image from 'next/image'
 import BottomNav from '@/components/BottomNav'
+import AvaChip from '@/components/AvaChip'
+import AvaPreferencesSection from '@/components/ava/AvaPreferencesSection'
 import UploadComplianceDocModal from './UploadComplianceDocModal'
 import {
   DOCUMENT_LABELS,
@@ -406,7 +408,7 @@ export default function ProfileScreen() {
       .then((s) => { if (!cancelled) setStats(s) })
       .catch((err) => {
         console.error('[personalStats]', err)
-        if (!cancelled) setStats({ totalStopsCompleted: 0, startDate: null, truckHistory: [] })
+        if (!cancelled) setStats({ totalStopsCompleted: 0, weekStopsCompleted: 0, startDate: null, truckHistory: [] })
       })
     return () => { cancelled = true }
   }, [user?.id])
@@ -529,7 +531,10 @@ export default function ProfileScreen() {
           >
             <BackIcon/>
           </button>
-          <BrandMark/>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <BrandMark/>
+            <AvaChip/>
+          </div>
         </div>
 
         <div style={{
@@ -679,6 +684,9 @@ export default function ProfileScreen() {
             </div>
           </>
         )}
+
+        {/* AVA preferences */}
+        <AvaPreferencesSection />
 
         {/* Account */}
         <SectionEyebrow>Account</SectionEyebrow>

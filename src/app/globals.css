@@ -74,3 +74,14 @@ html {
 .ptr-pulse-dot {
   animation: ptr-pulse 1.4s ease-in-out infinite;
 }
+
+/* AVA waveform chip — five-bar staggered pulse (Tier 1 presence) */
+@keyframes ava-wave {
+  0%, 100% { transform: scaleY(0.35); }
+  50%      { transform: scaleY(1);    }
+}
+.ava-wave-bar {
+  display: inline-block;
+  transform-origin: center;
+  animation: ava-wave 1s ease-in-out infinite;
+}

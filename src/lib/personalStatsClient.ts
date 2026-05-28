@@ -7,6 +7,7 @@ import { supabase } from './supabase'
 
 export interface PersonalStats {
   totalStopsCompleted: number
+  weekStopsCompleted:  number             // stops completed since start of current week (Mon)
   startDate:           string | null      // YYYY-MM-DD of the earliest route
   truckHistory:        Array<{
     truck_id:       string
@@ -14,6 +15,16 @@ export interface PersonalStats {
     last_driven_at: string
     routes_driven:  number
   }>
+}
+
+// Monday-anchored start of week, returned as an ISO timestamp. Used to filter
+// the already-fetched stops list — no extra query.
+function startOfWeekISO(): string {
+  const d = new Date()
+  const day = d.getDay()                  // 0=Sun, 1=Mon, ..., 6=Sat
+  const diff = day === 0 ? 6 : day - 1    // back to Monday
+  const monday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - diff)
+  return monday.toISOString()
 }
 
 export async function fetchPersonalStats(driverId: string): Promise<PersonalStats> {
@@ -27,7 +38,7 @@ export async function fetchPersonalStats(driverId: string): Promise<PersonalStat
 
   const routeIds = Array.from(new Set((assignments ?? []).map((a) => a.route_id)))
   if (routeIds.length === 0) {
-    return { totalStopsCompleted: 0, startDate: null, truckHistory: [] }
+    return { totalStopsCompleted: 0, weekStopsCompleted: 0, startDate: null, truckHistory: [] }
   }
 
   // 2. Pull routes + stops + trucks in parallel.
@@ -49,7 +60,12 @@ export async function fetchPersonalStats(driverId: string): Promise<PersonalStat
 
   const truckById = new Map((trucksRes.data ?? []).map((t) => [t.id, t.name]))
 
-  const totalStopsCompleted = (stopsRes.data ?? []).filter((s) => !!s.completed_at).length
+  const completedStops = (stopsRes.data ?? []).filter((s) => !!s.completed_at)
+  const totalStopsCompleted = completedStops.length
+  const weekStart = startOfWeekISO()
+  const weekStopsCompleted = completedStops.filter(
+    (s) => s.completed_at !== null && s.completed_at >= weekStart
+  ).length
 
   let startDate: string | null = null
   const truckAgg = new Map<string, { routesDriven: number; lastDrivenAt: string }>()
@@ -81,5 +97,5 @@ export async function fetchPersonalStats(driverId: string): Promise<PersonalStat
   })
   truckHistory.sort((a, b) => b.last_driven_at.localeCompare(a.last_driven_at))
 
-  return { totalStopsCompleted, startDate, truckHistory }
+  return { totalStopsCompleted, weekStopsCompleted, startDate, truckHistory }
 }

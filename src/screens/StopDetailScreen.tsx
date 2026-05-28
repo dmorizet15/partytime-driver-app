@@ -13,6 +13,7 @@ import type { StopSmsStatus } from '@/services/EtaSmsService'
 import { signOut } from '@/lib/auth'
 import BottomNav from '@/components/BottomNav'
 import StopWeatherModule from '@/components/weather/StopWeatherModule'
+import AvaChip from '@/components/AvaChip'
 import { HAS_STOP_LEVEL_BADGES } from '@/lib/weather/thresholds'
 import { formatEta } from '@/lib/formatEta'
 import { useArrivalGeofence } from '@/hooks/useArrivalGeofence'
@@ -24,6 +25,11 @@ import {
   isHardConstraintTier,
 } from '@/lib/stopConstraints'
 import { reportIssueSuccessKey } from '@/screens/workOrders/ReportIssueScreen'
+import { useAuthContext } from '@/context/AuthContext'
+import { normalizeAddressKey } from '@/lib/ava/addressKey'
+import { fetchTodayNotesHitCount, listNotesForAddress } from '@/lib/ava/stopNotesClient'
+import AvaNoteSheet from '@/components/ava/AvaNoteSheet'
+import StopNotesPreSheet, { type StopNotesSections } from '@/components/ava/StopNotesPreSheet'
 
 // sessionStorage key — driver chose to proceed despite the pickup window
 // not yet being open. Set by the standby card's dismiss button AND by the
@@ -306,6 +312,35 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     return () => clearTimeout(t)
   }, [reportIssueSuccess])
 
+  // AVA Remembers — prior notes count for this address. Tier 3 pill renders
+  // when > 0; the entry surface below the action buttons swaps copy at the
+  // same threshold. `noteRefreshKey` re-runs the count fetch after a save so
+  // the surface updates without a page reload.
+  const { user: authUser } = useAuthContext()
+  const [avaNoteOpen,     setAvaNoteOpen]     = useState(false)
+  const [avaNoteCount,    setAvaNoteCount]    = useState(0)
+  const [avaNoteRefresh,  setAvaNoteRefresh]  = useState(0)
+  // Pre-launch notes sheet — fires before Send-ETA or Navigate when the stop
+  // has any note. Once-per-stop guard via a ref Set so it shows at most once
+  // per stop per mount; resets naturally on unmount / route reload.
+  const [preSheet, setPreSheet] = useState<{ sections: StopNotesSections; mode: 'eta' | 'navigate' } | null>(null)
+  const seenNoteStopsRef = useRef<Set<string>>(new Set())
+  const [orderNotesOpen, setOrderNotesOpen] = useState(false)
+  const avaAddressKey = stop?.address_line_1
+    ? normalizeAddressKey(stop.address_line_1)
+    : ''
+  useEffect(() => {
+    if (!avaAddressKey) return
+    let cancelled = false
+    fetchTodayNotesHitCount([avaAddressKey]).then((distinct) => {
+      if (cancelled) return
+      // Bucket of 1 — distinct returns 0 or 1 since we passed a single key.
+      // We just need to know "has any" for the surface gate.
+      setAvaNoteCount(distinct)
+    })
+    return () => { cancelled = true }
+  }, [avaAddressKey, avaNoteRefresh])
+
   useEffect(() => {
     if (stop) logEvent('STOP_VIEWED', routeId, stopId, stop.order_id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -581,6 +616,16 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   // Either one suppresses customer-facing UI (SMS, payment, POD).
   const isDepotStop = isWarehouse || isWarehouseReturn
 
+  // TapGoods-synced order notes for the collapsible "Order Notes" section.
+  // Only non-empty fields are shown; section hidden entirely when empty.
+  const orderNotes: Array<{ label: string; text: string }> = [
+    { label: 'Delivery instructions', text: stop.notes_additional_delivery ?? '' },
+    { label: 'Staff note',            text: stop.notes_employee_authored ?? '' },
+    { label: 'Flip / teardown note',  text: stop.notes_flip ?? '' },
+    { label: 'Set-by time',           text: stop.notes_set_by_time ?? '' },
+    { label: 'Strike time',           text: stop.notes_strike_time ?? '' },
+  ].filter((n) => n.text.trim().length > 0)
+
   // Headline = venue/business if available, else customer name. Trailing period
   // applied in JSX so the period color can be toned independently if needed.
   const headlineName = (stop.company_name?.trim() || stop.customer_name).trim()
@@ -603,7 +648,18 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   // choose to wait or override. Override sticks for the session. We re-
   // evaluate against Date.now() here so the gate uses fresh time even
   // when the screen's `now` state hasn't ticked recently.
-  function handleNavigateRequest() {
+  async function handleNavigateRequest() {
+    if (!stop || navLoading) return
+    // Notes sheet is the OUTER gate. When it fires, its "Navigate Now" button
+    // resumes the flow via proceedNavigateRequest (which still runs the
+    // early-pickup gate). When there's nothing to show (or already seen this
+    // stop), fall straight through to proceedNavigateRequest.
+    const shown = await maybeShowPreSheet('navigate')
+    if (shown) return
+    proceedNavigateRequest()
+  }
+
+  function proceedNavigateRequest() {
     if (!stop || navLoading) return
     const nowMs = Date.now()
     const shouldGate =
@@ -855,6 +911,46 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     }
     logEvent('ETA_SMS_FAILED', routeId, stopId, stop.order_id, { error: result.error })
     return { success: false, error: result.error ?? 'Failed to send ETA text.' }
+  }
+
+  // Returns the assembled note sections for the current stop, or null if the
+  // stop has no notes at all. notes_flip is pickup-only per spec.
+  async function buildStopNoteSections(): Promise<StopNotesSections | null> {
+    if (!stop) return null
+    const timing = stop.notes_set_by_time?.trim() || stop.notes_strike_time?.trim() || null
+    let avaText: string | null = null
+    if (avaNoteCount > 0 && avaAddressKey) {
+      const rows = await listNotesForAddress(avaAddressKey)
+      avaText = rows[0]?.note?.trim() || null
+    }
+    const sections: StopNotesSections = {
+      dispatcherNote: stop.dispatcher_notes?.trim() || null,
+      deliveryInstr:  stop.notes_additional_delivery?.trim() || null,
+      staffNote:      stop.notes_employee_authored?.trim() || null,
+      flipNote:       stop.stop_type === 'pickup' ? (stop.notes_flip?.trim() || null) : null,
+      timingNote:     timing,
+      avaRemembers:   avaText,
+    }
+    const hasAny = Object.values(sections).some((v) => typeof v === 'string' && v.trim().length > 0)
+    return hasAny ? sections : null
+  }
+
+  // Returns true if the sheet was shown (action should pause); false if there's
+  // nothing to show or it's already been seen for this stop (action proceeds).
+  async function maybeShowPreSheet(mode: 'eta' | 'navigate'): Promise<boolean> {
+    if (!stop) return false
+    if (seenNoteStopsRef.current.has(stop.stop_id)) return false
+    const sections = await buildStopNoteSections()
+    if (!sections) return false
+    seenNoteStopsRef.current.add(stop.stop_id)
+    setPreSheet({ sections, mode })
+    return true
+  }
+
+  async function handleSendEtaRequest() {
+    if (!stop || etaStatus === 'sending') return
+    const shown = await maybeShowPreSheet('eta')
+    if (!shown) void handleSendEta()
   }
 
   async function handleSendEta() {
@@ -1144,21 +1240,24 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
           >
             <BackIcon/>
           </button>
-          {/* Distance pill — Phase-2 stub (no GPS this pass) */}
-          <div
-            aria-label="Distance to stop"
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: 8,
-              background: C.ink, color: '#fff',
-              padding: '7px 13px', borderRadius: 999,
-              fontSize: 12, fontWeight: 800,
-              fontVariantNumeric: 'tabular-nums',
-            }}
-          >
-            <span style={{
-              width: 7, height: 7, borderRadius: '50%', background: C.gold,
-            }}/>
-            — mi
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {/* Distance pill — Phase-2 stub (no GPS this pass) */}
+            <div
+              aria-label="Distance to stop"
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 8,
+                background: C.ink, color: '#fff',
+                padding: '7px 13px', borderRadius: 999,
+                fontSize: 12, fontWeight: 800,
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              <span style={{
+                width: 7, height: 7, borderRadius: '50%', background: C.gold,
+              }}/>
+              — mi
+            </div>
+            <AvaChip/>
           </div>
         </div>
 
@@ -1251,6 +1350,53 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
           <div style={{ marginTop: 10 }}>
             <StopWindowBadge stop={stop} size="md" variant="on-dark" />
           </div>
+        )}
+
+        {/* AVA Remembers — Tier 3 presence. Only renders when there's a
+            prior note for this address. Depot stops never surface notes. */}
+        {!isDepotStop && avaNoteCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setAvaNoteOpen(true)}
+            aria-label="AVA knows this stop — open notes"
+            style={{
+              marginTop: 10,
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+              background: 'rgba(255,184,0,0.14)',
+              color: '#FFB800',
+              border: '1px solid rgba(255,184,0,0.45)',
+              borderLeft: '3px solid #FFB800',
+              borderRadius: 10,
+              padding: '6px 12px 6px 10px',
+              fontSize: 12, fontWeight: 800, letterSpacing: '0.06em',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >
+            <span
+              aria-hidden="true"
+              style={{
+                width: 18, height: 18, borderRadius: 4,
+                background: C.blue,
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                gap: 1.5, flexShrink: 0,
+              }}
+            >
+              {[0, 1, 2, 3, 4].map((i) => (
+                <span
+                  key={i}
+                  className="ava-wave-bar"
+                  style={{
+                    width: 1.5, height: 9,
+                    background: '#fff', borderRadius: 1,
+                    animationDelay: `${i * 120}ms`,
+                  }}
+                />
+              ))}
+            </span>
+            AVA KNOWS THIS STOP
+            <span aria-hidden="true" style={{ marginLeft: 2 }}>›</span>
+          </button>
         )}
 
       </div>
@@ -1539,7 +1685,7 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
                 <>
                   {/* Send ETA Text — small gold pill button when idle/sending/error */}
                   <button
-                    onClick={handleSendEta}
+                    onClick={handleSendEtaRequest}
                     disabled={etaStatus === 'sending'}
                     style={{
                       width: '100%', height: 50, borderRadius: 999,
@@ -2048,6 +2194,7 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
                     <span style={{ fontSize: 16, lineHeight: 1, opacity: 0.85 }}>›</span>
                   </button>
                 )}
+
                 </>
                 )}
               </div>
@@ -2132,6 +2279,116 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
             </div>
           </>
         )}
+
+        {/* Order Notes — TapGoods-synced notes for this order. Collapsed by
+            default; hidden entirely when there are none or on depot stops. The
+            blue "Note from dispatch" surfaces above are separate and stay. */}
+        {!isDepotStop && orderNotes.length > 0 && (
+          <div style={{ padding: '14px 18px 0' }}>
+            <button
+              type="button"
+              onClick={() => setOrderNotesOpen((v) => !v)}
+              aria-expanded={orderNotesOpen}
+              style={{
+                width: '100%', textAlign: 'left',
+                background: C.paper, border: `1.5px solid ${C.ink}`, borderRadius: 14,
+                padding: '12px 14px', cursor: 'pointer', fontFamily: 'inherit',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+              }}
+            >
+              <div style={{
+                fontSize: 10.5, fontWeight: 900, letterSpacing: '0.18em',
+                color: C.ink, textTransform: 'uppercase',
+              }}>
+                Order Notes ({orderNotes.length})
+              </div>
+              <span aria-hidden="true" style={{
+                fontSize: 14, color: C.muted,
+                transform: orderNotesOpen ? 'rotate(90deg)' : 'none',
+                transition: 'transform 120ms ease',
+              }}>›</span>
+            </button>
+            {orderNotesOpen && (
+              <div style={{
+                marginTop: 8, padding: '12px 14px',
+                background: C.off, borderRadius: 12,
+              }}>
+                {orderNotes.map((n, i) => (
+                  <div key={n.label} style={{ marginTop: i === 0 ? 0 : 14 }}>
+                    <div style={{
+                      fontSize: 10.5, fontWeight: 900, letterSpacing: '0.14em',
+                      textTransform: 'uppercase', color: C.muted, marginBottom: 4,
+                    }}>
+                      {n.label}
+                    </div>
+                    <div style={{
+                      fontSize: 14, lineHeight: 1.45, color: C.ink,
+                      whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                    }}>
+                      {n.text}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* AVA Remembers — entry surface, rendered below the manifest so it
+            survives all stop states (completed, on-standby, depot is the only
+            excluded class). Amber button when a note exists for this address;
+            dashed faint link otherwise. Tap opens the AvaNoteSheet. Tier 3
+            hero pill above (top of the screen) is the separate high-prominence
+            presence signal — both surfaces share the same setAvaNoteOpen
+            handler and the same avaNoteCount source. */}
+        {!isDepotStop && (
+          <div style={{ padding: '14px 18px 0' }}>
+            {avaNoteCount > 0 ? (
+              <button
+                type="button"
+                onClick={() => setAvaNoteOpen(true)}
+                style={{
+                  width: '100%',
+                  background: 'rgba(255,184,0,0.10)',
+                  border: '1px solid rgba(255,184,0,0.45)',
+                  borderRadius: 12,
+                  padding: '10px 14px',
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  fontSize: 13, fontWeight: 700, color: C.gold,
+                  letterSpacing: '0.01em',
+                }}
+                aria-label="AVA has a note about this stop"
+              >
+                <span>AVA has a note about this stop</span>
+                <span style={{ fontSize: 16, lineHeight: 1, opacity: 0.85 }}>›</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setAvaNoteOpen(true)}
+                style={{
+                  width: '100%',
+                  background: 'transparent',
+                  border: '1px dashed rgba(10,11,20,0.20)',
+                  borderRadius: 12,
+                  padding: '10px 14px',
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  fontSize: 12.5, fontWeight: 600,
+                  color: C.muted,
+                  letterSpacing: '0.01em',
+                }}
+                aria-label="Leave a note for the next driver"
+              >
+                <span>Leave a note for the next driver</span>
+                <span style={{ fontSize: 14, lineHeight: 1, opacity: 0.7 }}>›</span>
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       <BottomNav/>
@@ -2158,6 +2415,20 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
           cancelLabel="I'll wait"
           onConfirm={handleConfirmEarlyNavigate}
           onCancel={() => setShowEarlyPickupGate(false)}
+        />
+      )}
+
+      {preSheet && stop && (
+        <StopNotesPreSheet
+          customerName={stop.customer_name}
+          sections={preSheet.sections}
+          ctaLabel={preSheet.mode === 'navigate' ? 'Got it — Navigate Now' : 'Got it'}
+          onProceed={() => {
+            const mode = preSheet.mode
+            setPreSheet(null)
+            if (mode === 'navigate') proceedNavigateRequest()
+            else                     void handleSendEta()
+          }}
         />
       )}
 
@@ -2435,6 +2706,17 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
             </button>
           </div>
         </div>
+      )}
+
+      {avaNoteOpen && stop && authUser && (
+        <AvaNoteSheet
+          stopId={stopId}
+          addressKey={avaAddressKey}
+          rawAddress={stop.address_line_1}
+          authorId={authUser.id}
+          onClose={() => setAvaNoteOpen(false)}
+          onSaved={() => setAvaNoteRefresh((n) => n + 1)}
+        />
       )}
     </div>
   )
