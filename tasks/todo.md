@@ -4,7 +4,7 @@
 
 `feature/ava-phase1` merged via `--no-ff` and pushed to `main`; Vercel production deploy READY; branch deleted (local + remote). **All the "NOT merged to main" caveats in the entries below are now historical — the work is live.** The dispatcher/stop-notes smoke matrix (CLAUDE.md → "Dispatcher Notes + Stop Notes surface") now runs against production, not a preview.
 
-- [ ] **TTS sentence-pause — confirm on production.** `src/lib/ava/elevenLabs.ts` inserts `<break time="0.5s" />` after sentence-ending punctuation on the ElevenLabs request (commit `9560fb7`). Darren is listening on the live app and will report back. Tunable via the `SENTENCE_PAUSE` constant. If ElevenLabs ever reads the tag *aloud* on turbo_v2 (vs. just pausing/ignoring), fall back to splitting the brief into separate audio clips with a real silent gap. No date set — driver-confirmed item.
+- [x] **TTS sentence-pause — confirmed on production (2026-05-28, commit `cc76a02`).** Tuned `SENTENCE_PAUSE` `0.5s → 0.6s` in `src/lib/ava/elevenLabs.ts:26`; pushed to `main`; Darren confirmed the longer pause is audible on the live app. Mechanism unchanged from `9560fb7` (SSML `<break>` on the ElevenLabs request only). Standing fallback if ElevenLabs ever reads the tag *aloud* on turbo_v2 (vs. pausing/ignoring): split the brief into separate audio clips with a real silent gap. Re-tunable any time via the same constant.
 - [ ] **Next AVA work goes on a NEW branch** (`feature/ava-phaseN`), not `main` and not the deleted `feature/ava-phase1`.
 
 ---

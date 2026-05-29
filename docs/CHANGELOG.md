@@ -4,6 +4,12 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-05-28 — AVA TTS — sentence-pause tune `0.5s → 0.6s` — `main` (production) — commit `cc76a02`
+
+First post-merge change on `main`. Lengthened the inter-sentence pause in the spoken morning brief from `0.5s` to `0.6s` — a single value, `SENTENCE_PAUSE`, in `src/lib/ava/elevenLabs.ts:26`, injected as an SSML `<break time="0.6s" />` at sentence boundaries (`/([.!?])\s+/` → `$1 <break …/> `). ElevenLabs request path **only**; the Web Speech fallback never sees the tag (it pauses at punctuation natively). The `\s+` requirement still guards decimals ("2.5") from being split. Build green (EXIT=0), pushed to `main`, Vercel production deploy fired. **Darren confirmed the longer pause is audible on the live app.** Worked directly on `main` per Darren's call — no branch for a one-line TTS tune. Supersedes the prior `9560fb7` pause work (which introduced the `<break>` mechanism at `0.5s`).
+
+---
+
 ## 2026-05-28 — AVA Phase 1 MERGED to `main` (production release) — merge commit `37f83a9`
 
 `feature/ava-phase1` merged into `main` via `git merge --no-ff` (27 commits, 10 components) and pushed to production. Vercel deployed the merge to `target: production` (state READY — verified via the Vercel API, deployment `dpl_5cUDqcSHeo6vLFhbzDNcdpzWiA71`). Branch deleted local + remote. Pre-merge gates all passed: build green (EXIT=0), `main` had not diverged (zero commits behind), migrations clean (17 files, highest `20260527017`). Follow-up docs commit `b84f4ca` updated the CLAUDE.md build-state header (Phase 1 live, branch deleted, next AVA work on a new branch). Also shipped earlier this session: the TTS sentence-pause fix (`9560fb7`) — pending Darren's listen on production.
