@@ -23,7 +23,7 @@ const VOICE_SPEAKER_BOOST = true
 
 // Natural pause inserted at sentence boundaries so multi-sentence briefs
 // (e.g. a route note "…two canopies. Stretch first.") don't run together.
-const SENTENCE_PAUSE = '0.5s'
+const SENTENCE_PAUSE = '0.6s'
 
 // ElevenLabs honors an inline <break time="x.xs" /> tag for pauses. Insert one
 // after sentence-ending punctuation that is followed by whitespace — the
