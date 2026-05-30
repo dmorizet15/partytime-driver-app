@@ -13,6 +13,7 @@ import FleetAlertCard                   from '@/components/fleet/FleetAlertCard'
 import AvaChip                          from '@/components/AvaChip'
 import WeatherFlagCard                  from '@/components/WeatherFlagCard'
 import AvaMorningCard                   from '@/components/ava/AvaMorningCard'
+import { useRouteWeather }               from '@/hooks/ava/useRouteWeather'
 
 // ─── Direction 03 (Editorial) tokens ──────────────────────────────────────────
 const C = {
@@ -241,6 +242,11 @@ export default function DayRouteSelectorScreen() {
     () => routes.flatMap((r) => getStopsForRoute(r.route_id)),
     [routes, getStopsForRoute]
   )
+
+  // AVA Phase 2 weather enrichment — forecast wind at each stop's arrival.
+  // Drives the morning brief's wind-aware copy (hasWeatherFlag) + per-stop
+  // wind pills below. Fails open (empty/no-flag) so Home never breaks.
+  const routeWeather = useRouteWeather(dayStops)
 
   const totalStopCount = dayStops.length
   // COD cards are scoped to delivery stops — pickup stops with a balance_due
@@ -757,6 +763,7 @@ export default function DayRouteSelectorScreen() {
                 dayStops={dayStops}
                 todayKey={today}
                 routeDispatcherNote={primaryRoute?.dispatcher_notes ?? null}
+                hasWeatherFlag={routeWeather.hasWeatherFlag}
               />
             )}
 
