@@ -67,11 +67,14 @@ export async function getWeatherSnapshot(
 }
 
 /**
- * Wind (sustained mph) forecast for a specific arrival time at a location.
+ * Worst-case wind (mph) forecast for a specific arrival time at a location.
  *
  * AVA Phase 2 weather alerts: given a stop's lat/lng and its estimated arrival
- * ISO timestamp, return the forecast sustained wind for that hour. Reuses the
- * cached snapshot — no extra network call within the 15-min cache window.
+ * ISO timestamp, return the forecast wind for that hour — the GREATER of
+ * sustained and gust. Gusts drive the real tent-stake risk, so a 10 mph
+ * sustained / 21 mph gust hour must still alert (matches WeatherFlagCard, which
+ * surfaces gusts). Reuses the cached snapshot — no extra network call within
+ * the 15-min cache window.
  *
  * - `windHourly` is already in mph (Tomorrow.io adapter requests imperial), so
  *   NO km/h conversion is applied.
@@ -90,7 +93,7 @@ export async function getWindAtTime(
     const snapshot = await getWeatherSnapshot(lat, lng)
     const targetHour = isoTime.slice(0, 13) // "YYYY-MM-DDTHH"
     const match = snapshot.windHourly.find((h) => h.time.slice(0, 13) === targetHour)
-    return match ? match.sustainedMph : null
+    return match ? Math.max(match.sustainedMph, match.gustMph) : null
   } catch {
     return null
   }
