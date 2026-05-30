@@ -815,6 +815,21 @@ export default function DayRouteSelectorScreen() {
                 const addressOnly  = stop.address_line_1?.trim() ?? ''
                 const distanceTxt  = '— mi'
                 const typePill     = TYPE_PILL[stop.stop_type]
+                // AVA Phase 2 wind alert — red pill with the forecast wind at
+                // arrival (mph) when this stop is above the threshold. Same
+                // sizing as the payment/type pills; rendered in both layouts.
+                const stopWeather  = routeWeather.weatherByStopId.get(stop.stop_id)
+                const windPill     = stopWeather?.weatherAlert && stopWeather.windMph != null ? (
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center',
+                    background: '#DC2626', color: '#FFFFFF',
+                    fontSize: 9, fontWeight: 900, letterSpacing: '0.16em',
+                    textTransform: 'uppercase',
+                    padding: '2px 7px', borderRadius: 999, whiteSpace: 'nowrap',
+                  }}>
+                    Wind {Math.round(stopWeather.windMph)}
+                  </span>
+                ) : null
 
                 return (
                   <button
@@ -885,6 +900,7 @@ export default function DayRouteSelectorScreen() {
                           <span style={{
                             display: 'inline-flex', alignItems: 'center', gap: 8, flexShrink: 0,
                           }}>
+                            {windPill}
                             {paymentPill && (
                               <span style={{
                                 display: 'inline-flex', alignItems: 'center',
@@ -948,6 +964,7 @@ export default function DayRouteSelectorScreen() {
                           <span style={{
                             display: 'inline-flex', alignItems: 'center', gap: 8, flexShrink: 0,
                           }}>
+                            {windPill}
                             {paymentPill && (
                               <span style={{
                                 display: 'inline-flex', alignItems: 'center',
