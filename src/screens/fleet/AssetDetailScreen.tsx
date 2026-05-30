@@ -7,6 +7,7 @@ import WorkOrderCard from '@/components/fleet/WorkOrderCard'
 import ServiceLogEntry from '@/components/fleet/ServiceLogEntry'
 import PartCard from '@/components/fleet/PartCard'
 import PillTabs from '@/components/fleet/PillTabs'
+import ComplianceBadges from '@/components/fleet/ComplianceBadges'
 import { HealthPill, PmDot, PmLevelPill } from '@/components/fleet/FleetPills'
 import { FC, FONT_BODY, FONT_DISPLAY } from '@/lib/fleet/theme'
 import { fetchAssetDetail } from '@/lib/fleet/queries'
@@ -91,8 +92,9 @@ export default function AssetDetailScreen({
             <div style={{ marginTop: 4, fontSize: 13, color: FC.muted }}>
               {asset.vehicleSpec}
             </div>
-            <div style={{ marginTop: 10 }}>
+            <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <HealthPill health={data.health} />
+              {asset.compliance && <ComplianceBadges compliance={asset.compliance} />}
             </div>
 
             {/* Identity / usage */}

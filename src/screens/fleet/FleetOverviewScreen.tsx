@@ -34,9 +34,9 @@ export default function FleetOverviewScreen() {
   const [toast, setToast] = useState<string | null>(null)
   const [tab, setTab] = useState<Tab>('trucks')
 
-  // My Log — lazy-loaded the first time the tab is opened.
+  // My Log — loaded once the auth user resolves (see the effect note below).
   const [myLog, setMyLog] = useState<MyServiceRecordView[] | null>(null)
-  const [myLogLoading, setMyLogLoading] = useState(false)
+  const [myLogLoading, setMyLogLoading] = useState(true)
   const [myLogError, setMyLogError] = useState(false)
 
   useEffect(() => {
@@ -49,17 +49,22 @@ export default function FleetOverviewScreen() {
     return () => { cancelled = true }
   }, [])
 
-  // Load My Log on first open (and whenever the user resolves) — once is enough.
+  // Load My Log once the auth user resolves. Deps are the stable user id ONLY.
+  // Earlier this also depended on `tab` + `myLog`/`myLogLoading`: flipping
+  // myLogLoading re-ran the effect, and its cleanup set `cancelled = true` on
+  // the in-flight request's closure, so the resolved result was discarded and
+  // the tab span "Loading…" forever. user.id is stable, so this fires once.
   useEffect(() => {
-    if (tab !== 'mylog' || !user?.id || myLog !== null || myLogLoading) return
+    const uid = user?.id
+    if (!uid) return
     let cancelled = false
     setMyLogLoading(true)
     setMyLogError(false)
-    fetchMyServiceLog(user.id)
+    fetchMyServiceLog(uid)
       .then((rows) => { if (!cancelled) { setMyLog(rows); setMyLogLoading(false) } })
       .catch(() => { if (!cancelled) { setMyLogError(true); setMyLogLoading(false) } })
     return () => { cancelled = true }
-  }, [tab, user?.id, myLog, myLogLoading])
+  }, [user?.id])
 
   useEffect(() => {
     if (!toast) return

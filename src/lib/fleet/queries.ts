@@ -69,6 +69,11 @@ export async function fetchAssetInfo(type: AssetType, id: string): Promise<Fleet
       vehicleSpec: vehicleSpecOf([t.year, t.make, t.model], 'Truck'),
       identifier: t.plate?.trim() || null, identifierLabel: 'Plate',
       currentMileage: t.current_mileage, currentHours: null,
+      compliance: {
+        registration: complianceStatus(t.registration_expiry),
+        inspection:   complianceStatus(t.inspection_expiry),
+        insurance:    complianceStatus(t.insurance_expiry),
+      },
     }
   }
   const { data } = await supabase.from('non_truck_assets').select('*').eq('id', id).maybeSingle()
@@ -79,6 +84,7 @@ export async function fetchAssetInfo(type: AssetType, id: string): Promise<Fleet
     vehicleSpec: vehicleSpecOf([e.year, e.make, e.model], prettyServiceType(e.asset_type)),
     identifier: e.serial_number?.trim() || null, identifierLabel: 'Serial',
     currentMileage: null, currentHours: e.current_hours,
+    compliance: null,
   }
 }
 

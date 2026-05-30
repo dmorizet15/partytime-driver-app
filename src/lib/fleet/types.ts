@@ -89,6 +89,8 @@ export interface FleetAssetInfo {
   identifierLabel: string          // "Plate" | "Serial"
   currentMileage: number | null
   currentHours:   number | null
+  /** Trucks only — Reg / Insp / Ins tiers for the Asset Detail header. null for equipment. */
+  compliance:     ComplianceBadges | null
 }
 
 export interface CrossRefView extends PartCrossRefRow {
