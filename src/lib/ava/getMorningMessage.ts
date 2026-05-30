@@ -31,15 +31,15 @@ function pickVariantIndex(seed: string, variantCount: number): number {
 // default. Read every line aloud before changing it — if it sounds like a text
 // notification, rewrite it.
 function directMessage(s: MorningSummary, seed: string): string {
-  if (s.stopCount === 0) return 'No stops on your route today. Enjoy the day.'
+  if (s.stopCount === 0) return "You've got nothing on the route today. Enjoy the time off."
 
   const stops = s.stopCount === 1 ? '1 stop' : `${s.stopCount} stops`
 
   // Wind is woven in as a natural, hash-picked sentence rather than a flat tail.
   const windVariants = [
-    'Heads up — wind is an issue today. Stake everything twice.',
-    'Wind advisory on the route today. Make sure tents are secure and use extra stakes and ratchets as needed depending on soil conditions and wind exposure.',
-    "It's breezy out there. Double-check every stake and anchor.",
+    "Heads up — it's windy out there today. Stake everything twice.",
+    "There's a wind advisory on your route. Make sure your tents are secure — extra stakes and ratchets based on the soil and exposure at each site.",
+    "It's breezy out there — double-check every stake and anchor before you leave a site.",
   ]
   const windTail = s.hasWeatherFlag
     ? ` ${windVariants[pickVariantIndex(`${seed}|wind`, windVariants.length)]}`
@@ -47,9 +47,9 @@ function directMessage(s: MorningSummary, seed: string): string {
 
   if (s.tentCount >= 2) {
     const tentDay = [
-      `Big tent day — ${s.tentCount} tents across ${stops}. You can do it. Make Darren see why you're the best tent installer he has.`,
-      `${stops}, ${s.tentCount} tents. It's a heavy load day — work smart and you'll crush it.`,
-      `Heavy setup day. ${s.tentCount} tents, ${stops}. Do it right the first time.`,
+      `Big tent day — ${s.tentCount} tents across ${stops}. Show Darren why you're his best installer.`,
+      `You've got ${stops} today — ${s.tentCount} tents to raise. Work smart and you'll crush it.`,
+      `Heavy setup day — ${s.tentCount} tents across ${stops}. Take your time and do it right.`,
     ]
     return `${tentDay[pickVariantIndex(seed, tentDay.length)]}${windTail}`
   }
@@ -57,14 +57,14 @@ function directMessage(s: MorningSummary, seed: string): string {
     return `Full day ahead — ${stops} on your route. Get rolling early and you'll stay ahead of it.${windTail}`
   }
   if (s.codCount >= 2) {
-    return `${stops} today — ${s.codCount} cash collections. Keep the money side organized.${windTail}`
+    return `You've got ${stops} today — ${s.codCount} cash collections. Stay organized on the money side.${windTail}`
   }
   if (s.codCount === 1) {
-    if (s.stopCount === 1) return `One stop today, and it's a cash collection. Quick one — grab the money and you're done.${windTail}`
-    return `${stops} today, one's a cash collection. Knock them out in order and you're set.${windTail}`
+    if (s.stopCount === 1) return `One stop today — and it's a cash collection. Quick one. Grab the money and you're done.${windTail}`
+    return `You've got ${stops} today — one's a cash collection. Knock them out in order and you'll be set.${windTail}`
   }
   if (s.stopCount === 1) return `Just one stop today. Get in, set it up right, and you're done.${windTail}`
-  return `${stops} on your route today. Nothing wild — get rolling and keep it moving.${windTail}`
+  return `You've got ${stops} on your route today. Nothing wild — get rolling and keep it moving.${windTail}`
 }
 
 // ─── Personality mode ────────────────────────────────────────────────────────
@@ -77,54 +77,54 @@ function personalityVariants(s: MorningSummary): string[] {
   if (s.stopCount === 0) {
     return [
       "Nothing on the board today. Enjoy the quiet.",
-      "Empty calendar — rare gift. Take it.",
-      "Zero stops. Hammock weather.",
+      "Clear calendar — that's a rare one. Take it.",
+      "Zero stops. Sounds like hammock weather to me.",
     ]
   }
 
   const stops = s.stopCount === 1 ? '1 stop' : `${s.stopCount} stops`
-  const weatherTail = s.hasWeatherFlag ? ' Weather wants a word — peek at it.' : ''
+  const weatherTail = s.hasWeatherFlag ? " Oh — and weather's got something to say. Peek at it before you head out." : ''
 
   if (s.tentCount >= 2) {
     return [
-      `Tent fortress day — ${stops}, ${s.tentCount} tents. Channel your inner architect.${weatherTail}`,
-      `${stops} today, ${s.tentCount} tents to raise. Strong coffee recommended.${weatherTail}`,
-      `Heavy tent run: ${stops}, ${s.tentCount} canopies. Stretch first.${weatherTail}`,
+      `Tent fortress day — ${stops}, ${s.tentCount} tents to raise. Channel your inner architect.${weatherTail}`,
+      `You've got ${stops} today — ${s.tentCount} tents to raise. I'd grab a strong coffee before you head out.${weatherTail}`,
+      `Heavy tent run — ${stops}, ${s.tentCount} canopies. I'd stretch first if I were you.${weatherTail}`,
     ]
   }
   if (s.stopCount >= 4) {
     return [
-      `${stops}. Big board. Pace yourself.${weatherTail}`,
-      `${stops} on deck — long one. Hydrate.${weatherTail}`,
-      `Today's a marathon: ${stops}. One foot in front of the other.${weatherTail}`,
+      `You've got ${stops} today. Big board — pace yourself.${weatherTail}`,
+      `${stops} on deck — long one. Stay hydrated.${weatherTail}`,
+      `Today's a marathon — ${stops}. One stop at a time and you'll get through it.${weatherTail}`,
     ]
   }
   if (s.codCount >= 2) {
     return [
-      `${stops}, ${s.codCount} CODs. Two wallets, one route. Let's collect.${weatherTail}`,
-      `${stops} on the board, ${s.codCount} paying at the door. Cash whisperer mode.${weatherTail}`,
-      `${stops} today — ${s.codCount} cash collections. Pockets ready.${weatherTail}`,
+      `You've got ${stops} today — ${s.codCount} cash collections. Two wallets, one route. Let's go.${weatherTail}`,
+      `${stops} on the board — ${s.codCount} paying at the door. Cash whisperer mode — activated.${weatherTail}`,
+      `You've got ${stops} today — ${s.codCount} cash collections. Make sure your pockets are ready.${weatherTail}`,
     ]
   }
   if (s.codCount === 1) {
     return [
-      `${stops}, one wants cash. Be the cash whisperer today.${weatherTail}`,
-      `${stops}, one COD. Easy money — literally.${weatherTail}`,
-      `${stops} on the board, one paying at the door. Let's roll.${weatherTail}`,
-      `${stops} today, one cash collect. Standard day.${weatherTail}`,
+      `${stops} today — one wants cash. Be the cash whisperer.${weatherTail}`,
+      `${stops} today — one COD. Easy money. Literally.${weatherTail}`,
+      `${stops} on the board — one's paying at the door. Let's roll.${weatherTail}`,
+      `${stops} today — one cash collect. Standard day.${weatherTail}`,
     ]
   }
   if (s.stopCount === 1) {
     return [
-      `One stop. Quick win.${weatherTail}`,
-      `Single stop today. In and out.${weatherTail}`,
+      `One stop today. Quick win.${weatherTail}`,
+      `Single stop today — in and out.${weatherTail}`,
       `One on the board. Hardly counts.${weatherTail}`,
     ]
   }
   return [
     `${stops} today. Let's roll.${weatherTail}`,
     `${stops} on the board. Smooth start.${weatherTail}`,
-    `${stops} lined up. Standard day.${weatherTail}`,
+    `${stops} lined up. Nice and standard.${weatherTail}`,
   ]
 }
 
