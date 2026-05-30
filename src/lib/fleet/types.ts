@@ -32,6 +32,16 @@ export type PmLevel = 'ok' | 'due_soon' | 'overdue'
 /** Per-asset rollup — work order beats PM-due beats OK (red / amber / green). */
 export type AssetHealth = 'work_order' | 'pm_due' | 'ok'
 
+/** Compliance-doc status from an expiry date (registration / inspection / insurance). */
+export type ComplianceStatus = 'ok' | 'expiring' | 'expired' | 'unknown'
+
+/** Trucks-only compliance trio surfaced as Reg / Insp / Ins badges on the asset list. */
+export interface ComplianceBadges {
+  registration: ComplianceStatus
+  inspection:   ComplianceStatus
+  insurance:    ComplianceStatus
+}
+
 // ─── Composite shapes assembled by queries.ts ───────────────────────────────
 
 export interface OverviewAsset {
@@ -40,6 +50,10 @@ export interface OverviewAsset {
   name:      string
   subtitle:  string          // trucks: "2019 Isuzu NPR · ABC1234"; equipment: "2021 Avant 530"
   health:    AssetHealth
+  /** Trucks only — current odometer for the asset card. null for equipment. */
+  mileage?:  number | null
+  /** Trucks only — Reg / Insp / Ins badge trio. null for equipment. */
+  compliance?: ComplianceBadges | null
 }
 
 export interface WorkOrderListItem extends WorkOrderRow {
@@ -94,6 +108,11 @@ export interface ServiceRecordView extends ServiceRecordRow {
   performerDisplay: string   // resolved name for the service-log row
 }
 
+/** A service record enriched with its asset's display name — the My Log tab. */
+export interface MyServiceRecordView extends ServiceRecordView {
+  assetName: string
+}
+
 export interface WorkOrderDetail {
   workOrder:      WorkOrderRow
   asset:          FleetAssetInfo | null
@@ -116,6 +135,8 @@ export interface AssetDetail {
   serviceRecords: ServiceRecordView[]
   /** Every work order for the asset — open + resolved, newest first. */
   workOrders:     WorkOrderRow[]
+  /** Parts that fit this asset (asset_part_fitments → parts) — the Parts tab. */
+  parts:          PartForAsset[]
 }
 
 /** Service-type option for the Log Service Entry dropdown. */

@@ -8,13 +8,16 @@
 // If the dashboard's PM badge tier logic shifts, mirror it here in the same
 // session (this file is a presentation-layer subset, not byte-identical).
 
-import type { AssetHealth, PmLevel } from './types'
+import type { AssetHealth, ComplianceStatus, PmLevel } from './types'
 
 const SEVERITY: Record<PmLevel, number> = { ok: 0, due_soon: 1, overdue: 2 }
 
 // Build Spec defaults when a schedule leaves the warning thresholds null.
 const DEFAULT_WARNING_DAYS  = 30
 const DEFAULT_WARNING_MILES = 1000
+
+// Compliance docs (registration / inspection / insurance) warn inside this window.
+const COMPLIANCE_WARNING_DAYS = 30
 
 export function mostSevere(levels: PmLevel[]): PmLevel {
   return levels.reduce<PmLevel>((acc, l) => (SEVERITY[l] > SEVERITY[acc] ? l : acc), 'ok')
@@ -87,5 +90,24 @@ export function pmLevelForSchedule(
 export function assetHealth(hasOpenWorkOrder: boolean, pmLevel: PmLevel): AssetHealth {
   if (hasOpenWorkOrder)  return 'work_order'
   if (pmLevel !== 'ok')  return 'pm_due'
+  return 'ok'
+}
+
+/**
+ * Compliance-doc tier from an expiry date string ("YYYY-MM-DD" or ISO):
+ * expired once past, expiring inside the 30-day window, ok beyond, unknown when null.
+ */
+export function complianceStatus(
+  expiry: string | null | undefined,
+  now: Date = new Date(),
+): ComplianceStatus {
+  if (!expiry) return 'unknown'
+  const due = startOfDay(new Date(expiry.length <= 10 ? `${expiry}T00:00:00` : expiry))
+  if (isNaN(due.getTime())) return 'unknown'
+  const today = startOfDay(now)
+  if (today.getTime() > due.getTime()) return 'expired'
+  const warn = new Date(due)
+  warn.setDate(warn.getDate() - COMPLIANCE_WARNING_DAYS)
+  if (today.getTime() >= warn.getTime()) return 'expiring'
   return 'ok'
 }

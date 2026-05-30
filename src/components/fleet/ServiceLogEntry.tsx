@@ -6,7 +6,13 @@ import { FC } from '@/lib/fleet/theme'
 import { formatDate, hours, mileage, prettyServiceType } from '@/lib/fleet/format'
 import type { ServiceRecordView } from '@/lib/fleet/types'
 
-export default function ServiceLogEntry({ record }: { record: ServiceRecordView }) {
+export default function ServiceLogEntry({
+  record, assetName,
+}: {
+  record: ServiceRecordView
+  /** When set (My Log), names the asset the record was logged against. */
+  assetName?: string
+}) {
   const meta: string[] = []
   if (record.mileage_at_service != null) meta.push(mileage(record.mileage_at_service))
   if (record.hours_at_service != null) meta.push(hours(record.hours_at_service))
@@ -26,6 +32,11 @@ export default function ServiceLogEntry({ record }: { record: ServiceRecordView 
           {formatDate(record.service_date)}
         </div>
       </div>
+      {assetName && (
+        <div style={{ marginTop: 3, fontSize: 12.5, fontWeight: 700, color: 'rgba(255,255,255,0.7)' }}>
+          {assetName}
+        </div>
+      )}
       <div style={{ marginTop: 3, fontSize: 12.5, color: FC.muted }}>
         {record.performerDisplay}
         {record.performed_by_type === 'external' ? ' · external' : ''}

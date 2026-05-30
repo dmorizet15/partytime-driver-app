@@ -6,17 +6,19 @@
 // non-fleet users never reach these calls.
 
 import { supabase } from '@/lib/supabase'
-import { assetHealth, mostSevere, pmLevelForSchedule } from './pmStatus'
+import { assetHealth, complianceStatus, mostSevere, pmLevelForSchedule } from './pmStatus'
 import { equipmentSubtitle, prettyServiceType, truckSubtitle } from './format'
 import type {
   AssetDetail,
   AssetScheduleView,
   AssetType,
   AssignableUser,
+  ComplianceBadges,
   CrossRefView,
   FleetAssetInfo,
   FleetOverview,
   MaintenanceSchedule,
+  MyServiceRecordView,
   NonTruckAssetRow,
   OpenWorkOrdersSummary,
   OverviewAsset,
@@ -155,9 +157,16 @@ export async function fetchFleetOverview(): Promise<FleetOverview> {
   const toOverviewTruck = (t: TruckRow): OverviewAsset => {
     const levels = (schedByAsset.get(t.id) ?? []).map((s) =>
       pmLevelForSchedule(s, { currentMileage: t.current_mileage, currentHours: null }))
+    const compliance: ComplianceBadges = {
+      registration: complianceStatus(t.registration_expiry),
+      inspection:   complianceStatus(t.inspection_expiry),
+      insurance:    complianceStatus(t.insurance_expiry),
+    }
     return {
       id: t.id, assetType: 'truck', name: t.name, subtitle: truckSubtitle(t),
       health: assetHealth(woAssetIds.has(t.id), mostSevere(levels)),
+      mileage: t.current_mileage,
+      compliance,
     }
   }
   const toOverviewEquip = (e: NonTruckAssetRow): OverviewAsset => {
@@ -207,13 +216,14 @@ export async function fetchAssetDetail(type: AssetType, id: string): Promise<Ass
   const asset = await fetchAssetInfo(type, id)
   if (!asset) return null
 
-  const [schedRes, woRes, serviceRecords] = await Promise.all([
+  const [schedRes, woRes, serviceRecords, parts] = await Promise.all([
     supabase.from('maintenance_schedules').select('*')
       .eq('asset_type', type).eq('asset_id', id).eq('active', true),
     supabase.from('fleet_work_orders').select('*')
       .eq('asset_type', type).eq('asset_id', id)
       .order('created_at', { ascending: false }),
-    fetchServiceRecordsForAsset(type, id, 5),
+    fetchServiceRecordsForAsset(type, id, 20),
+    fetchPartsForAsset(type, id),
   ])
 
   const schedules  = (schedRes.data ?? []) as MaintenanceSchedule[]
@@ -228,7 +238,35 @@ export async function fetchAssetDetail(type: AssetType, id: string): Promise<Ass
   const hasOpenWO = workOrders.some((w) => OPEN_STATUSES.includes(w.status))
   const health = assetHealth(hasOpenWO, mostSevere(scheduleViews.map((v) => v.pmLevel)))
 
-  return { asset, health, schedules: scheduleViews, serviceRecords, workOrders }
+  return { asset, health, schedules: scheduleViews, serviceRecords, workOrders, parts }
+}
+
+// ─── My Log (Fleet Overview → My Log tab) ───────────────────────────────────
+
+/**
+ * Every service record the signed-in user logged, across all assets, newest
+ * first. Reads service_records.performed_by_user_id = the caller — RLS already
+ * scopes fleet reads, but we filter explicitly so the tab is the user's own log.
+ */
+export async function fetchMyServiceLog(userId: string, limit = 50): Promise<MyServiceRecordView[]> {
+  const { data } = await supabase
+    .from('service_records')
+    .select('*')
+    .eq('performed_by_user_id', userId)
+    .order('service_date', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(limit)
+  const records = (data ?? []) as ServiceRecordRow[]
+  if (records.length === 0) return []
+
+  const [enriched, nameMap] = await Promise.all([
+    enrichServiceRecords(records),
+    fetchAssetNameMap(),
+  ])
+  return enriched.map((r) => ({
+    ...r,
+    assetName: nameMap.get(r.asset_id) ?? 'Unknown asset',
+  }))
 }
 
 // ─── Work Order Detail (/tools/fleet/work-orders/[id]) ──────────────────────
@@ -244,7 +282,14 @@ async function fetchServiceRecordsForAsset(
     .order('service_date', { ascending: false })
     .order('created_at', { ascending: false })
     .limit(limit)
-  const records = (data ?? []) as ServiceRecordRow[]
+  return enrichServiceRecords((data ?? []) as ServiceRecordRow[])
+}
+
+/**
+ * Hydrate raw service_records with their line items, invoice counts, and a
+ * resolved performer name. Shared by the per-asset history and the My Log tab.
+ */
+async function enrichServiceRecords(records: ServiceRecordRow[]): Promise<ServiceRecordView[]> {
   if (records.length === 0) return []
 
   const ids = records.map((r) => r.id)

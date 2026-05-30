@@ -4,13 +4,17 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import BottomNav from '@/components/BottomNav'
 import WorkOrderCard from '@/components/fleet/WorkOrderCard'
+import PillTabs from '@/components/fleet/PillTabs'
+import ComplianceBadges from '@/components/fleet/ComplianceBadges'
+import ServiceLogEntry from '@/components/fleet/ServiceLogEntry'
 import { FC, FONT_BODY, FONT_DISPLAY } from '@/lib/fleet/theme'
-import { fetchFleetOverview } from '@/lib/fleet/queries'
-import type { FleetOverview, OverviewAsset, WorkOrderListItem } from '@/lib/fleet/types'
+import { fetchFleetOverview, fetchMyServiceLog } from '@/lib/fleet/queries'
+import { mileage as fmtMileage } from '@/lib/fleet/format'
+import type { FleetOverview, MyServiceRecordView, OverviewAsset, WorkOrderListItem } from '@/lib/fleet/types'
+import { useAuth } from '@/hooks/useAuth'
 import { HealthPill, StatusDot } from '@/components/fleet/FleetPills'
 import {
   BoxIcon,
-  ChevronDownIcon,
   ChevronRightIcon,
   LockIcon,
   TruckIcon,
@@ -19,14 +23,21 @@ import {
 const EQUIP_MGMT_MSG =
   'Equipment management coming soon — contact your administrator to add or update equipment.'
 
+type Tab = 'trucks' | 'equipment' | 'mylog'
+
 export default function FleetOverviewScreen() {
   const router = useRouter()
+  const { user } = useAuth()
   const [data, setData] = useState<FleetOverview | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
-  // null = follow the default rule (expanded iff there are open equipment WOs).
-  const [equipExpanded, setEquipExpanded] = useState<boolean | null>(null)
+  const [tab, setTab] = useState<Tab>('trucks')
+
+  // My Log — lazy-loaded the first time the tab is opened.
+  const [myLog, setMyLog] = useState<MyServiceRecordView[] | null>(null)
+  const [myLogLoading, setMyLogLoading] = useState(false)
+  const [myLogError, setMyLogError] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -38,14 +49,23 @@ export default function FleetOverviewScreen() {
     return () => { cancelled = true }
   }, [])
 
+  // Load My Log on first open (and whenever the user resolves) — once is enough.
+  useEffect(() => {
+    if (tab !== 'mylog' || !user?.id || myLog !== null || myLogLoading) return
+    let cancelled = false
+    setMyLogLoading(true)
+    setMyLogError(false)
+    fetchMyServiceLog(user.id)
+      .then((rows) => { if (!cancelled) { setMyLog(rows); setMyLogLoading(false) } })
+      .catch(() => { if (!cancelled) { setMyLogError(true); setMyLogLoading(false) } })
+    return () => { cancelled = true }
+  }, [tab, user?.id, myLog, myLogLoading])
+
   useEffect(() => {
     if (!toast) return
     const t = setTimeout(() => setToast(null), 4200)
     return () => clearTimeout(t)
   }, [toast])
-
-  const equipWOCount = data?.equipmentWorkOrders.length ?? 0
-  const equipOpen = equipExpanded ?? equipWOCount > 0
 
   const openAsset = (a: OverviewAsset) =>
     router.push(`/tools/fleet/assets/${a.assetType}/${a.id}`)
@@ -115,7 +135,7 @@ export default function FleetOverviewScreen() {
 
         {!loading && !error && data && (
           <>
-            {/* Summary counts */}
+            {/* Summary counts — cross-asset glance, above the tabs */}
             <div style={{
               padding: '20px 18px 0',
               display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12,
@@ -132,68 +152,107 @@ export default function FleetOverviewScreen() {
               />
             </div>
 
-            {/* ── TRUCKS ───────────────────────────────────────────────── */}
-            <SectionHeader label="Trucks" count={data.trucks.length} />
-            <div style={{ padding: '0 18px' }}>
-              {data.truckWorkOrders.length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 12 }}>
-                  {data.truckWorkOrders.map((wo) => (
-                    <WorkOrderCard key={wo.id} wo={wo} subtitle={wo.assetName} onTap={() => openWorkOrder(wo)} />
-                  ))}
-                </div>
-              )}
-              {data.trucks.length === 0
-                ? <EmptyRow text="No active trucks" />
-                : (
-                  <div style={cardListStyle}>
-                    {data.trucks.map((a, i) => (
-                      <AssetRow key={a.id} asset={a} last={i === data.trucks.length - 1} onTap={() => openAsset(a)} />
-                    ))}
-                  </div>
-                )}
+            {/* Tabs */}
+            <div style={{ padding: '18px 18px 4px' }}>
+              <PillTabs
+                active={tab}
+                onChange={(k) => setTab(k as Tab)}
+                tabs={[
+                  { key: 'trucks',    label: 'Trucks',    count: data.trucks.length },
+                  { key: 'equipment', label: 'Equipment', count: data.equipment.length },
+                  { key: 'mylog',     label: 'My Log' },
+                ]}
+              />
             </div>
 
-            {/* ── EQUIPMENT ────────────────────────────────────────────── */}
-            <EquipmentHeader count={data.equipment.length} onManage={() => setToast(EQUIP_MGMT_MSG)} />
-            <div style={{ padding: '0 18px' }}>
-              {data.equipmentWorkOrders.length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 12 }}>
-                  {data.equipmentWorkOrders.map((wo) => (
-                    <WorkOrderCard key={wo.id} wo={wo} subtitle={wo.assetName} onTap={() => openWorkOrder(wo)} />
-                  ))}
-                </div>
-              )}
-              {data.equipment.length === 0
-                ? <EmptyRow text="No active equipment" />
-                : (
+            {/* ── TRUCKS TAB ───────────────────────────────────────────── */}
+            {tab === 'trucks' && (
+              <>
+                {data.truckWorkOrders.length > 0 && (
                   <>
-                    <CollapseToggle
-                      label="All equipment"
-                      count={data.equipment.length}
-                      open={equipOpen}
-                      onToggle={() => setEquipExpanded(!equipOpen)}
-                    />
-                    {equipOpen && (
-                      <div style={{ ...cardListStyle, marginTop: 8 }}>
+                    <SectionHeader label="Open work orders" count={data.truckWorkOrders.length} />
+                    <div style={{ padding: '0 18px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {data.truckWorkOrders.map((wo) => (
+                        <WorkOrderCard key={wo.id} wo={wo} subtitle={wo.assetName} onTap={() => openWorkOrder(wo)} />
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                <SectionHeader label="All trucks" count={data.trucks.length} />
+                <div style={{ padding: '0 18px' }}>
+                  {data.trucks.length === 0
+                    ? <EmptyRow text="No active trucks" />
+                    : (
+                      <div style={cardListStyle}>
+                        {data.trucks.map((a, i) => (
+                          <AssetRow key={a.id} asset={a} last={i === data.trucks.length - 1} onTap={() => openAsset(a)} />
+                        ))}
+                      </div>
+                    )}
+                </div>
+
+                {/* Other / orphan work orders — surfaced here so they're never lost */}
+                {data.otherWorkOrders.length > 0 && (
+                  <>
+                    <SectionHeader label="Other work orders" count={data.otherWorkOrders.length} />
+                    <div style={{ padding: '0 18px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {data.otherWorkOrders.map((wo) => (
+                        <WorkOrderCard key={wo.id} wo={wo} subtitle={wo.assetName} onTap={() => openWorkOrder(wo)} />
+                      ))}
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+
+            {/* ── EQUIPMENT TAB ────────────────────────────────────────── */}
+            {tab === 'equipment' && (
+              <>
+                {data.equipmentWorkOrders.length > 0 && (
+                  <>
+                    <SectionHeader label="Open work orders" count={data.equipmentWorkOrders.length} />
+                    <div style={{ padding: '0 18px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {data.equipmentWorkOrders.map((wo) => (
+                        <WorkOrderCard key={wo.id} wo={wo} subtitle={wo.assetName} onTap={() => openWorkOrder(wo)} />
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                <EquipmentHeader count={data.equipment.length} onManage={() => setToast(EQUIP_MGMT_MSG)} />
+                <div style={{ padding: '0 18px' }}>
+                  {data.equipment.length === 0
+                    ? <EmptyRow text="No active equipment" />
+                    : (
+                      <div style={cardListStyle}>
                         {data.equipment.map((a, i) => (
                           <AssetRow key={a.id} asset={a} last={i === data.equipment.length - 1} onTap={() => openAsset(a)} />
                         ))}
                       </div>
                     )}
-                  </>
-                )}
-            </div>
-
-            {/* ── OTHER WORK ORDERS — catch-all ────────────────────────── */}
-            {data.otherWorkOrders.length > 0 && (
-              <>
-                <SectionHeader label="Other work orders" count={data.otherWorkOrders.length} />
-                <div style={{ padding: '0 18px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {data.otherWorkOrders.map((wo) => (
-                    <WorkOrderCard key={wo.id} wo={wo} subtitle={wo.assetName} onTap={() => openWorkOrder(wo)} />
-                  ))}
                 </div>
               </>
+            )}
+
+            {/* ── MY LOG TAB ───────────────────────────────────────────── */}
+            {tab === 'mylog' && (
+              <div style={{ padding: '20px 18px 0' }}>
+                {myLogLoading && <CenterNote>Loading your service log…</CenterNote>}
+                {!myLogLoading && myLogError && (
+                  <CenterNote tone="error">Couldn’t load your service log.</CenterNote>
+                )}
+                {!myLogLoading && !myLogError && myLog && myLog.length === 0 && (
+                  <EmptyRow text="You haven’t logged any service entries yet." />
+                )}
+                {!myLogLoading && !myLogError && myLog && myLog.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {myLog.map((r) => (
+                      <ServiceLogEntry key={r.id} record={r} assetName={r.assetName} />
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
 
             <div style={{ height: 28 }} />
@@ -271,7 +330,7 @@ function EquipmentHeader({ count, onManage }: { count: number; onManage: () => v
         letterSpacing: '0.2em', textTransform: 'uppercase', color: FC.muted,
         paddingLeft: 4,
       }}>
-        <span>Equipment</span>
+        <span>All equipment</span>
         <span style={{ color: FC.faint, letterSpacing: '0.1em' }}>{count}</span>
       </div>
       <button
@@ -294,47 +353,6 @@ function EquipmentHeader({ count, onManage }: { count: number; onManage: () => v
   )
 }
 
-/** Collapse / expand control for the equipment list (the list only — work
- *  orders above it are never collapsed). */
-function CollapseToggle({
-  label, count, open, onToggle,
-}: {
-  label: string
-  count: number
-  open: boolean
-  onToggle: () => void
-}) {
-  return (
-    <button
-      onClick={onToggle}
-      aria-expanded={open}
-      style={{
-        width: '100%', cursor: 'pointer', fontFamily: 'inherit',
-        background: FC.card, border: `0.5px solid ${FC.cardBorder}`,
-        borderRadius: 14, padding: '13px 14px',
-        display: 'flex', alignItems: 'center', gap: 8, color: FC.white,
-      }}
-    >
-      <span style={{ fontSize: 13.5, fontWeight: 800 }}>{label}</span>
-      <span style={{ fontSize: 13.5, fontWeight: 800, color: FC.faint }}>{count}</span>
-      <span style={{ flex: 1 }} />
-      <span style={{
-        fontSize: 10.5, fontWeight: 800, color: FC.muted,
-        letterSpacing: '0.08em', textTransform: 'uppercase',
-      }}>
-        {open ? 'Hide' : 'Show'}
-      </span>
-      <span style={{
-        display: 'flex',
-        transform: open ? 'rotate(180deg)' : 'none',
-        transition: 'transform 0.15s ease',
-      }}>
-        <ChevronDownIcon size={18} color={FC.muted} />
-      </span>
-    </button>
-  )
-}
-
 function EmptyRow({ text }: { text: string }) {
   return (
     <div style={{
@@ -349,6 +367,9 @@ function EmptyRow({ text }: { text: string }) {
 
 function AssetRow({ asset, last, onTap }: { asset: OverviewAsset; last: boolean; onTap: () => void }) {
   const Icon = asset.assetType === 'truck' ? TruckIcon : BoxIcon
+  const isTruck = asset.assetType === 'truck'
+  const mileageLabel = isTruck && asset.mileage != null ? fmtMileage(asset.mileage) : null
+
   return (
     <button
       onClick={onTap}
@@ -376,8 +397,13 @@ function AssetRow({ asset, last, onTap }: { asset: OverviewAsset; last: boolean;
           marginTop: 2, fontSize: 12, color: FC.muted,
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         }}>
-          {asset.subtitle}
+          {asset.subtitle}{mileageLabel ? ` · ${mileageLabel}` : ''}
         </div>
+        {isTruck && asset.compliance && (
+          <div style={{ marginTop: 7 }}>
+            <ComplianceBadges compliance={asset.compliance} />
+          </div>
+        )}
       </div>
       <HealthPill health={asset.health} />
       <ChevronRightIcon size={18} color={FC.faint} />

@@ -5,11 +5,15 @@ import { useRouter } from 'next/navigation'
 import BottomNav from '@/components/BottomNav'
 import WorkOrderCard from '@/components/fleet/WorkOrderCard'
 import ServiceLogEntry from '@/components/fleet/ServiceLogEntry'
+import PartCard from '@/components/fleet/PartCard'
+import PillTabs from '@/components/fleet/PillTabs'
 import { HealthPill, PmDot, PmLevelPill } from '@/components/fleet/FleetPills'
 import { FC, FONT_BODY, FONT_DISPLAY } from '@/lib/fleet/theme'
 import { fetchAssetDetail } from '@/lib/fleet/queries'
 import { formatDate, hours, mileage, prettyServiceType } from '@/lib/fleet/format'
 import type { AssetDetail, AssetScheduleView, AssetType } from '@/lib/fleet/types'
+
+type Tab = 'history' | 'pm' | 'parts'
 
 function validAssetType(raw: string): AssetType | null {
   return raw === 'truck' || raw === 'equipment' ? raw : null
@@ -28,6 +32,7 @@ export default function AssetDetailScreen({
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [showAllWO, setShowAllWO] = useState(false)
+  const [tab, setTab] = useState<Tab>('history')
 
   useEffect(() => {
     if (!type) { setNotFound(true); setLoading(false); return }
@@ -98,66 +103,107 @@ export default function AssetDetailScreen({
                 : <MetaRow label="Hours" value={hours(asset.currentHours)} last />}
             </Card>
 
-            {/* PM schedule */}
-            <SectionTitle>PM schedule</SectionTitle>
-            {data.schedules.length === 0 ? (
-              <EmptyCard text="No preventive-maintenance schedule set for this asset." />
-            ) : (
-              <div style={cardListStyle}>
-                {data.schedules.map((v, i) => (
-                  <ScheduleRow key={v.schedule.id} view={v} last={i === data.schedules.length - 1} />
-                ))}
-              </div>
+            {/* Open work orders — persistent, above the tabs (never lost) */}
+            {(shownWOs.length > 0 || resolvedExist) && (
+              <>
+                <SectionTitle>
+                  {showAllWO ? 'Work orders' : 'Open work orders'}
+                </SectionTitle>
+                {shownWOs.length === 0 ? (
+                  <EmptyCard text="No open work orders for this asset." />
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {shownWOs.map((wo) => (
+                      <WorkOrderCard
+                        key={wo.id}
+                        wo={wo}
+                        subtitle={`Opened ${formatDate(wo.created_at)}`}
+                        onTap={() => router.push(`/tools/fleet/work-orders/${wo.id}`)}
+                      />
+                    ))}
+                  </div>
+                )}
+                {resolvedExist && (
+                  <button
+                    onClick={() => setShowAllWO((v) => !v)}
+                    style={{ ...secondaryBtn, marginTop: 10 }}
+                  >
+                    {showAllWO
+                      ? 'Show open work orders only'
+                      : `View all work orders (${data.workOrders.length})`}
+                  </button>
+                )}
+              </>
             )}
 
-            {/* Service history */}
-            <SectionTitle>Service history</SectionTitle>
-            {data.serviceRecords.length === 0 ? (
-              <EmptyCard text="No service entries logged for this asset yet." />
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {data.serviceRecords.map((r) => <ServiceLogEntry key={r.id} record={r} />)}
-              </div>
-            )}
+            {/* Tabs */}
+            <div style={{ marginTop: 22 }}>
+              <PillTabs
+                active={tab}
+                onChange={(k) => setTab(k as Tab)}
+                tabs={[
+                  { key: 'history', label: 'History',     count: data.serviceRecords.length },
+                  { key: 'pm',      label: 'PM Schedule', count: data.schedules.length },
+                  { key: 'parts',   label: 'Parts',       count: data.parts.length },
+                ]}
+              />
+            </div>
 
-            {/* Work orders */}
-            <SectionTitle>Work orders</SectionTitle>
-            {shownWOs.length === 0 ? (
-              <EmptyCard text={showAllWO
-                ? 'No work orders for this asset.'
-                : 'No open work orders for this asset.'} />
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {shownWOs.map((wo) => (
-                  <WorkOrderCard
-                    key={wo.id}
-                    wo={wo}
-                    subtitle={`Opened ${formatDate(wo.created_at)}`}
-                    onTap={() => router.push(`/tools/fleet/work-orders/${wo.id}`)}
-                  />
-                ))}
-              </div>
-            )}
+            <div style={{ marginTop: 14 }}>
+              {/* History tab */}
+              {tab === 'history' && (
+                data.serviceRecords.length === 0 ? (
+                  <EmptyCard text="No service entries logged for this asset yet." />
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {data.serviceRecords.map((r) => <ServiceLogEntry key={r.id} record={r} />)}
+                  </div>
+                )
+              )}
 
-            {/* Actions */}
-            <div style={{ marginTop: 24, display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <button
-                onClick={() => router.push(`/tools/fleet/assets/${asset.assetType}/${asset.id}/log-service`)}
-                style={primaryBtn}
-              >
-                Log service
-              </button>
-              {resolvedExist && (
-                <button onClick={() => setShowAllWO((v) => !v)} style={secondaryBtn}>
-                  {showAllWO
-                    ? 'Show open work orders only'
-                    : `View all work orders (${data.workOrders.length})`}
-                </button>
+              {/* PM Schedule tab */}
+              {tab === 'pm' && (
+                data.schedules.length === 0 ? (
+                  <EmptyCard text="No preventive-maintenance schedule set for this asset." />
+                ) : (
+                  <div style={cardListStyle}>
+                    {data.schedules.map((v, i) => (
+                      <ScheduleRow key={v.schedule.id} view={v} last={i === data.schedules.length - 1} />
+                    ))}
+                  </div>
+                )
+              )}
+
+              {/* Parts tab */}
+              {tab === 'parts' && (
+                data.parts.length === 0 ? (
+                  <EmptyCard text="No parts mapped to this asset." />
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {data.parts.map((p) => <PartCard key={p.part.id} entry={p} />)}
+                  </div>
+                )
               )}
             </div>
           </div>
         )}
       </div>
+
+      {/* Footer — Log service (persistent primary CTA) */}
+      {!loading && data && asset && (
+        <div style={{
+          flexShrink: 0, background: FC.bg,
+          borderTop: `0.5px solid ${FC.divider}`,
+          padding: '12px 18px calc(12px + env(safe-area-inset-bottom))',
+        }}>
+          <button
+            onClick={() => router.push(`/tools/fleet/assets/${asset.assetType}/${asset.id}/log-service`)}
+            style={primaryBtn}
+          >
+            Log service
+          </button>
+        </div>
+      )}
 
       <BottomNav />
     </div>

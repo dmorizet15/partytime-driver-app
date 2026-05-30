@@ -85,6 +85,12 @@ export default function LogServiceEntryScreen({
       if (cancelled) return
       if (!c) { setNotFound(true); setLoading(false); return }
       setCtx(c)
+      // Prefill the usage reading with the asset's current value (editable).
+      if (c.asset?.assetType === 'truck' && c.asset.currentMileage != null) {
+        setMileageStr(String(c.asset.currentMileage))
+      } else if (c.asset?.assetType === 'equipment' && c.asset.currentHours != null) {
+        setHoursStr(String(c.asset.currentHours))
+      }
       setLoading(false)
     })
     return () => { cancelled = true }
