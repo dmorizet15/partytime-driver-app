@@ -14,6 +14,7 @@ import AvaChip                          from '@/components/AvaChip'
 import WeatherFlagCard                  from '@/components/WeatherFlagCard'
 import AvaMorningCard                   from '@/components/ava/AvaMorningCard'
 import { useRouteWeather }               from '@/hooks/ava/useRouteWeather'
+import AskAvaButton                      from '@/components/ava/AskAvaButton'
 
 // ─── Direction 03 (Editorial) tokens ──────────────────────────────────────────
 const C = {
@@ -1001,9 +1002,11 @@ export default function DayRouteSelectorScreen() {
             </div>
             )}
 
-            {/* "Ask Ava about today" stub deleted — AvaChip in the header is
-                the permanent Tier 1 entry point; Tier 2 morning brief above
-                covers the proactive surface. */}
+            {/* "Ask Ava about today" — placeholder entry point (AVA Phase 2).
+                UI only for now; the Haiku-backed conversation sheet pre-seeded
+                with route context lands in a later session. Pre-pre-trip only,
+                alongside the Inspect CTA. */}
+            {!inspected && <AskAvaButton />}
 
             {/* Gold CTA — pre-pre-trip only. Once inspected, Home goes quiet
                 and the Routes tab becomes the active-route entry point.
