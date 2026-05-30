@@ -1,5 +1,14 @@
 # Open Tasks — partytime-driver-app
 
+## May 30, 2026 — Fleet Maintenance driver app — Session 3 (commit `3bda5d7`, on `main`)
+
+UI-only rebuild of the four locked Fleet Maintenance screens (pill tabs + My Log + compliance badges). No migrations, no API routes. Pushed to `main` for Vercel auto-deploy. **Not confirmed on production yet.**
+
+- [ ] **Smoke-test on production** once Vercel deploys `3bda5d7` (full matrix in `CLAUDE.md` → "Fleet Maintenance Module — Driver App → Session 3 → NEXT smoke test"). Seven loops: (1) three pill tabs + access gate, (2) truck cards w/ mileage + Reg/Insp/Ins badges + WO surfacing, (3) equipment tab + lock chip, (4) My Log = own entries only, (5) Asset Detail tab switching + persistent open-WO block + pinned Log-service CTA, (6) Log Service mileage prefill + entry appears in History AND My Log, (7) Parts tab.
+- [ ] **Compliance-badge expiry tiers are driver-app-derived, not dashboard-mirrored.** `complianceStatus()` in `pmStatus.ts` uses a fixed 30-day warning window for registration/inspection/insurance. If the dashboard ever computes a different compliance tier (e.g. per-doc warning columns), mirror it here in the same session — same discipline as the PM-tier logic note at the top of `pmStatus.ts`.
+- [ ] **My Log limit is 50 rows.** `fetchMyServiceLog(userId, limit = 50)` caps at the 50 most-recent. No pagination/"load more" — acceptable for the current volume; add paging if a heavy logger tops 50.
+- [ ] **Decision deferred:** the spec's Screen 1 truck card lists "year/make/model, current mileage" — we append mileage to the existing subtitle (`"2019 Isuzu NPR · ABC1234 · 12,345 mi"`). If Darren wants mileage on its own line, it's a one-block change in `FleetOverviewScreen` `AssetRow`.
+
 ## May 28, 2026 — AVA Phase 1 MERGED to `main` + live in production (merge commit `37f83a9`)
 
 `feature/ava-phase1` merged via `--no-ff` and pushed to `main`; Vercel production deploy READY; branch deleted (local + remote). **All the "NOT merged to main" caveats in the entries below are now historical — the work is live.** The dispatcher/stop-notes smoke matrix (CLAUDE.md → "Dispatcher Notes + Stop Notes surface") now runs against production, not a preview.
