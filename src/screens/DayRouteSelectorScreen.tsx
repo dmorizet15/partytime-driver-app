@@ -250,6 +250,17 @@ export default function DayRouteSelectorScreen() {
   const routeWeather = useRouteWeather(dayStops)
 
   const totalStopCount = dayStops.length
+  // Customer-facing stop count — excludes the warehouse / warehouse_return
+  // depot legs. Drives the driver-visible totals (hero "N stops scheduled" +
+  // the "The day, in N" section header) so they match the type breakdown,
+  // which already excludes depot. totalStopCount stays the full count for the
+  // route-complete gate and section guards (depot must count toward "all done").
+  const customerStopCount = useMemo(
+    () => dayStops.filter(
+      (s) => s.stop_type !== 'warehouse' && s.stop_type !== 'warehouse_return'
+    ).length,
+    [dayStops],
+  )
   // COD cards are scoped to delivery stops — pickup stops with a balance_due
   // payment state aren't a "collect cash on arrival" scenario from the driver's
   // POV (the customer pays at the lot when picking up, not in the field).
@@ -297,7 +308,7 @@ export default function DayRouteSelectorScreen() {
   const firstName   = firstNameOf(profile?.display_name)
   const hasGreeting = !!firstName
   const isEmpty     = !isLoading && !error && totalStopCount === 0
-  const sub         = daySubcopy(totalStopCount)
+  const sub         = daySubcopy(customerStopCount)
   const breakdown   = useMemo(() => typeBreakdown(dayStops), [dayStops])
 
   // Driver app is single-truck per route per login — only the primary truck
@@ -777,7 +788,7 @@ export default function DayRouteSelectorScreen() {
               fontSize: 13, fontWeight: 800, letterSpacing: '0.2em',
               textTransform: 'uppercase', color: C.muted,
             }}>
-              The day, in {totalStopCount}
+              The day, in {customerStopCount}
             </div>
             )}
 
