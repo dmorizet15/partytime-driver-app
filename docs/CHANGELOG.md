@@ -4,6 +4,17 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-05-30 — Fleet Maintenance Session 3 — smoke fixes — `main` — commit `0f2f4fd`
+
+Two issues from Darren's Session-3 smoke test.
+
+- **Bug 1 — My Log tab spun "Loading…" forever.** Client-side React race, not RLS / not the write. The My Log load `useEffect` depended on `myLog` + `myLogLoading`; calling `setMyLogLoading(true)` re-ran the effect, whose first-run cleanup set `cancelled = true` on the in-flight request's closure, so the resolved result was discarded and loading never cleared. (Confirmed not RLS: History tab reads `service_records` under the same RLS and works; `fetchMyServiceLog` returns `[]` on a query error → empty state, not a hang.) **Fix:** load once keyed on the stable `user.id` only; the existing `.catch → myLogError` now surfaces real failures.
+- **Bug 2 — compliance badges added to Asset Detail header.** Spec locked Reg/Insp/Ins badges on the Overview list cards only; added to the Asset Detail header (trucks) per Darren — it's where he acts on a compliance issue. `fetchAssetInfo` now computes `compliance` via `complianceStatus()`; `FleetAssetInfo` carries it (equipment → null); header renders the shared `<ComplianceBadges/>` next to the health pill.
+
+Build green; pushed. **Re-test My Log + Asset Detail badges on production.**
+
+---
+
 ## 2026-05-30 — Fleet Maintenance driver app — Session 3 — `main` — commit `3bda5d7`
 
 UI-only build of the four locked Fleet Maintenance screens (Notion design spec `36c0aa6451b8817b832ac61f3aaf9c2a`). **No migrations, no API routes** — all reads/writes go through the existing RLS-gated supabase client + `src/lib/fleet/queries.ts`. Darren chose (in-session) a full **pill-tab restructure** of the May-22 Overview + Asset Detail, keeping the work-order surfacing inside the new tabs.
