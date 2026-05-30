@@ -4,6 +4,19 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-05-30 — Fleet Maintenance driver app — Session 3 — `main` — commit `3bda5d7`
+
+UI-only build of the four locked Fleet Maintenance screens (Notion design spec `36c0aa6451b8817b832ac61f3aaf9c2a`). **No migrations, no API routes** — all reads/writes go through the existing RLS-gated supabase client + `src/lib/fleet/queries.ts`. Darren chose (in-session) a full **pill-tab restructure** of the May-22 Overview + Asset Detail, keeping the work-order surfacing inside the new tabs.
+
+- **Screen 1 — Fleet Overview** → **Trucks / Equipment / My Log** pill tabs (`PillTabs`). Cross-asset summary counts stay above the tabs. Truck cards gained **current mileage** + **Reg / Insp / Ins** compliance badges (`ComplianceBadges`, tier from `complianceStatus()` — green ok / amber ≤30d / red expired / gray unknown). Open truck/equipment WOs at the top of their tab; orphan WOs at the bottom of the Trucks tab. Equipment collapse-toggle dropped (each list owns its tab); "Manage equipment" lock chip kept.
+- **Screen 2 — Asset Detail** → **History / PM Schedule / Parts** pill tabs. Open WOs persist above the tabs (View-all reveals resolved); **Log service** is now a persistent bottom CTA. Parts tab reuses the extracted `PartCard`. `fetchAssetDetail` now also returns `parts` (history limit 5→20).
+- **Screen 3 — Log Service** → mileage/hours now **prefill** from the asset's current reading (editable). Otherwise already matched spec.
+- **Screen 4 — My Log** (new) → the signed-in user's `service_records` across all assets, newest first, via `fetchMyServiceLog()` (`performed_by_user_id`), lazy-loaded on first open; `ServiceLogEntry` gained an optional `assetName` line.
+- **Shared / data:** new `PillTabs` + `ComplianceBadges`; `PartCard` extracted from `WorkOrderDetailScreen` (dedup); `enrichServiceRecords()` factored out of `fetchServiceRecordsForAsset`; `complianceStatus()` added to `pmStatus.ts`. `OverviewAsset` carries `mileage?`+`compliance?`; `AssetDetail` carries `parts`; new `MyServiceRecordView` / `ComplianceBadges` / `ComplianceStatus` types.
+- Build green (`npx next build`), pushed to `main`. **Production smoke test pending Darren's confirmation** (matrix in `CLAUDE.md` → Fleet Maintenance Module → Session 3).
+
+---
+
 ## 2026-05-28 — AVA TTS — sentence-pause tune `0.5s → 0.6s` — `main` (production) — commit `cc76a02`
 
 First post-merge change on `main`. Lengthened the inter-sentence pause in the spoken morning brief from `0.5s` to `0.6s` — a single value, `SENTENCE_PAUSE`, in `src/lib/ava/elevenLabs.ts:26`, injected as an SSML `<break time="0.6s" />` at sentence boundaries (`/([.!?])\s+/` → `$1 <break …/> `). ElevenLabs request path **only**; the Web Speech fallback never sees the tag (it pauses at punctuation natively). The `\s+` requirement still guards decimals ("2.5") from being split. Build green (EXIT=0), pushed to `main`, Vercel production deploy fired. **Darren confirmed the longer pause is audible on the live app.** Worked directly on `main` per Darren's call — no branch for a one-line TTS tune. Supersedes the prior `9560fb7` pause work (which introduced the `<break>` mechanism at `0.5s`).
