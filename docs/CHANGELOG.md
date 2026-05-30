@@ -4,7 +4,7 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
-## 2026-05-30 — Fleet Maintenance Session 3 — smoke fixes — `main` — commit `0f2f4fd`
+## 2026-05-30 — Fleet Maintenance Session 3 — smoke fixes — `main` — commit `0a1cb72`
 
 Two issues from Darren's Session-3 smoke test.
 
