@@ -1,6 +1,8 @@
 // ─── Fleet Maintenance — compliance badge trio ──────────────────────────────
-// Trucks-only Reg / Insp / Ins badges for the asset list. Color encodes the
+// Trucks-only Reg / NYS / Ins badges for the asset list. Color encodes the
 // expiry tier: green ok · amber expiring (≤30d) · red expired · gray unknown.
+// "NYS" = NYS DMV inspection (inspection_expiry) — distinct from the federal
+// Annual DOT / DVIR inspection, which is tracked separately.
 
 import { FC } from '@/lib/fleet/theme'
 import type { ComplianceBadges as Badges, ComplianceStatus } from '@/lib/fleet/types'
@@ -31,7 +33,7 @@ export default function ComplianceBadges({ compliance }: { compliance: Badges })
   return (
     <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
       <Badge label="Reg" status={compliance.registration} />
-      <Badge label="Insp" status={compliance.inspection} />
+      <Badge label="NYS" status={compliance.inspection} />
       <Badge label="Ins" status={compliance.insurance} />
     </div>
   )

@@ -283,6 +283,80 @@ export type Database = {
           },
         ]
       }
+      company_settings: {
+        Row: {
+          company_name: string
+          company_website: string
+          dispatch_email_from: string
+          id: number
+          ptr_phone_display: string
+          ptr_phone_raw: string
+          ptr_phone_sms: string
+          updated_at: string | null
+          updated_by: string | null
+        }
+        Insert: {
+          company_name?: string
+          company_website?: string
+          dispatch_email_from?: string
+          id?: number
+          ptr_phone_display?: string
+          ptr_phone_raw?: string
+          ptr_phone_sms?: string
+          updated_at?: string | null
+          updated_by?: string | null
+        }
+        Update: {
+          company_name?: string
+          company_website?: string
+          dispatch_email_from?: string
+          id?: number
+          ptr_phone_display?: string
+          ptr_phone_raw?: string
+          ptr_phone_sms?: string
+          updated_at?: string | null
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
+      compliance_edit_log: {
+        Row: {
+          edited_at: string
+          edited_by_user_id: string
+          field_name: string
+          id: string
+          new_value: string
+          old_value: string | null
+          truck_id: string
+        }
+        Insert: {
+          edited_at?: string
+          edited_by_user_id: string
+          field_name: string
+          id?: string
+          new_value: string
+          old_value?: string | null
+          truck_id: string
+        }
+        Update: {
+          edited_at?: string
+          edited_by_user_id?: string
+          field_name?: string
+          id?: string
+          new_value?: string
+          old_value?: string | null
+          truck_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "compliance_edit_log_truck_id_fkey"
+            columns: ["truck_id"]
+            isOneToOne: false
+            referencedRelation: "trucks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       defect_acknowledgments: {
         Row: {
           acknowledged_at: string
@@ -417,8 +491,15 @@ export type Database = {
           constraint_confidence: string | null
           created_at: string
           customer_cell: string | null
+          customer_confirmed: boolean
+          customer_confirmed_at: string | null
+          customer_confirmed_channel: string | null
+          customer_email: string | null
           customer_name: string
           customer_phone: string | null
+          customer_reply_intent: string | null
+          delivery_lat: number | null
+          delivery_lng: number | null
           delivery_window_end: string | null
           delivery_window_start: string | null
           dispatch_status: Database["public"]["Enums"]["dispatch_status_enum"]
@@ -452,6 +533,8 @@ export type Database = {
           notes_preferred_pickup: Json | null
           notes_set_by_time: string | null
           notes_strike_time: string | null
+          notification_sent: boolean
+          notification_sent_at: string | null
           order_end_date: string | null
           order_start_date: string | null
           order_status: string | null
@@ -478,6 +561,7 @@ export type Database = {
           tg_date_drift_detected_at: string | null
           tg_date_drift_value: string | null
           updated_at: string
+          warehouse_notes: string | null
         }
         Insert: {
           actual_departure_at?: string | null
@@ -495,8 +579,15 @@ export type Database = {
           constraint_confidence?: string | null
           created_at?: string
           customer_cell?: string | null
+          customer_confirmed?: boolean
+          customer_confirmed_at?: string | null
+          customer_confirmed_channel?: string | null
+          customer_email?: string | null
           customer_name: string
           customer_phone?: string | null
+          customer_reply_intent?: string | null
+          delivery_lat?: number | null
+          delivery_lng?: number | null
           delivery_window_end?: string | null
           delivery_window_start?: string | null
           dispatch_status?: Database["public"]["Enums"]["dispatch_status_enum"]
@@ -530,6 +621,8 @@ export type Database = {
           notes_preferred_pickup?: Json | null
           notes_set_by_time?: string | null
           notes_strike_time?: string | null
+          notification_sent?: boolean
+          notification_sent_at?: string | null
           order_end_date?: string | null
           order_start_date?: string | null
           order_status?: string | null
@@ -556,6 +649,7 @@ export type Database = {
           tg_date_drift_detected_at?: string | null
           tg_date_drift_value?: string | null
           updated_at?: string
+          warehouse_notes?: string | null
         }
         Update: {
           actual_departure_at?: string | null
@@ -573,8 +667,15 @@ export type Database = {
           constraint_confidence?: string | null
           created_at?: string
           customer_cell?: string | null
+          customer_confirmed?: boolean
+          customer_confirmed_at?: string | null
+          customer_confirmed_channel?: string | null
+          customer_email?: string | null
           customer_name?: string
           customer_phone?: string | null
+          customer_reply_intent?: string | null
+          delivery_lat?: number | null
+          delivery_lng?: number | null
           delivery_window_end?: string | null
           delivery_window_start?: string | null
           dispatch_status?: Database["public"]["Enums"]["dispatch_status_enum"]
@@ -608,6 +709,8 @@ export type Database = {
           notes_preferred_pickup?: Json | null
           notes_set_by_time?: string | null
           notes_strike_time?: string | null
+          notification_sent?: boolean
+          notification_sent_at?: string | null
           order_end_date?: string | null
           order_start_date?: string | null
           order_status?: string | null
@@ -634,6 +737,7 @@ export type Database = {
           tg_date_drift_detected_at?: string | null
           tg_date_drift_value?: string | null
           updated_at?: string
+          warehouse_notes?: string | null
         }
         Relationships: [
           {
@@ -1514,6 +1618,7 @@ export type Database = {
           estimated_return_at: string | null
           id: string
           label: string
+          loading_bay: number | null
           route_date: string
           route_number: number | null
           route_start_time: string | null
@@ -1525,6 +1630,7 @@ export type Database = {
           updated_at: string
           warehouse_arrived_at: string | null
           warehouse_arrived_by: string | null
+          warehouse_notes: string | null
         }
         Insert: {
           break_blocks?: Json
@@ -1536,6 +1642,7 @@ export type Database = {
           estimated_return_at?: string | null
           id?: string
           label: string
+          loading_bay?: number | null
           route_date: string
           route_number?: number | null
           route_start_time?: string | null
@@ -1547,6 +1654,7 @@ export type Database = {
           updated_at?: string
           warehouse_arrived_at?: string | null
           warehouse_arrived_by?: string | null
+          warehouse_notes?: string | null
         }
         Update: {
           break_blocks?: Json
@@ -1558,6 +1666,7 @@ export type Database = {
           estimated_return_at?: string | null
           id?: string
           label?: string
+          loading_bay?: number | null
           route_date?: string
           route_number?: number | null
           route_start_time?: string | null
@@ -1569,6 +1678,7 @@ export type Database = {
           updated_at?: string
           warehouse_arrived_at?: string | null
           warehouse_arrived_by?: string | null
+          warehouse_notes?: string | null
         }
         Relationships: [
           {
@@ -1693,6 +1803,7 @@ export type Database = {
           performed_by_type: string
           performed_by_user_id: string | null
           service_date: string
+          service_term_months: number | null
           service_type: string
           updated_at: string
           vendor_id: string | null
@@ -1709,6 +1820,7 @@ export type Database = {
           performed_by_type: string
           performed_by_user_id?: string | null
           service_date: string
+          service_term_months?: number | null
           service_type: string
           updated_at?: string
           vendor_id?: string | null
@@ -1725,6 +1837,7 @@ export type Database = {
           performed_by_type?: string
           performed_by_user_id?: string | null
           service_date?: string
+          service_term_months?: number | null
           service_type?: string
           updated_at?: string
           vendor_id?: string | null
@@ -1745,7 +1858,7 @@ export type Database = {
           eta_sent_at: string | null
           last_inbound_processed_at: string | null
           state: string | null
-          stop_id: string
+          stop_id: string | null
           stop_type: string | null
           will_call_order_id: string | null
         }
@@ -1754,7 +1867,7 @@ export type Database = {
           eta_sent_at?: string | null
           last_inbound_processed_at?: string | null
           state?: string | null
-          stop_id: string
+          stop_id?: string | null
           stop_type?: string | null
           will_call_order_id?: string | null
         }
@@ -1763,9 +1876,51 @@ export type Database = {
           eta_sent_at?: string | null
           last_inbound_processed_at?: string | null
           state?: string | null
-          stop_id?: string
+          stop_id?: string | null
           stop_type?: string | null
           will_call_order_id?: string | null
+        }
+        Relationships: []
+      }
+      sop_entries: {
+        Row: {
+          content: string
+          created_at: string | null
+          department: string | null
+          effective_date: string | null
+          id: string
+          last_synced_at: string | null
+          notion_page_id: string | null
+          sop_number: string
+          title: string
+          updated_at: string | null
+          version: string | null
+        }
+        Insert: {
+          content: string
+          created_at?: string | null
+          department?: string | null
+          effective_date?: string | null
+          id?: string
+          last_synced_at?: string | null
+          notion_page_id?: string | null
+          sop_number: string
+          title: string
+          updated_at?: string | null
+          version?: string | null
+        }
+        Update: {
+          content?: string
+          created_at?: string | null
+          department?: string | null
+          effective_date?: string | null
+          id?: string
+          last_synced_at?: string | null
+          notion_page_id?: string | null
+          sop_number?: string
+          title?: string
+          updated_at?: string | null
+          version?: string | null
         }
         Relationships: []
       }
@@ -2304,6 +2459,7 @@ export type Database = {
           sms_sent_at: string | null
           staged_at: string | null
           staged_by: string | null
+          staged_location: string | null
           status: string | null
           tapgoods_rental_id: string | null
           tapgoods_sync_updated_at: string | null
@@ -2343,6 +2499,7 @@ export type Database = {
           sms_sent_at?: string | null
           staged_at?: string | null
           staged_by?: string | null
+          staged_location?: string | null
           status?: string | null
           tapgoods_rental_id?: string | null
           tapgoods_sync_updated_at?: string | null
@@ -2382,6 +2539,7 @@ export type Database = {
           sms_sent_at?: string | null
           staged_at?: string | null
           staged_by?: string | null
+          staged_location?: string | null
           status?: string | null
           tapgoods_rental_id?: string | null
           tapgoods_sync_updated_at?: string | null
@@ -2411,7 +2569,12 @@ export type Database = {
         | "complete"
         | "cancelled"
         | "cancelled_in_tg"
-      payment_state_enum: "paid_in_full" | "cod" | "ar_customer" | "balance_due"
+      payment_state_enum:
+        | "paid_in_full"
+        | "cod"
+        | "ar_customer"
+        | "balance_due"
+        | "credit"
       route_status_enum: "draft" | "dispatched" | "in_progress" | "complete"
       stop_type_enum: "delivery" | "pickup" | "warehouse_return"
       user_role:
@@ -2559,7 +2722,13 @@ export const Constants = {
         "cancelled",
         "cancelled_in_tg",
       ],
-      payment_state_enum: ["paid_in_full", "cod", "ar_customer", "balance_due"],
+      payment_state_enum: [
+        "paid_in_full",
+        "cod",
+        "ar_customer",
+        "balance_due",
+        "credit",
+      ],
       route_status_enum: ["draft", "dispatched", "in_progress", "complete"],
       stop_type_enum: ["delivery", "pickup", "warehouse_return"],
       user_role: [
