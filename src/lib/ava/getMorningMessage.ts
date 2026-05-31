@@ -65,7 +65,10 @@ function directMessage(s: MorningSummary, seed: string): string {
     ? ` ${windVariants[pickVariantIndex(`${seed}|wind`, windVariants.length)]}`
     : ''
 
-  if (s.tentCount >= 2) {
+  // Heavy-tent framing only for a genuinely big day (5+). For 1–4 tents we let
+  // the message fall through to the generic stop/COD lines — no "big tent day"
+  // hype when it's a routine couple of tents.
+  if (s.tentCount >= 5) {
     const tentDay = [
       `Big tent day. ${spellNumberCap(s.tentCount)} tents across ${stops}. Show Darren why you're his best installer.`,
       `You've got ${stops} today. ${spellNumberCap(s.tentCount)} tents to raise. Work smart and you'll crush it.`,
@@ -106,7 +109,8 @@ function personalityVariants(s: MorningSummary): string[] {
   const Stops  = capitalize(stops) // sentence-initial form
   const weatherTail = s.hasWeatherFlag ? " Oh, and weather's got something to say. Peek at it before you head out." : ''
 
-  if (s.tentCount >= 2) {
+  // Heavy-tent framing only at 5+ (see directMessage). 1–4 tents fall through.
+  if (s.tentCount >= 5) {
     return [
       `Tent fortress day. ${Stops}, ${spellNumber(s.tentCount)} tents to raise. Channel your inner architect.${weatherTail}`,
       `You've got ${stops} today. ${spellNumberCap(s.tentCount)} tents to raise. I'd grab a strong coffee before you head out.${weatherTail}`,
