@@ -66,6 +66,39 @@ export async function getWeatherSnapshot(
   return snapshot
 }
 
+/**
+ * Worst-case wind (mph) forecast for a specific arrival time at a location.
+ *
+ * AVA Phase 2 weather alerts: given a stop's lat/lng and its estimated arrival
+ * ISO timestamp, return the forecast wind for that hour — the GREATER of
+ * sustained and gust. Gusts drive the real tent-stake risk, so a 10 mph
+ * sustained / 21 mph gust hour must still alert (matches WeatherFlagCard, which
+ * surfaces gusts). Reuses the cached snapshot — no extra network call within
+ * the 15-min cache window.
+ *
+ * - `windHourly` is already in mph (Tomorrow.io adapter requests imperial), so
+ *   NO km/h conversion is applied.
+ * - Matches by hour bucket ("YYYY-MM-DDTHH"). CALLER MUST pass a UTC ISO time —
+ *   `windHourly[].time` is UTC, so a local-time arrival must be normalized to
+ *   UTC before calling, or the bucket match is off by the UTC offset.
+ * - `windHourly` covers ~24h; arrivals beyond that (or any miss / fetch
+ *   failure) return null so the feature degrades gracefully.
+ */
+export async function getWindAtTime(
+  lat: number,
+  lng: number,
+  isoTime: string,
+): Promise<number | null> {
+  try {
+    const snapshot = await getWeatherSnapshot(lat, lng)
+    const targetHour = isoTime.slice(0, 13) // "YYYY-MM-DDTHH"
+    const match = snapshot.windHourly.find((h) => h.time.slice(0, 13) === targetHour)
+    return match ? Math.max(match.sustainedMph, match.gustMph) : null
+  } catch {
+    return null
+  }
+}
+
 function logNwsFailure(reason: unknown): void {
   // eslint-disable-next-line no-console
   console.warn('[WeatherService] NWS alerts fetch failed; treating as no active alerts.', describeReason(reason))

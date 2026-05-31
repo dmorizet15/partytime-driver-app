@@ -13,6 +13,8 @@ import FleetAlertCard                   from '@/components/fleet/FleetAlertCard'
 import AvaChip                          from '@/components/AvaChip'
 import WeatherFlagCard                  from '@/components/WeatherFlagCard'
 import AvaMorningCard                   from '@/components/ava/AvaMorningCard'
+import { useRouteWeather }               from '@/hooks/ava/useRouteWeather'
+import AskAvaButton                      from '@/components/ava/AskAvaButton'
 
 // ─── Direction 03 (Editorial) tokens ──────────────────────────────────────────
 const C = {
@@ -242,7 +244,23 @@ export default function DayRouteSelectorScreen() {
     [routes, getStopsForRoute]
   )
 
+  // AVA Phase 2 weather enrichment — forecast wind at each stop's arrival.
+  // Drives the morning brief's wind-aware copy (hasWeatherFlag) + per-stop
+  // wind pills below. Fails open (empty/no-flag) so Home never breaks.
+  const routeWeather = useRouteWeather(dayStops)
+
   const totalStopCount = dayStops.length
+  // Customer-facing stop count — excludes the warehouse / warehouse_return
+  // depot legs. Drives the driver-visible totals (hero "N stops scheduled" +
+  // the "The day, in N" section header) so they match the type breakdown,
+  // which already excludes depot. totalStopCount stays the full count for the
+  // route-complete gate and section guards (depot must count toward "all done").
+  const customerStopCount = useMemo(
+    () => dayStops.filter(
+      (s) => s.stop_type !== 'warehouse' && s.stop_type !== 'warehouse_return'
+    ).length,
+    [dayStops],
+  )
   // COD cards are scoped to delivery stops — pickup stops with a balance_due
   // payment state aren't a "collect cash on arrival" scenario from the driver's
   // POV (the customer pays at the lot when picking up, not in the field).
@@ -290,7 +308,7 @@ export default function DayRouteSelectorScreen() {
   const firstName   = firstNameOf(profile?.display_name)
   const hasGreeting = !!firstName
   const isEmpty     = !isLoading && !error && totalStopCount === 0
-  const sub         = daySubcopy(totalStopCount)
+  const sub         = daySubcopy(customerStopCount)
   const breakdown   = useMemo(() => typeBreakdown(dayStops), [dayStops])
 
   // Driver app is single-truck per route per login — only the primary truck
@@ -757,6 +775,7 @@ export default function DayRouteSelectorScreen() {
                 dayStops={dayStops}
                 todayKey={today}
                 routeDispatcherNote={primaryRoute?.dispatcher_notes ?? null}
+                hasWeatherFlag={routeWeather.hasWeatherFlag}
               />
             )}
 
@@ -769,7 +788,7 @@ export default function DayRouteSelectorScreen() {
               fontSize: 13, fontWeight: 800, letterSpacing: '0.2em',
               textTransform: 'uppercase', color: C.muted,
             }}>
-              The day, in {totalStopCount}
+              The day, in {customerStopCount}
             </div>
             )}
 
@@ -808,6 +827,21 @@ export default function DayRouteSelectorScreen() {
                 const addressOnly  = stop.address_line_1?.trim() ?? ''
                 const distanceTxt  = '— mi'
                 const typePill     = TYPE_PILL[stop.stop_type]
+                // AVA Phase 2 wind alert — red pill with the forecast wind at
+                // arrival (mph) when this stop is above the threshold. Same
+                // sizing as the payment/type pills; rendered in both layouts.
+                const stopWeather  = routeWeather.weatherByStopId.get(stop.stop_id)
+                const windPill     = stopWeather?.weatherAlert && stopWeather.windMph != null ? (
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center',
+                    background: '#DC2626', color: '#FFFFFF',
+                    fontSize: 9, fontWeight: 900, letterSpacing: '0.16em',
+                    textTransform: 'uppercase',
+                    padding: '2px 7px', borderRadius: 999, whiteSpace: 'nowrap',
+                  }}>
+                    Wind {Math.round(stopWeather.windMph)}
+                  </span>
+                ) : null
 
                 return (
                   <button
@@ -878,6 +912,7 @@ export default function DayRouteSelectorScreen() {
                           <span style={{
                             display: 'inline-flex', alignItems: 'center', gap: 8, flexShrink: 0,
                           }}>
+                            {windPill}
                             {paymentPill && (
                               <span style={{
                                 display: 'inline-flex', alignItems: 'center',
@@ -941,6 +976,7 @@ export default function DayRouteSelectorScreen() {
                           <span style={{
                             display: 'inline-flex', alignItems: 'center', gap: 8, flexShrink: 0,
                           }}>
+                            {windPill}
                             {paymentPill && (
                               <span style={{
                                 display: 'inline-flex', alignItems: 'center',
@@ -977,9 +1013,11 @@ export default function DayRouteSelectorScreen() {
             </div>
             )}
 
-            {/* "Ask Ava about today" stub deleted — AvaChip in the header is
-                the permanent Tier 1 entry point; Tier 2 morning brief above
-                covers the proactive surface. */}
+            {/* "Ask Ava about today" — placeholder entry point (AVA Phase 2).
+                UI only for now; the Haiku-backed conversation sheet pre-seeded
+                with route context lands in a later session. Pre-pre-trip only,
+                alongside the Inspect CTA. */}
+            {!inspected && <AskAvaButton />}
 
             {/* Gold CTA — pre-pre-trip only. Once inspected, Home goes quiet
                 and the Routes tab becomes the active-route entry point.

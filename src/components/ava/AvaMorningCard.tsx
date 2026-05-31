@@ -51,6 +51,7 @@ interface AvaMorningCardProps {
   dayStops:            Stop[]
   todayKey:            string  // YYYY-MM-DD — drives stable personality-variant selection
   routeDispatcherNote: string | null  // routes.dispatcher_notes for the active route
+  hasWeatherFlag?:     boolean  // ≥1 stop forecast above the wind threshold at arrival
 }
 
 interface CardSignals {
@@ -61,7 +62,7 @@ interface CardSignals {
   loading:            boolean
 }
 
-export default function AvaMorningCard({ profile, dayStops, todayKey, routeDispatcherNote }: AvaMorningCardProps) {
+export default function AvaMorningCard({ profile, dayStops, todayKey, routeDispatcherNote, hasWeatherFlag = false }: AvaMorningCardProps) {
   const [signals, setSignals] = useState<CardSignals>({
     weekStopsCompleted: null,
     notesByAddress:     new Map(),
@@ -168,8 +169,9 @@ export default function AvaMorningCard({ profile, dayStops, todayKey, routeDispa
       stopCount,
       codCount,
       tentCount,
-      hasWeatherFlag: false,  // WeatherFlagCard owns the weather signal display;
-                              //   AVA's message stays neutral on weather for now.
+      hasWeatherFlag,  // AVA Phase 2: ≥1 stop forecast above the wind threshold
+                       //   at arrival (from useRouteWeather → /api/ava/route-weather).
+                       //   Adds the wind-advisory line to the brief copy.
     },
     profile.id,
     todayKey,
