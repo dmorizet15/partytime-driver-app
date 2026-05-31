@@ -93,10 +93,15 @@ export default function AvaMorningCard({ profile, dayStops, todayKey, routeDispa
     [dayStops],
   )
 
-  // Customer stops carrying a stop-level dispatcher note — drives the
-  // morning-card count line + read-only review sheet (Component 2).
-  const stopsWithDispatchNotes = useMemo(
-    () => customerStops.filter((s) => s.dispatcher_notes && s.dispatcher_notes.trim().length > 0),
+  // Customer stops carrying a stop-level note — either a dispatcher note OR a
+  // warehouse note (Migration 077). Drives the morning-card count line + the
+  // read-only review sheet (Component 2). A stop with both is counted once
+  // (it's one entry in this filtered list).
+  const stopsWithNotes = useMemo(
+    () => customerStops.filter((s) =>
+      (s.dispatcher_notes && s.dispatcher_notes.trim().length > 0) ||
+      (s.warehouse_notes  && s.warehouse_notes.trim().length  > 0)
+    ),
     [customerStops],
   )
 
@@ -158,7 +163,7 @@ export default function AvaMorningCard({ profile, dayStops, todayKey, routeDispa
   const notesCount       = signals.notesByAddress.size
   const showNotesNudge   = notesCount > 0
   const routeNote          = routeDispatcherNote?.trim() ? routeDispatcherNote.trim() : null
-  const dispatchNotesCount = stopsWithDispatchNotes.length
+  const notesStopCount = stopsWithNotes.length
 
   const preference: PersonalityPreference =
     profile.personality_preference === 'personality' ? 'personality' : 'direct'
@@ -206,7 +211,7 @@ export default function AvaMorningCard({ profile, dayStops, todayKey, routeDispa
   if (signals.loading && (profile.stats_enabled || true /* notes always queried */)) {
     return null
   }
-  if (!checklistOffered && !showStats && !showNotesNudge && !routeNote && dispatchNotesCount === 0) {
+  if (!checklistOffered && !showStats && !showNotesNudge && !routeNote && notesStopCount === 0) {
     return null
   }
 
@@ -276,8 +281,8 @@ export default function AvaMorningCard({ profile, dayStops, todayKey, routeDispa
           </div>
         )}
 
-        {/* Stop-level dispatcher notes count — tap to review each one. */}
-        {dispatchNotesCount > 0 && (
+        {/* Stop-level notes count (dispatcher or warehouse) — tap to review each one. */}
+        {notesStopCount > 0 && (
           <button
             type="button"
             onClick={() => setDispatchNotesOpen(true)}
@@ -290,11 +295,11 @@ export default function AvaMorningCard({ profile, dayStops, todayKey, routeDispa
               display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
               fontFamily: 'inherit',
             }}
-            aria-label="Review stops with notes from dispatch"
+            aria-label="Review stops with notes"
           >
             <span style={{ fontSize: 13.5, lineHeight: 1.4, color: C.text }}>
-              <strong>{dispatchNotesCount}</strong> of your stops{' '}
-              {dispatchNotesCount === 1 ? 'has a note' : 'have notes'} from dispatch.
+              <strong>{notesStopCount}</strong> of your stops{' '}
+              {notesStopCount === 1 ? 'has a note' : 'have notes'}.
               I&rsquo;ll remind you on the way to each one.
             </span>
             <span aria-hidden="true" style={{ color: C.gold, fontSize: 16, lineHeight: 1 }}>›</span>
@@ -539,7 +544,7 @@ export default function AvaMorningCard({ profile, dayStops, todayKey, routeDispa
 
     {dispatchNotesOpen && (
       <AvaDispatchNotesSheet
-        stops={stopsWithDispatchNotes}
+        stops={stopsWithNotes}
         onClose={() => setDispatchNotesOpen(false)}
       />
     )}

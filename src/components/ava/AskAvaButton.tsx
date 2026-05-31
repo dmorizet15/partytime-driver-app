@@ -1,30 +1,31 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import AvaConversationSheet, { type AvaSeedContext } from './AvaConversationSheet'
 
 // AVA Phase 2 — "Ask Ava about today" entry point on the Home screen, between
-// the stop list and the Inspect CTA. PLACEHOLDER for now: the real Haiku-backed
-// conversation sheet (pre-seeded with route context) lands in a later session.
-// Tap shows a brief "coming soon" toast, mirroring the AvaChip mic stub.
+// the stop list and the Inspect CTA. Session 2 wires it to the real Haiku-backed
+// AvaConversationSheet, pre-seeded with the route context the Home screen has
+// already computed (stop count, COD count, wind-alerted stop names, dispatcher
+// notes, manifest, driver name). Tap opens the conversation sheet.
 
 const GOLD = '#FFB800'
 const INK  = '#0A0B14'
 const FONT_DISPLAY = "var(--font-archivo), 'Archivo', 'Inter', system-ui, -apple-system, sans-serif"
 
-export default function AskAvaButton() {
-  const [toast, setToast] = useState(false)
+interface AskAvaButtonProps {
+  seedContext: AvaSeedContext
+  routeId?:    string | null
+}
 
-  useEffect(() => {
-    if (!toast) return
-    const t = setTimeout(() => setToast(false), 2000)
-    return () => clearTimeout(t)
-  }, [toast])
+export default function AskAvaButton({ seedContext, routeId = null }: AskAvaButtonProps) {
+  const [open, setOpen] = useState(false)
 
   return (
     <div style={{ padding: '18px 18px 0' }}>
       <button
         type="button"
-        onClick={() => setToast(true)}
+        onClick={() => setOpen(true)}
         aria-label="Ask AVA about today"
         style={{
           display: 'inline-flex', alignItems: 'center', gap: 12,
@@ -47,27 +48,12 @@ export default function AskAvaButton() {
         </span>
       </button>
 
-      {toast && (
-        <div
-          role="status"
-          style={{
-            position: 'fixed',
-            left: '50%',
-            top: 'calc(env(safe-area-inset-top, 0px) + 24px)',
-            transform: 'translateX(-50%)',
-            background: '#1F2937', color: '#F8FAFC',
-            padding: '10px 16px', borderRadius: 999,
-            fontSize: 13, fontWeight: 600,
-            border: '1px solid rgba(255,255,255,0.08)',
-            boxShadow: '0 12px 28px rgba(0,0,0,0.45)',
-            zIndex: 220, maxWidth: 'calc(100vw - 32px)',
-            textAlign: 'center', whiteSpace: 'nowrap',
-            overflow: 'hidden', textOverflow: 'ellipsis',
-          }}
-        >
-          Ask Ava is coming in the next update.
-        </div>
-      )}
+      <AvaConversationSheet
+        open={open}
+        onClose={() => setOpen(false)}
+        seedContext={seedContext}
+        routeId={routeId}
+      />
     </div>
   )
 }

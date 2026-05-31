@@ -74,6 +74,9 @@ export interface Stop {
   dispatcher_notes?: string  // dashboard-owned internal dispatch note; surfaces as a
                              //   "Note from dispatch" modal on stop open + persistent
                              //   re-open card. Distinct from TapGoods notes above.
+  warehouse_notes?: string   // dashboard/warehouse-owned note (Migration 077); surfaces
+                             //   as a "FROM WAREHOUSE" block on Stop Detail + in the
+                             //   pre-launch notes sheet, same pattern as dispatcher_notes.
   // TapGoods-synced order notes (dashboard/TG-owned, read-only here). Surfaced
   // in the Stop Detail "Order Notes" section and the pre-launch notes sheet.
   notes_additional_delivery?: string  // TG additionalDeliveryInfo

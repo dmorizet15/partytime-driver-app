@@ -4,6 +4,7 @@ const BLUE = '#0000FF'
 
 export interface StopNotesSections {
   dispatcherNote?: string | null
+  warehouseNote?:  string | null  // dispatch_stops.warehouse_notes (Migration 077)
   deliveryInstr?:  string | null  // notes_additional_delivery
   staffNote?:      string | null  // notes_employee_authored
   flipNote?:       string | null  // notes_flip (pickup only — caller gates)
@@ -20,6 +21,7 @@ interface StopNotesPreSheetProps {
 
 const SECTION_ORDER: Array<{ key: keyof StopNotesSections; label: string }> = [
   { key: 'dispatcherNote', label: 'DISPATCHER NOTE' },
+  { key: 'warehouseNote',  label: 'FROM WAREHOUSE' },
   { key: 'deliveryInstr',  label: 'DELIVERY INSTRUCTIONS' },
   { key: 'staffNote',      label: 'STAFF NOTE' },
   { key: 'flipNote',       label: 'FLIP / TEARDOWN NOTE' },

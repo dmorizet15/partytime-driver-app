@@ -1,5 +1,26 @@
 # Open Tasks — partytime-driver-app
 
+## May 31, 2026 — AVA Phase 2 — Session 2: Haiku conversation sheet + SOP search (branch `feature/ava-phase2-session2`, commits `4faef54` + `044b879`; NOT merged)
+
+Two deliverables built + committed, `npx next build` green. Prod SOP sync ran (`{synced:10}`). Migration 020 (`sop_entries` RLS) applied to the linked DB. **Pending Darren's smoke test before merge.**
+
+- [ ] **Merge to `main` when Darren approves the smoke test.** Branch is `feature/ava-phase2-session2`; `--no-ff`, then delete the branch (local + remote). Next AVA work → a new `feature/ava-phase2-sN` branch.
+- [ ] **Production smoke test — Deliverable 1 (Ask Ava):**
+  1. Home (pre-trip not yet done) → gold (+) "Ask Ava about today" between the stop list and the Inspect CTA. Tap → dark conversation sheet opens (not the old toast).
+  2. Type a question about today (e.g. "How many stops do I have?" / "Any wind on my tents?" / "Which stops are COD?") → "AVA is thinking…" waveform → a concise spoken-style answer. With VOICE on, the answer is read aloud (ElevenLabs); toggle TEXT → no audio, switching mid-playback stops it.
+  3. **Grounding check:** answers should match the Home numbers (stop count, COD count) and name the wind-alerted stops correctly; AVA should decline (not invent) anything outside the seeded context.
+  4. **Failure path:** tasks rely on `ANTHROPIC_API_KEY` (already set in Vercel) — if a call fails, the sheet shows "AVA is unavailable right now. Try again in a moment." (no crash).
+  5. Verify a row lands in `ava_conversations` (`surface='driver_home'`, `driver_id` = the signed-in driver, `context_id` = today's route id, question+answer populated).
+- [ ] **Production smoke test — Deliverable 2 (SOP search):**
+  1. Training Hub → "Look up an SOP" section at the top. Zero query → all driver-visible SOPs listed, sop_number ascending (SOP-001, 003, 005, …). **Confirm Warehouse-only / Operations SOPs are excluded** and driver/field/all ones are present.
+  2. Type a term (e.g. "tent", "load", "incident") → 300 ms debounce → matching SOPs (title + content match). Tap a card → full content expands inline; tap again → collapses.
+  3. Search something with no match (e.g. "zzz") → "No SOPs found" + "Ask Ava instead" button → opens the conversation sheet pre-filled with the query.
+  4. **RLS check:** confirm a logged-in driver still sees SOPs (authenticated SELECT) and the table is no longer readable with only the anon key (RLS now ON).
+- [ ] **AVA persona is route-scoped — SOP/general questions get a weak answer from the Training "Ask Ava instead" path.** The sheet opens with an EMPTY `seedContext` there, so AVA says it doesn't have route context. If Darren wants SOP-aware AVA (retrieve matching SOP text into the prompt), that's a follow-up — wire SOP lookup into `/api/ava/ask` or a dedicated SOP-answer path.
+- [ ] **`/api/ava/ask` trusts the client `seedContext`.** Acceptable (auth-gated employees, driver's own route, worst case a fabricated prompt about a fictional route → harmless). If a stricter posture is ever needed, re-derive stop count / COD / dispatcher notes server-side by `routeId` (but keep weather client-seeded — re-running Tomorrow.io per question is wasteful).
+- [ ] **No conversation history cap beyond `MAX_HISTORY=12` turns + no cost ceiling.** Fine for single-day Q&A; revisit if a driver holds a very long session.
+- [ ] **SOP search is in-memory over ≤10 rows.** If the SOP Library grows large (50+), switch to a Supabase `textSearch`/`ilike` query (note the PostgREST `.or(ilike)` `*`-wildcard gotcha — see `tasks/lessons.md`).
+
 ## May 30, 2026 — AVA Phase 2 — Session 1: Weather Alerts + SOP Foundation (merge `0176699`, LIVE on `main`/production; branch deleted)
 
 Weather-alert pipeline + SOP table/sync foundation. Merged to production on Darren's go. **Not yet smoke-tested on production, and SOP sync is inert until env is set.**
