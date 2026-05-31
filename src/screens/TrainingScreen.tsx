@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import BottomNav from '@/components/BottomNav'
 import AvaChip from '@/components/AvaChip'
+import SopSearchSection from '@/components/training/SopSearchSection'
 
 // ─── PTR design tokens — dark hub palette ───────────────────────────────────
 const C = {
@@ -408,6 +409,9 @@ export default function TrainingScreen() {
 
       {/* ── SCROLL BODY ──────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto" style={{ background: C.bg }}>
+        {/* SOP lookup — driver-facing search over the synced SOP Library */}
+        <SopSearchSection />
+
         {/* 2-col category grid */}
         <div style={{
           padding: '20px 18px 0',
