@@ -6,6 +6,30 @@ Format: one lesson per block. Lead with the rule, then **Why** and **How to appl
 
 ---
 
+## A free-text Notion field synced into a DB column will NOT match the clean enum tokens a spec assumes — query the actual distinct values before writing any role/category filter.
+
+**Why:** AVA Phase 2 Session 2 (2026-05-31) the SOP-search spec said "role-filter: department IN ('driver','field','all')". The real `sop_entries.department` values (mirrored from the Notion SOP Library) are human-authored composites: "Drivers / Warehouse", "Field Operations", "All Departments", "Warehouse", "Operations", and null. A literal `IN ('driver','field','all')` matches **zero rows** — the feature would have shipped showing no SOPs. The fix was a substring predicate (`/\b(driver|field|all)\b/i`) over the real values, treating Warehouse-only / Operations / null as not-driver-facing. The only reason this didn't ship broken was running `SELECT DISTINCT department FROM sop_entries` before writing the filter.
+
+**How to apply:** Any filter over a column fed by a human-typed or third-party-synced source (Notion, TapGoods, dispatcher free-text) — `SELECT DISTINCT <col>` first and write the predicate against what's actually there, not what the spec's enum implies. Composite/multi-value strings ("Drivers / Warehouse") need substring/regex matching, not equality or `IN`. Decide the ambiguous buckets explicitly (here: is "Operations" driver-facing? — no) and document the call, because the next person will assume the spec's clean tokens.
+
+---
+
+## Inside a PostgREST `.or(...)`, `like`/`ilike` wildcards are `*`, not `%` — `%foo%` matches literally and returns nothing. For a tiny table, fetch-all + filter-in-JS sidesteps it entirely.
+
+**Why:** AVA Phase 2 Session 2 (2026-05-31) first wrote the SOP driver-visibility filter as `.or('department.ilike.%driver%,...')`. In supabase-js, `.ilike('col','%foo%')` (standalone) uses SQL `%`, but the raw filter string inside `.or()` is PostgREST syntax where the wildcard is `*` — `%driver%` is treated as a literal and matches no rows. The bug is silent (empty result, no error), so it reads like "no data" rather than "wrong query". Because `sop_entries` is ≤10 rows, the chosen fix was to drop the `.or()` entirely: `select('*').order('sop_number')` once, then filter driver-visibility AND the search query in JS. Fewer round-trips, no wildcard-syntax trap, and the visibility rule becomes one readable JS predicate.
+
+**How to apply:** If you must filter inside `.or()`/`.and()`, use `*` for `like`/`ilike` wildcards (`department.ilike.*driver*`). But first ask whether you need the DB filter at all — for a small bounded set, one `select().order()` + in-memory `.filter()` is simpler, dodges the wildcard gotcha, and lets you express compound predicates (visibility + text) without contorting PostgREST grammar. Debounce gates the in-memory filter; it doesn't need a network call per keystroke.
+
+---
+
+## A spec saying "read context from Supabase in the API route" can conflict with "the screen already computed it" — pass expensive-to-recompute context (live weather) from the client; re-derive only cheap/trust-sensitive fields server-side.
+
+**Why:** AVA Phase 2 Session 2 (2026-05-31) the spec said `/api/ava/ask` should "read today's route context from Supabase: stop count, manifest, COD, dispatcher notes, weather flags." But `hasWeatherFlag` + the wind-alerted stop names come from `/api/ava/route-weather`, a live Tomorrow.io+NWS fan-out the Home screen had **already run**. Re-deriving it inside `/api/ava/ask` would re-hit the external weather API on every question. The repo's own `tasks/todo.md` step plan also said "pre-seed context string" — so the two artifacts disagreed. Resolution: Home passes the already-computed `seedContext`; the server still derives the trust-sensitive bits itself (`driver_id = auth.uid()`, the audit-log row) and never trusts the client for those.
+
+**How to apply:** When a spec says "fetch X in the handler" but a caller already holds X — especially if X is an expensive external call or a derived aggregate — prefer passing it as seeded context and document the deviation. Keep server-side ONLY what must be authoritative (identity, authz, audit writes) or what's cheap to re-read. The dividing line is "would re-deriving this cost a network call or duplicate non-trivial logic?" → client-seed it; "could a malicious client lie about this to their own benefit?" → server-derive it. Here weather/manifest are harmless if fabricated (driver only fools themselves), while `driver_id` must be server-derived.
+
+---
+
 ## Wind alerting must key off the GUST value, not sustained — gusts are what fail tents. Surface `max(sustained, gust)` from any "wind at time" helper.
 
 **Why:** AVA Phase 2 (2026-05-30) shipped `getWindAtTime` returning `sustainedMph` only, threshold 20. A live test had `WeatherFlagCard` showing gusts 21 mph while the AVA brief stayed silent — sustained was 10. A driver acting on "no wind alert" would under-stake a tent on a gusty day. The two values come back together on every `windHourly` entry (`sustainedMph` + `gustMph`, both already imperial); returning only sustained threw away the one that matters for stake risk.

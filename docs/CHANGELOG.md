@@ -4,6 +4,23 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-05-31 — AVA Phase 2 — Session 2: Haiku conversation sheet + SOP search — `feature/ava-phase2-session2` (not merged)
+
+Built on `feature/ava-phase2-session2`. Pre-build gate passed (`ANTHROPIC_API_KEY` present on Vercel prod+preview). Step 0: triggered prod SOP sync via `x-sop-sync-secret` (pulled from Vercel) → `{synced:10, errors:[]}`; `sop_entries` now holds SOP-001…010, content non-empty (1.7–3k chars). Per-deliverable commits: `4faef54` (D1 — ask route + sheet + wiring) · `044b879` (D2 — SOP search + mig 020). `npx next build` green before each.
+
+**Deliverable 1 — AVA conversation.**
+- `POST /api/ava/ask` — auth-gated (session, no open LLM proxy). Builds AVA persona + today's-route context into a system prompt; calls `claude-haiku-4-5-20251001` (`max_tokens: 500`, no `effort`/`thinking` — unsupported on Haiku 4.5). Logs Q+A to `ava_conversations` (surface `driver_home`, `context_id` = route id, `driver_id` = `auth.uid()` server-derived). 503 `{error:'AVA unavailable'}` when `ANTHROPIC_API_KEY` unset or the call fails.
+- **Context is client-seeded, not server-read** (deliberate deviation from spec wording, per `tasks/todo.md`'s step plan): Home passes `seedContext` (customer stop count, COD count, wind-alerted stop NAMES from the `routeWeather` hook, dispatcher notes, manifest summary, driver name) so `/api/ava/ask` never re-runs the Tomorrow.io weather fan-out.
+- `AvaConversationSheet` (`src/components/ava/AvaConversationSheet.tsx`) — shared dark bottom-sheet (`open/onClose/seedContext`, optional `initialQuestion`), built for AvaChip reuse later. Session-local messages, text input + Send, VOICE/TEXT toggle (default VOICE → `speak()` TTS; TEXT cuts playback via `stopSpeaking()`), "AVA is thinking…" waveform (reuses `.ava-wave-bar`), friendly error state.
+- Home "Ask Ava about today" button: replaced the coming-soon toast with the real sheet. `AskAvaButton` now takes `seedContext`+`routeId`; `DayRouteSelectorScreen` computes `seedContext` via `useMemo`.
+
+**Deliverable 2 — SOP search.**
+- `SopSearchSection` in the Training Hub (top of scroll body). Fetches the SOP set once (≤10 rows) via the browser Supabase client, filters driver-visibility AND the 300 ms-debounced query in-memory. SOP-number chip + title + department badge + 120-char excerpt; tap-to-expand full content inline. Zero query → all driver-visible SOPs (sop_number asc). Empty state → "Ask Ava instead" opens `AvaConversationSheet` seeded with the failed query.
+- **`department` is free-text/composite** ("Drivers / Warehouse", "Field Operations", "All Departments", "Warehouse", "Operations", null) — not the spec's clean tokens. Driver-visible = matches `/\b(driver|field|all)\b/i`.
+- **Migration 020 `sop_entries_rls`** — enabled RLS (Session 1 left it OFF, exposing SOPs to the public anon key) + `authenticated` SELECT `USING(true)`. Applied via `db query --linked --file` + `migration repair --status applied 20260531020`. Local migrations now 20 files.
+
+**Note:** working-tree `CLAUDE.md` had a large pre-existing uncommitted trim (not from this session); Session 2 updates were layered on top of it.
+
 ## 2026-05-30 — AVA Phase 2 — Session 1: Weather Alerts + SOP Foundation — `main`/production — merge `0176699`
 
 Built on `feature/ava-phase2`, merged to `main` via `--no-ff` on Darren's explicit go, branch deleted. Investigate-first cadence with checkpoints throughout. Per-deliverable commits: `40c9827` (mig 018) · `ee93388` (mig 019) · `e99f050` (geocode) · `f66f43a` (route-weather) · `fefe4fe` (hasWeatherFlag) · `c041979` (wind pill) · `d8256b7` (Ask-Ava button + SOP sync) · `efe4bc4` (gust fix) · `014666e` (stop-count fix) · `fb5222d` (copy rewrite).
