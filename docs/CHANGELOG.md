@@ -4,6 +4,26 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-05-30 — AVA Phase 2 — Session 1: Weather Alerts + SOP Foundation — `main`/production — merge `0176699`
+
+Built on `feature/ava-phase2`, merged to `main` via `--no-ff` on Darren's explicit go, branch deleted. Investigate-first cadence with checkpoints throughout. Per-deliverable commits: `40c9827` (mig 018) · `ee93388` (mig 019) · `e99f050` (geocode) · `f66f43a` (route-weather) · `fefe4fe` (hasWeatherFlag) · `c041979` (wind pill) · `d8256b7` (Ask-Ava button + SOP sync) · `efe4bc4` (gust fix) · `014666e` (stop-count fix) · `fb5222d` (copy rewrite).
+
+**Migrations** (both applied via `db query --linked --file` then `migration repair --status applied`; two-repo block precludes `db push`). 018 `dispatch_stops_geocache` (`delivery_lat/lng FLOAT`); 019 `sop_entries` (table + department index). Local migrations now 19 files.
+
+**Weather alerts.**
+- `geocodeAddress(address, stopId?)` (`src/lib/geo/`) — Nominatim, cache-first off `dispatch_stops`, best-effort write-back, null on failure. Smoke-tested live (Poughkeepsie 41.70,-73.93).
+- `getWindAtTime(lat,lng,isoTime)` added to the EXISTING Tomorrow.io+NWS `weather-service.ts` (reuse decision — no Open-Meteo, no new file). Returns **`max(sustainedMph, gustMph)`** for the hour (gust-inclusive; fixed mid-session after a live miss where gusts 21 / sustained 10 didn't alert). Already imperial → no conversion. `windHourly[].time` is UTC; callers pass UTC ISO.
+- `POST /api/ava/route-weather` — server-side, authoritative-by-id, admin client; geocode write-back + wind at `calculated_eta` (UTC-normalized via `new Date(eta).toISOString()`); `weatherAlert = windMph >= 20`; returns per-stop `{stopId,weatherAlert,windMph}` + `hasWeatherFlag`. Gates verified (400 bad body / 401 no session).
+- `useRouteWeather` hook → `hasWeatherFlag` into `AvaMorningCard` (wind brief copy) + red `WIND {mph}` pills on Home stop cards (#DC2626, payment-pill sizing).
+
+**SOP foundation.** `POST /api/sop/sync` mirrors the Notion SOP Library — confirmed via `notion-fetch` to be a **page** (summary table + 10 child SOP pages), not a database. Raw Notion REST (`fetch`, no dep): parse table for metadata, child pages for number/title/content/page-id, merge, upsert by `sop_number` (admin). Auth: `x-sop-sync-secret` header OR session. **Inert until `NOTION_API_KEY` set** (501). Table + endpoint only — no search UI this session. Env documented in `.env.local.example` (`NOTION_API_KEY` server-only + optional `SOP_SYNC_SECRET`).
+
+**Also.** "Ask Ava about today" gold (+) **placeholder** button on Home (coming-soon toast — real Haiku conversation sheet deferred; the AvaChip drawer is still a self-contained placeholder with no external open hook / context prop). Home stop-count fix — `customerStopCount` (depot-excluded) drives the hero "N stops scheduled" + "The day, in N" so they match the type breakdown; `totalStopCount` stays on completion/empty/section gates. Voice-first rewrite of all `getMorningMessage.ts` variants for ElevenLabs prosody (copy only, structure unchanged).
+
+**Post-merge actions (Darren):** set `NOTION_API_KEY` on driver-app Vercel + share the integration into the SOP Library page; production smoke test (weather pill+copy, gust case, stop-count consistency, SOP sync). **Deferred:** real Haiku conversation sheet (Step 6); SOP search UI. Full smoke matrix in `CLAUDE.md` → "AVA Phase 2 (Driver App) → Session 1".
+
+---
+
 ## 2026-05-30 — Fleet Maintenance Session 3 — smoke fixes — `main` — commit `0a1cb72`
 
 Two issues from Darren's Session-3 smoke test.

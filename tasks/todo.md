@@ -1,5 +1,18 @@
 # Open Tasks — partytime-driver-app
 
+## May 30, 2026 — AVA Phase 2 — Session 1: Weather Alerts + SOP Foundation (merge `0176699`, LIVE on `main`/production; branch deleted)
+
+Weather-alert pipeline + SOP table/sync foundation. Merged to production on Darren's go. **Not yet smoke-tested on production, and SOP sync is inert until env is set.**
+
+- [ ] **SET `NOTION_API_KEY` on the driver-app Vercel project** (production + preview), server-only (NOT `NEXT_PUBLIC_`), and **share the Notion integration into the "SOP Library" page** (`3590aa6451b8816aa156c77f605facfe`). Until then `POST /api/sop/sync` returns 501 and `sop_entries` stays empty. Optional: `SOP_SYNC_SECRET` for a cron caller (sent as `x-sop-sync-secret`).
+- [ ] **Run the sync once `NOTION_API_KEY` is set:** `POST /api/sop/sync` (with a logged-in session or the secret header) → expect `{ synced: 10, errors: [] }` and `sop_entries` populated with SOP-001…010. Spot-check that `content` is non-empty (body extraction is bounded to depth 2 — deeply nested toggles/lists could truncate; widen depth if a SOP body looks short).
+- [ ] **Production smoke test** (full matrix in `CLAUDE.md` → "AVA Phase 2 (Driver App) → Session 1"): (1) SOP sync; (2) a stop forecast ≥20 mph at its `calculated_eta` → red `WIND {n}` pill + wind line in the brief — **explicitly test the gust-only case** (e.g. sustained 10 / gust 21 must alert, since `getWindAtTime` now returns `max(sustained,gust)`); (3) depot-ending route → hero "N stops" matches the "1 delivery · 1 pickup" breakdown AND "The day, in N"; (4) "Ask Ava about today" button renders between the stop list and Inspect CTA → coming-soon toast; (5) voice brief reads naturally (ear-check the long wind-advisory variant against the 0.6s pause).
+- [ ] **Build the REAL "Ask Ava about today" (deferred Step 6) next AVA session.** Today it's a placeholder (coming-soon toast). Needs: an Anthropic API key on the driver-app env, a server route on `claude-haiku-4-5-20251001` (key must NOT ship to the browser), and lifting the `AvaChip` drawer into a shared `<AvaConversationSheet open onClose seedContext={…}/>` so both the chip and the home button reach one sheet. Pre-seed context string (per the step plan): stop count + wind-alerted stop names + COD count + driver name.
+- [ ] **SOP search UI** — explicitly out of Session 1 scope. The table + sync exist; the driver-facing lookup (and likely the AvaChip mic → STT → SOP lookup) is a later session.
+- [ ] **Geocode backfill is lazy, not batched.** Coords populate on first `/api/ava/route-weather` hit per stop (1 req/sec Nominatim). A cold route's first morning load may show no wind pills until the geocode completes; a refresh fills them. If this is too slow in practice, add a one-time batch backfill job. Edge case: a stop whose address Nominatim can't resolve stays null forever (no alert) — acceptable degrade.
+- [ ] **`route-weather` has no result cache beyond the weather layer's 15-min snapshot cache.** Every Home mount re-POSTs and re-reads `dispatch_stops`. Fine at current scale; revisit if Home re-renders hammer it.
+- [ ] **Edge case (benign, left as-is):** a route with ONLY a `warehouse_return` and zero customer stops makes the hero read "0 stops scheduled" (`customerStopCount` 0) while the day list still shows the depot row. Not real in production. Add a guard only if it ever surfaces.
+
 ## May 30, 2026 — Fleet Maintenance driver app — Session 3 (commit `3bda5d7`, on `main`)
 
 UI-only rebuild of the four locked Fleet Maintenance screens (pill tabs + My Log + compliance badges). No migrations, no API routes. Pushed to `main` for Vercel auto-deploy. **Not confirmed on production yet.**

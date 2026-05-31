@@ -6,6 +6,38 @@ Format: one lesson per block. Lead with the rule, then **Why** and **How to appl
 
 ---
 
+## Wind alerting must key off the GUST value, not sustained — gusts are what fail tents. Surface `max(sustained, gust)` from any "wind at time" helper.
+
+**Why:** AVA Phase 2 (2026-05-30) shipped `getWindAtTime` returning `sustainedMph` only, threshold 20. A live test had `WeatherFlagCard` showing gusts 21 mph while the AVA brief stayed silent — sustained was 10. A driver acting on "no wind alert" would under-stake a tent on a gusty day. The two values come back together on every `windHourly` entry (`sustainedMph` + `gustMph`, both already imperial); returning only sustained threw away the one that matters for stake risk.
+
+**How to apply:** When collapsing a multi-field weather reading into a single number for an alert/threshold, return the worst-case field for that hazard, not the "headline" one. For wind that's `max(sustainedMph, gustMph)`. Match what the existing surface already shows (here `WeatherFlagCard` surfaces gusts) so two surfaces on the same screen can't disagree. One-line fix, no signature change — but only because the caller treated the return as opaque "the wind"; keep alert helpers returning a single worst-case scalar so the threshold check and the display value stay in sync.
+
+---
+
+## Two UI elements describing the same set of things must derive from the SAME filtered collection — never count one population and break-down another.
+
+**Why:** AVA Phase 2 (2026-05-30) Home hero read "3 stops scheduled" while the type breakdown right beside it read "1 delivery · 1 pickup" (2). The count used `dayStops.length` (depot included); `typeBreakdown` excluded `warehouse`/`warehouse_return`. Same screen, same row, contradicting numbers — drivers notice. Root cause: two code paths over the same logical set ("today's customer stops") applied different filters. (Same depot-counting class of bug as the Phase 1 morning-card count fixes — it recurs because `dayStops` is the convenient variable and the depot filter is easy to forget.)
+
+**How to apply:** Derive a single named collection/count for the concept ("customer stops" = `dayStops` minus depot) and feed BOTH the headline count and any breakdown/secondary display from it. Here: `customerStopCount` drives the hero sub-copy AND the "The day, in N" header. Keep the unfiltered `totalStopCount` ONLY for logic that genuinely needs every leg (route-complete gate, empty-state, section guards) — and say so in a comment, because the next reader will assume one count rules them all.
+
+---
+
+## A Notion "Library" page is usually a PAGE (intro + summary table + one child page per item), not a database — fetch it first and parse table-for-metadata + child-pages-for-content. Confirm shape before writing the parser.
+
+**Why:** AVA Phase 2 (2026-05-30) `/api/sop/sync` assumed (from the field list: sop_number/title/content/department/version/effective_date) it might be a Notion database with those as properties. A `notion-fetch` on the SOP Library showed a **page**: a 5-column summary table (SOP # / Title / Version / Effective Date / Department) holding metadata for SOP-001…009, plus 10 child pages holding the actual procedure text (and SOP-010 wasn't even in the table). A database parser (query properties) would have returned nothing; a "read the page body as content" parser would have missed the per-SOP pages. The right parser merges two sources: table rows (metadata, keyed by SOP #) + child pages (sop_number/title/content/page-id), with content falling back to title for the NOT-NULL column.
+
+**How to apply:** Before building any Notion→DB sync, `notion-fetch` the source page and read its actual block structure. Page-with-table-and-child-pages and true-database need completely different parsers. Server-side the route can't use the MCP tools — it needs its own integration token (`NOTION_API_KEY`) + raw REST (`GET /v1/blocks/{id}/children`, `Notion-Version` header); no `@notionhq/client` dep required. Build it token-gated (501 when the key is absent) so it's inert-but-deployable until Darren wires the env + shares the integration into the page.
+
+---
+
+## Tomorrow.io `windHourly[].time` and `dispatch_stops.calculated_eta` are BOTH UTC — but normalize via `new Date(x).toISOString()` before hour-bucket slicing, because the string formats differ.
+
+**Why:** AVA Phase 2 (2026-05-30) matches forecast-to-arrival by truncating both ISO strings to the hour (`slice(0,13)` → "YYYY-MM-DDTHH"). Both values are UTC (verified: Tomorrow.io returns `...T20:00:00Z`; `calculated_eta` is `timestamptz`, `+00`). But the formats aren't byte-identical — `...Z` vs `+00:00` vs (raw psql) a space separator. `slice(0,13)` only aligns if the separator is `T`. A space-separated or offset-shifted value would mis-bucket (and a naive assumption that ETA was *local* would have introduced a 4-hour EDT error). The thing that made it safe was confirming both were UTC *before* writing the matcher, then normalizing anyway.
+
+**How to apply:** When matching two timestamps by string slicing, run both through `new Date(x).toISOString()` first — it canonicalizes any valid input (space/`T`, any offset, `Z`) to one UTC form, so the slice is reliable. And verify the timezone of each source with a live sample before trusting a slice-match; don't assume a dispatcher-written field is local just because it "feels" local.
+
+---
+
 ## A data-loading `useEffect` must NOT list the loading/result state it sets in its own dependency array — it cancels its own in-flight request and spins forever.
 
 **Why:** Fleet Session 3 My Log (2026-05-30) loaded with `useEffect(() => { …; setMyLogLoading(true); fetch().then(rows => !cancelled && setMyLog(rows)) ; return () => { cancelled = true } }, [tab, user?.id, myLog, myLogLoading])`. The guard `myLog`/`myLogLoading` was in the deps to "only fetch once." But calling `setMyLogLoading(true)` **changed a dependency**, so React tore down the effect instance (running its cleanup → `cancelled = true` on the in-flight request's closure) and re-ran it. The first run's promise then resolved into a closure where `cancelled` was already true, so `setMyLog`/`setMyLogLoading(false)` never fired — the tab showed "Loading…" forever. It looked like an RLS / write bug (the obvious suspects when a list never populates), but the History tab read the same table under the same RLS and worked, and `fetchMyServiceLog` returns `[]` on a query error → empty state, not a hang. Symptom = infinite spinner with data present → client effect race, not data layer.
