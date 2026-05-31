@@ -12,7 +12,7 @@ import {
   fetchLogServiceContextForAsset,
 } from '@/lib/fleet/queries'
 import type { LogServiceContext } from '@/lib/fleet/queries'
-import type { AssetType } from '@/lib/fleet/types'
+import type { AssetType, ComplianceField } from '@/lib/fleet/types'
 
 const CUSTOM = '__custom__'
 
@@ -26,6 +26,40 @@ function toNum(s: string): number | null {
   if (!t) return null
   const n = Number(t)
   return isNaN(n) ? null : n
+}
+
+// ── Compliance service types (migration 083) ────────────────────────────────
+// Truck-only. `terms` is the allowed renewal-period set; a single entry means
+// no period selector (NYS Inspection is fixed at 1 year by NYS law). Mirrors
+// the dashboard Log Service form.
+interface ComplianceMeta {
+  label:       string
+  field:       ComplianceField
+  terms:       number[]
+  defaultTerm: number
+}
+const COMPLIANCE_TYPES: Record<string, ComplianceMeta> = {
+  nys_inspection:       { label: 'NYS Inspection',       field: 'inspection_expiry',   terms: [12],        defaultTerm: 12 },
+  registration_renewal: { label: 'Registration Renewal', field: 'registration_expiry', terms: [6, 12, 24], defaultTerm: 12 },
+  insurance_renewal:    { label: 'Insurance Renewal',    field: 'insurance_expiry',    terms: [6, 12],     defaultTerm: 12 },
+}
+const TERM_LABEL: Record<number, string> = { 6: '6 months', 12: '1 year', 24: '2 years' }
+const LONG_MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+]
+
+// End-of-month convention (matches migration 039): add term months to the
+// service date, then snap to the LAST day of that month. e.g. 2026-05-30 +
+// 12mo → 2027-05-31. Parses Y/M/D directly to avoid TZ drift.
+function endOfMonthAfter(serviceDate: string, termMonths: number): string {
+  const [y, m] = serviceDate.split('-').map(Number)
+  const d = new Date(y, (m - 1) + termMonths + 1, 0)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+function formatLongDate(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number)
+  return `${LONG_MONTHS[m - 1]} ${d}, ${y}`
 }
 
 type LineItem = { name: string; qty: string }
@@ -71,6 +105,11 @@ export default function LogServiceEntryScreen({
   const [invoice, setInvoice]           = useState<File | null>(null)
   const [lineItems, setLineItems]       = useState<LineItem[]>([{ name: '', qty: '' }])
 
+  // Compliance state (only meaningful when a COMPLIANCE_TYPES key is selected).
+  const [termMonths, setTermMonths]         = useState<number>(12)
+  const [overrideOpen, setOverrideOpen]     = useState(false)
+  const [expiryOverride, setExpiryOverride] = useState('')
+
   const [saving, setSaving] = useState(false)
   const [error, setError]   = useState<string | null>(null)
 
@@ -102,6 +141,13 @@ export default function LogServiceEntryScreen({
     () => (serviceTypeValue === CUSTOM ? customServiceType.trim() : serviceTypeValue),
     [serviceTypeValue, customServiceType],
   )
+
+  // Compliance derivation: which expiry this service drives, and the date it
+  // will write (override wins over the term-based auto-calc).
+  const compliance     = COMPLIANCE_TYPES[serviceTypeValue] ?? null
+  const computedExpiry = compliance && serviceDate
+    ? (expiryOverride || endOfMonthAfter(serviceDate, termMonths))
+    : null
 
   function updateLineItem(i: number, patch: Partial<LineItem>) {
     setLineItems((rows) => rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
@@ -142,6 +188,10 @@ export default function LogServiceEntryScreen({
         notes:             notes.trim() || null,
         lineItems:         lineItems.map((li) => ({ name: li.name, qty: toNum(li.qty) })),
         invoice,
+        serviceTermMonths: compliance ? termMonths : null,
+        complianceExpiry:  compliance && computedExpiry
+          ? { field: compliance.field, value: computedExpiry }
+          : null,
       })
       router.push(backHref)
     } catch (e) {
@@ -193,13 +243,27 @@ export default function LogServiceEntryScreen({
             <Field label="Service type">
               <select
                 value={serviceTypeValue}
-                onChange={(e) => setServiceTypeValue(e.target.value)}
+                onChange={(e) => {
+                  const v = e.target.value
+                  setServiceTypeValue(v)
+                  const meta = COMPLIANCE_TYPES[v]
+                  if (meta) setTermMonths(meta.defaultTerm)
+                  setExpiryOverride('')
+                  setOverrideOpen(false)
+                }}
                 style={selectStyle}
               >
                 <option value="" disabled>Select a service type…</option>
                 {ctx.serviceTypeOptions.map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
+                {effectiveAssetType === 'truck' && (
+                  <optgroup label="Compliance / Renewals">
+                    {Object.entries(COMPLIANCE_TYPES).map(([value, meta]) => (
+                      <option key={value} value={value}>{meta.label}</option>
+                    ))}
+                  </optgroup>
+                )}
                 <option value={CUSTOM}>Custom / other…</option>
               </select>
               {serviceTypeValue === CUSTOM && (
@@ -209,6 +273,65 @@ export default function LogServiceEntryScreen({
                   placeholder="Describe the service"
                   style={{ ...inputStyle, marginTop: 8 }}
                 />
+              )}
+
+              {/* Compliance: period selector + auto-calc preview + override */}
+              {compliance && (
+                <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {compliance.terms.length > 1 && (
+                    <div>
+                      <div style={{
+                        fontSize: 10.5, fontWeight: 800, letterSpacing: '0.14em',
+                        textTransform: 'uppercase', color: FC.faint, marginBottom: 7,
+                      }}>
+                        Renewal term
+                      </div>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        {compliance.terms.map((t) => (
+                          <Toggle
+                            key={t}
+                            active={termMonths === t}
+                            onClick={() => setTermMonths(t)}
+                            label={TERM_LABEL[t]}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {computedExpiry && (
+                    <div style={{
+                      background: 'rgba(96,140,255,0.12)', color: '#9DB6FF',
+                      border: '0.5px solid rgba(96,140,255,0.3)', borderRadius: 10,
+                      padding: '10px 12px', fontSize: 12.5,
+                    }}>
+                      Expiry will update to{' '}
+                      <span style={{ fontWeight: 800 }}>{formatLongDate(computedExpiry)}</span>
+                    </div>
+                  )}
+
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setOverrideOpen((o) => !o)}
+                      style={{
+                        background: 'transparent', border: 0, cursor: 'pointer',
+                        color: '#7DA0FF', fontSize: 13, fontWeight: 700,
+                        fontFamily: 'inherit', padding: 0,
+                      }}
+                    >
+                      {overrideOpen ? '▾' : '▸'} Set custom expiry date (optional)
+                    </button>
+                    {overrideOpen && (
+                      <input
+                        type="date"
+                        value={expiryOverride}
+                        onChange={(e) => setExpiryOverride(e.target.value)}
+                        style={{ ...inputStyle, marginTop: 8 }}
+                      />
+                    )}
+                  </div>
+                </div>
               )}
             </Field>
 

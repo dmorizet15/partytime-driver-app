@@ -8,6 +8,7 @@
 import { supabase } from '@/lib/supabase'
 import { assetHealth, complianceStatus, mostSevere, pmLevelForSchedule } from './pmStatus'
 import { equipmentSubtitle, prettyServiceType, truckSubtitle } from './format'
+import { postComplianceExpiry } from './complianceApi'
 import type {
   AssetDetail,
   AssetScheduleView,
@@ -532,11 +533,23 @@ export async function createServiceEntry(input: ServiceEntryInput): Promise<stri
       mileage_at_service:   input.mileageAtService,
       hours_at_service:     input.hoursAtService,
       notes:                input.notes,
+      service_term_months:  input.serviceTermMonths,
     })
     .select('id')
     .single()
   if (error || !data) throw new Error(error?.message ?? 'Could not save the service record.')
   const recordId = (data as { id: string }).id
+
+  // Compliance write — drive the trucks.<expiry> column via the dashboard
+  // route (the driver app can't hold the service-role key). The record is
+  // already saved; surface a clear error rather than leaving the truck stale.
+  if (input.complianceExpiry) {
+    await postComplianceExpiry(
+      input.assetId,
+      input.complianceExpiry.field,
+      input.complianceExpiry.value,
+    )
+  }
 
   const items = input.lineItems
     .filter((li) => li.name.trim().length > 0)

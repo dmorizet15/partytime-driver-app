@@ -152,6 +152,12 @@ export interface AssignableUser {
   display_name: string | null
 }
 
+// Trucks expiry columns the compliance log-service path can drive (mig 083).
+export type ComplianceField =
+  | 'inspection_expiry'
+  | 'registration_expiry'
+  | 'insurance_expiry'
+
 export interface ServiceEntryInput {
   assetType:         AssetType
   assetId:           string
@@ -166,4 +172,10 @@ export interface ServiceEntryInput {
   notes:             string | null
   lineItems:         { name: string; qty: number | null }[]
   invoice:           File | null
+  // Compliance log-service path (migration 083). serviceTermMonths is the
+  // renewal period written onto the record (6/12/24; null otherwise).
+  // complianceExpiry, when set, drives a trucks.<field> write via the
+  // dashboard compliance-expiry route after the record is inserted.
+  serviceTermMonths: number | null
+  complianceExpiry:  { field: ComplianceField; value: string } | null
 }
