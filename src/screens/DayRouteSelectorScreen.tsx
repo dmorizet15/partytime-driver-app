@@ -317,6 +317,51 @@ export default function DayRouteSelectorScreen() {
   const truckName    = primaryRoute?.truck_name?.trim() || null
   const truckPlate   = primaryRoute?.truck_plate?.trim() || null
 
+  // AVA Phase 2 / Session 2 — pre-seed the "Ask Ava about today" conversation
+  // with the route context Home has already computed. Weather comes from the
+  // routeWeather hook (a live Tomorrow.io fan-out) so /api/ava/ask never re-runs
+  // it. Customer stops only (depot excluded) — same rule as every other count.
+  const seedContext = useMemo(() => {
+    const customerStops = dayStops.filter(
+      (s) => s.stop_type !== 'warehouse' && s.stop_type !== 'warehouse_return'
+    )
+
+    const weatherStops = customerStops
+      .filter((s) => routeWeather.weatherByStopId.get(s.stop_id)?.weatherAlert)
+      .map((s) => s.customer_name)
+      .filter(Boolean)
+
+    const dispatcherNotes = [
+      primaryRoute?.dispatcher_notes,
+      ...customerStops.map((s) => s.dispatcher_notes),
+    ].filter((n): n is string => !!n && n.trim().length > 0)
+
+    // Aggregate the manifest by item name → "12× Folding Chair, 4× 20x20 Tent".
+    const byName = new Map<string, number>()
+    for (const s of customerStops) {
+      for (const it of s.items ?? []) {
+        const name = it.name?.trim()
+        if (!name) continue
+        byName.set(name, (byName.get(name) ?? 0) + (it.qty ?? 1))
+      }
+    }
+    const manifestSummary = Array.from(byName.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([name, qty]) => `${qty}× ${name}`)
+      .join(', ') || null
+
+    return {
+      driverName:      firstName,
+      stopCount:       customerStops.length,
+      codCount:        codStops.length,
+      hasWeatherFlag:  routeWeather.hasWeatherFlag,
+      weatherStops,
+      dispatcherNotes,
+      manifestSummary,
+    }
+  }, [dayStops, codStops, routeWeather, primaryRoute, firstName])
+
   // Pre-trip-complete gate. AVA Phase 1 / Session 2 reuses this single boolean
   // to flip Home from "morning briefing" (full layout) to "quiet state" (hero
   // + operational flags only — see post-pre-trip block below).
@@ -1017,7 +1062,7 @@ export default function DayRouteSelectorScreen() {
                 UI only for now; the Haiku-backed conversation sheet pre-seeded
                 with route context lands in a later session. Pre-pre-trip only,
                 alongside the Inspect CTA. */}
-            {!inspected && <AskAvaButton />}
+            {!inspected && <AskAvaButton seedContext={seedContext} routeId={primaryRouteId ?? null} />}
 
             {/* Gold CTA — pre-pre-trip only. Once inspected, Home goes quiet
                 and the Routes tab becomes the active-route entry point.
