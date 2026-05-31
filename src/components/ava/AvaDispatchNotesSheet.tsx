@@ -5,8 +5,17 @@ import type { Stop } from '@/types'
 const BLUE = '#0000FF'
 
 interface AvaDispatchNotesSheetProps {
-  stops:   Stop[]   // pre-filtered: only stops with a non-empty dispatcher_notes
+  stops:   Stop[]   // pre-filtered: stops with a dispatcher note and/or warehouse note
   onClose: () => void
+}
+
+const NOTE_LABEL_STYLE: React.CSSProperties = {
+  fontSize: 10, fontWeight: 900, letterSpacing: '0.16em',
+  textTransform: 'uppercase', color: '#FFB800', marginBottom: 3,
+}
+const NOTE_TEXT_STYLE: React.CSSProperties = {
+  fontSize: 14, color: '#E2E8F0', lineHeight: 1.45,
+  whiteSpace: 'pre-wrap', wordBreak: 'break-word',
 }
 
 export default function AvaDispatchNotesSheet({ stops, onClose }: AvaDispatchNotesSheetProps) {
@@ -14,7 +23,7 @@ export default function AvaDispatchNotesSheet({ stops, onClose }: AvaDispatchNot
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Stops with notes from dispatch"
+      aria-label="Stops with notes"
       onClick={onClose}
       style={{
         position: 'fixed', inset: 0, zIndex: 200,
@@ -51,7 +60,7 @@ export default function AvaDispatchNotesSheet({ stops, onClose }: AvaDispatchNot
             ))}
           </div>
           <div style={{ fontWeight: 800, fontSize: 17, letterSpacing: 0.2 }}>
-            Notes from dispatch
+            Notes for your stops
           </div>
           <button
             type="button" onClick={onClose} aria-label="Close"
@@ -76,12 +85,18 @@ export default function AvaDispatchNotesSheet({ stops, onClose }: AvaDispatchNot
                 {addr && (
                   <div style={{ marginTop: 2, fontSize: 12.5, color: '#94A3B8' }}>{addr}</div>
                 )}
-                <div style={{
-                  marginTop: 6, fontSize: 14, color: '#E2E8F0', lineHeight: 1.45,
-                  whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                }}>
-                  {s.dispatcher_notes}
-                </div>
+                {s.dispatcher_notes?.trim() && (
+                  <div style={{ marginTop: 8 }}>
+                    <div style={NOTE_LABEL_STYLE}>From dispatch</div>
+                    <div style={NOTE_TEXT_STYLE}>{s.dispatcher_notes}</div>
+                  </div>
+                )}
+                {s.warehouse_notes?.trim() && (
+                  <div style={{ marginTop: 8 }}>
+                    <div style={NOTE_LABEL_STYLE}>From warehouse</div>
+                    <div style={NOTE_TEXT_STYLE}>{s.warehouse_notes}</div>
+                  </div>
+                )}
               </li>
             )
           })}

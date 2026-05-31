@@ -925,6 +925,7 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     }
     const sections: StopNotesSections = {
       dispatcherNote: stop.dispatcher_notes?.trim() || null,
+      warehouseNote:  stop.warehouse_notes?.trim() || null,
       deliveryInstr:  stop.notes_additional_delivery?.trim() || null,
       staffNote:      stop.notes_employee_authored?.trim() || null,
       flipNote:       stop.stop_type === 'pickup' ? (stop.notes_flip?.trim() || null) : null,
@@ -1753,6 +1754,43 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
                   </div>
                   <ArrowIcon size={16} color={C.blue}/>
                 </button>
+              </div>
+            )}
+
+            {/* FROM WAREHOUSE — warehouse_notes (dashboard Migration 077). Same
+                solid-blue card pattern as "Note from dispatch" above, shown
+                inline (no modal). Internal note from the warehouse team. */}
+            {stop.warehouse_notes && stop.warehouse_notes.trim().length > 0 && (
+              <div style={{ padding: '14px 18px 0' }}>
+                <div style={{
+                  width: '100%',
+                  background: C.paper,
+                  border: `1.5px solid ${C.blue}`,
+                  borderRadius: 14,
+                  padding: '12px 14px',
+                  display: 'flex', gap: 10, alignItems: 'flex-start',
+                }}>
+                  <div style={{
+                    width: 24, height: 24, flexShrink: 0,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }} aria-hidden="true">
+                    <NoteIcon size={18} color={C.blue}/>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontSize: 10.5, fontWeight: 900, letterSpacing: '0.18em',
+                      color: C.blue, textTransform: 'uppercase',
+                    }}>
+                      From warehouse
+                    </div>
+                    <div style={{
+                      marginTop: 4, fontSize: 13.5, color: C.ink, lineHeight: 1.45,
+                      whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                    }}>
+                      {stop.warehouse_notes}
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 
