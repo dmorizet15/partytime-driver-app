@@ -8,15 +8,17 @@ Next.js 14 PWA for the driver mobile workflow. Downstream of `partytime-dashboar
 
 | Item | Status |
 |---|---|
-| Active feature | AVA Phase 2 — Session 2 delivered on `feature/ava-phase2-session2` (commits `4faef54`, `044b879`); not merged |
-| Latest merge | AVA Phase 2 Session 1 → `main` (merge `0176699`, 2026-05-30); branch `feature/ava-phase2` deleted |
+| Active feature | None in flight — AVA Phase 2 Session 2 merged to `main`. Next AVA work → new `feature/ava-phase2-sN` branch |
+| Latest merge | AVA Phase 2 Session 2 → `main` (merge `02abfc6`, 2026-05-31); branch `feature/ava-phase2-session2` deleted |
 | Latest migrations | 020 `sop_entries_rls` + 019 `sop_entries` + 018 `dispatch_stops_geocache`; local = 20 files |
 | Branch strategy | Feature work → named branch; unrelated fixes → direct to `main` |
 | Next priority | See `tasks/todo.md` (top of file) — Session 2 production smoke test |
 
 **Phase 2 Session 1 delivered (merged, smoke-test pending):** `geocodeAddress` (Nominatim, cache-first, server-side write-back), `getWindAtTime` (Tomorrow.io+NWS, gust-inclusive, UTC-bucket matched), `POST /api/ava/route-weather` (per-stop enrichment), `useRouteWeather` → `hasWeatherFlag` + red `WIND {mph}` pills (≥20 mph). SOP: `POST /api/sop/sync` mirrors Notion SOP Library → `sop_entries` (token-gated, inert until `NOTION_API_KEY` set, returns 501). "Ask Ava about today" placeholder button (UI-only, coming-soon toast). Home stop-count fix: `customerStopCount` excludes depot from hero + section totals.
 
-**Phase 2 Session 2 delivered (branch `feature/ava-phase2-session2`, not merged):** `SOP_SYNC` ran in prod — `sop_entries` populated with SOP-001…010 (`{synced:10, errors:[]}`). `POST /api/ava/ask` (auth-gated, `claude-haiku-4-5-20251001`, route-context system prompt, logs to `ava_conversations` surface `driver_home`, 503 when `ANTHROPIC_API_KEY` unset — key already set in Vercel). `AvaConversationSheet` (shared `open/onClose/seedContext` dark sheet, VOICE/TEXT toggle, `speak()` TTS, thinking waveform). Home "Ask Ava about today" button now opens the real sheet, pre-seeded with Home's computed context. SOP search in Training Hub (`SopSearchSection`, debounced, driver-visible filter, tap-to-expand, "Ask Ava instead" empty state). Migration 020 enabled RLS on `sop_entries`. **Pending: production smoke test (see `tasks/todo.md`).**
+**Phase 2 Session 2 (merged to `main`, merge `02abfc6`, smoke-test pending):** `SOP_SYNC` ran in prod — `sop_entries` populated with SOP-001…010 (`{synced:10, errors:[]}`). `POST /api/ava/ask` (auth-gated, `claude-haiku-4-5-20251001`, route-context system prompt, logs to `ava_conversations` surface `driver_home`, 503 when `ANTHROPIC_API_KEY` unset — key already set in Vercel). `AvaConversationSheet` (shared `open/onClose/seedContext` dark sheet, VOICE/TEXT toggle, `speak()` TTS, thinking waveform). Home "Ask Ava about today" button now opens the real sheet, pre-seeded with Home's computed context. SOP search in Training Hub (`SopSearchSection`, debounced, driver-visible filter, tap-to-expand, "Ask Ava instead" empty state). Migration 020 enabled RLS on `sop_entries`. **Plus two post-build fixes:** morning-brief copy is voice-first (numbers spelled out, no em-dash separators, "tents" not "canopies") and the heavy tent-day framing now fires at `tentCount >= 5`; and `dispatch_stops.warehouse_notes` (dashboard Migration 077) is now surfaced driver-side. **Pending: production smoke test (see `tasks/todo.md`).**
+
+**`warehouse_notes` surface (Session 2):** `dispatch_stops.warehouse_notes` is wired identically to `dispatcher_notes` — added to the `/api/routes` SELECT + `SupabaseStopRow` + `toRealStop` → `Stop.warehouse_notes`. Stop Detail shows a "FROM WAREHOUSE" labeled block (solid-blue card chrome like "Note from dispatch", shown inline). `StopNotesPreSheet` has a "FROM WAREHOUSE" section ordered right after the dispatcher note. The AVA morning-brief count (`stopsWithNotes`) and its review sheet (`AvaDispatchNotesSheet`, retitled "Notes for your stops") now cover stops with `dispatcher_notes` OR `warehouse_notes` (a stop with both counts once); the card-visibility gate fires on warehouse-only-note days too.
 
 ---
 
@@ -154,6 +156,9 @@ Key decisions locked in Session 2:
 - **SOP `department` is free-text/composite** ("Drivers / Warehouse", "Field Operations", "All Departments", "Warehouse", "Operations", null) — NOT the spec's `'driver'|'field'|'all'` tokens. A literal `IN(...)` matches zero rows. Driver-visible = department matches `/\b(driver|field|all)\b/i`. Warehouse-only / Operations / null are excluded. See `tasks/lessons.md`.
 - **SOP search fetches all ≤10 rows once + filters in-memory** (driver-visibility AND query). Per-keystroke Supabase round-trips would be wasteful at this scale; the 300 ms debounce just gates the in-memory filter. Avoids the PostgREST `.or(ilike)` `*`-vs-`%` wildcard gotcha entirely.
 - **Migration 020 enabled RLS on `sop_entries`** (Session 1 left it OFF → readable with the public anon key). Policy: `authenticated` SELECT `USING(true)`. Sync writes still go through the service-role admin client (bypasses RLS).
+- **Heavy tent-day framing fires at `tentCount >= 5`** (was `>= 2`). 1–4 tents fall through to the generic stop/COD lines — no "big tent day" hype for a routine couple of tents. Both `directMessage` + `personalityVariants`.
+- **Voice-first morning-brief copy:** numbers under ten spelled out (`spellNumber`/`spellNumberCap` helpers, numerals kept for 10+); every ` — ` separator replaced with a natural sentence break (so ElevenLabs pauses via the existing `SENTENCE_PAUSE` `<break>`); "tents" not "canopies".
+- **`warehouse_notes` wired like `dispatcher_notes`** (see Current build state). Broadening the morning-brief count to dispatcher-OR-warehouse meant updating the SHARED review drawer too — `AvaDispatchNotesSheet` now renders both note types labeled per stop, else a warehouse-only stop would show blank. (Lesson: a count and its detail drawer fed by the same collection must broaden together.) `warehouse_notes` was NOT added to the `/api/ava/ask` seedContext (out of the fix's explicit scope).
 
 ---
 

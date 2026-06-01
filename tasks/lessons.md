@@ -6,6 +6,14 @@ Format: one lesson per block. Lead with the rule, then **Why** and **How to appl
 
 ---
 
+## When you broaden a COUNT, also update the DETAIL surface fed by the same collection — a count and its drawer/list must widen together or they silently disagree.
+
+**Why:** AVA Phase 2 Session 2 (2026-05-31) the "wire `warehouse_notes` like `dispatcher_notes`" fix broadened the morning-brief count from "stops with a dispatcher note" to "stops with a dispatcher OR warehouse note" (`stopsWithDispatchNotes` → `stopsWithNotes`). But that same filtered array also fed the review drawer `AvaDispatchNotesSheet`, which rendered only `s.dispatcher_notes`. Broadening the count alone would have made the drawer show a warehouse-only stop as a blank row — the count says "3 stops have notes" but one row is empty. The instruction only listed the count line as a surface, yet correctness forced updating the drawer too (render both note types labeled, retitle "Notes from dispatch" → "Notes for your stops"). The card-visibility gate (`… && notesStopCount === 0`) also had to broaden so warehouse-only-note days still show the card.
+
+**How to apply:** Before broadening a count/derived total, trace every consumer of the backing collection — the tap target, the drawer, the list, the empty/visibility gate. A count is a promise about what the detail surface will show; if the detail surface renders only the old subset, the promise breaks (blank rows, count/detail mismatch). Widen the predicate in ONE shared memo and make every consumer handle the new members (here: render `warehouse_notes` alongside `dispatcher_notes`, with labels so the source stays legible). Also re-read any visibility gate that references the old count — it usually needs the same widening. Treat "the spec only named the count" as the floor, not the ceiling: coupled surfaces come along for correctness.
+
+---
+
 ## A free-text Notion field synced into a DB column will NOT match the clean enum tokens a spec assumes — query the actual distinct values before writing any role/category filter.
 
 **Why:** AVA Phase 2 Session 2 (2026-05-31) the SOP-search spec said "role-filter: department IN ('driver','field','all')". The real `sop_entries.department` values (mirrored from the Notion SOP Library) are human-authored composites: "Drivers / Warehouse", "Field Operations", "All Departments", "Warehouse", "Operations", and null. A literal `IN ('driver','field','all')` matches **zero rows** — the feature would have shipped showing no SOPs. The fix was a substring predicate (`/\b(driver|field|all)\b/i`) over the real values, treating Warehouse-only / Operations / null as not-driver-facing. The only reason this didn't ship broken was running `SELECT DISTINCT department FROM sop_entries` before writing the filter.

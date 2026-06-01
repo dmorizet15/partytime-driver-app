@@ -4,6 +4,14 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-05-31 — AVA Phase 2 — Session 2: two fixes + merge to `main` — merge `02abfc6`
+
+Two follow-up fixes on `feature/ava-phase2-session2`, then merged to `main` (`--no-ff`, `09135db..02abfc6`) on Darren's go and the branch deleted (local + remote). `npx next build` green before each commit and on the merged `main`. Commits: `3cfa14b` (copy) · `d9e5425` (tent threshold) · `cdad015` (warehouse_notes).
+
+**Fix 1 — morning-brief copy + tent threshold (`getMorningMessage.ts`).** Voice-first cleanup: numbers under ten spelled out via `spellNumber`/`spellNumberCap` (numerals kept for 10+, capitalized at sentence starts); every ` — ` separator → a natural sentence break (ElevenLabs pauses via the existing `SENTENCE_PAUSE` `<break>`); "canopies" → "tents". Heavy tent-day framing ("Big tent day" / "Tent fortress day") moved from `tentCount >= 2` to `>= 5` in both direct + personality sets; 1–4 tents fall through to the generic stop/COD lines.
+
+**Fix 2 — surface `dispatch_stops.warehouse_notes` (dashboard Migration 077).** Wired like `dispatcher_notes`, all reads, no migration, no new route: `/api/routes` SELECT + `SupabaseStopRow` + `toRealStop` → `Stop.warehouse_notes`. Stop Detail "FROM WAREHOUSE" labeled block (solid-blue card chrome, shown inline) below "Note from dispatch". `StopNotesPreSheet` "FROM WAREHOUSE" section ordered right after the dispatcher note (gates Send-ETA / Open-in-Maps the same way). Morning-brief count (`stopsWithNotes`) now counts stops with `dispatcher_notes` OR `warehouse_notes` (both-on-one-stop counts once); the shared review drawer `AvaDispatchNotesSheet` renders both note types labeled per stop and is retitled "Notes for your stops"; the card-visibility gate fires on warehouse-only-note days. `warehouse_notes` deliberately NOT added to the `/api/ava/ask` seedContext (out of scope). Did not regen `src/types/supabase.ts` — the `/api/routes` path uses a raw SELECT + hand-rolled `SupabaseStopRow`, build green.
+
 ## 2026-05-31 — AVA Phase 2 — Session 2: Haiku conversation sheet + SOP search — `feature/ava-phase2-session2` (not merged)
 
 Built on `feature/ava-phase2-session2`. Pre-build gate passed (`ANTHROPIC_API_KEY` present on Vercel prod+preview). Step 0: triggered prod SOP sync via `x-sop-sync-secret` (pulled from Vercel) → `{synced:10, errors:[]}`; `sop_entries` now holds SOP-001…010, content non-empty (1.7–3k chars). Per-deliverable commits: `4faef54` (D1 — ask route + sheet + wiring) · `044b879` (D2 — SOP search + mig 020). `npx next build` green before each.

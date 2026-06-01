@@ -1,10 +1,12 @@
 # Open Tasks — partytime-driver-app
 
-## May 31, 2026 — AVA Phase 2 — Session 2: Haiku conversation sheet + SOP search (branch `feature/ava-phase2-session2`, commits `4faef54` + `044b879`; NOT merged)
+## May 31, 2026 — AVA Phase 2 — Session 2: Haiku conversation sheet + SOP search (MERGED to `main`, merge `02abfc6`; branch deleted)
 
-Two deliverables built + committed, `npx next build` green. Prod SOP sync ran (`{synced:10}`). Migration 020 (`sop_entries` RLS) applied to the linked DB. **Pending Darren's smoke test before merge.**
+Two deliverables + two follow-up fixes, all merged to `main` and the branch deleted (local + remote). `npx next build` green throughout and on the merged `main`. Prod SOP sync ran (`{synced:10}`). Migration 020 (`sop_entries` RLS) applied to the linked DB. **Pending: production smoke test on the live `main` deploy.** Next AVA work → a new `feature/ava-phase2-sN` branch.
 
-- [ ] **Merge to `main` when Darren approves the smoke test.** Branch is `feature/ava-phase2-session2`; `--no-ff`, then delete the branch (local + remote). Next AVA work → a new `feature/ava-phase2-sN` branch.
+- [x] ~~**Merge to `main`**~~ — done 2026-05-31 (`--no-ff`, merge `02abfc6`); branch `feature/ava-phase2-session2` deleted local + remote.
+- [ ] **Production smoke test — Fix 1 (morning brief copy + tent threshold):** brief reads numbers as words ("two stops", "three tents") and 10+ as digits; no em-dash run-ons (natural pauses when read aloud); says "tents" not "canopies". A day with 2–4 tents gets a plain stop/COD line (NO "big tent day"); the heavy framing only appears at 5+ tents.
+- [ ] **Production smoke test — Fix 2 (warehouse_notes):** on a stop with `warehouse_notes` set in the dashboard → Stop Detail shows a blue "FROM WAREHOUSE" block below "Note from dispatch"; navigating/Send-ETA pops the pre-launch sheet with a "FROM WAREHOUSE" section after the dispatcher note. Morning brief "N of your stops have notes" counts dispatcher-OR-warehouse stops (a stop with both counts once); tapping it opens "Notes for your stops" showing both note types labeled. A day with ONLY warehouse notes still shows the AVA card + count.
 - [ ] **Production smoke test — Deliverable 1 (Ask Ava):**
   1. Home (pre-trip not yet done) → gold (+) "Ask Ava about today" between the stop list and the Inspect CTA. Tap → dark conversation sheet opens (not the old toast).
   2. Type a question about today (e.g. "How many stops do I have?" / "Any wind on my tents?" / "Which stops are COD?") → "AVA is thinking…" waveform → a concise spoken-style answer. With VOICE on, the answer is read aloud (ElevenLabs); toggle TEXT → no audio, switching mid-playback stops it.
