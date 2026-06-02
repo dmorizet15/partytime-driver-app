@@ -1,5 +1,16 @@
 # Open Tasks — partytime-driver-app
 
+## June 2, 2026 — Three driver-app fixes (direct to `main`, `e41c976`; `npx next build` green; Migration 021 applied + repaired)
+
+- [ ] **Smoke test — Fix 1 (Home post-inspection flow):**
+  1. Pre-inspection Home: the "REQUIRED FIRST / Pre-trip inspection" card is GONE; the only inspection trigger is the gold "Inspect & Start Route" bottom CTA. The stop list shows but is dimmed/non-tappable.
+  2. Tap "Inspect & Start Route" → complete the inspection → its final CTA lands you on the **Route page** (`/route/[id]`), NOT Home.
+  3. Return to Home: the stop list is STILL there (not cleared/hidden), now full-opacity and tappable; the bottom CTA reads **"Continue route"** and jumps to the Route page. (AVA brief / weather / Ask Ava stay hidden post-inspection — intentional, stop-list-only persistence.)
+  4. Complete a stop → on BOTH Home and the Route list its numbered circle flips to an ink fill with a gold checkmark.
+- [ ] **Smoke test — Fix 2 (zip-ties note):** open the morning checklist → the "Zip ties" always-carry item no longer shows the "Dylan interview May 24" sub-note.
+- [ ] **Smoke test — Fix 3 (tent tools):** a route with a tent item → morning checklist "FOR TODAY'S ROUTE" includes **Hammer + Sledgehammer** (plus the existing Pry bar). A route with an inflatable → Hammer + Hand truck. A route with BOTH → Hammer (once), Sledgehammer, Hand truck, Pry bar.
+- [ ] **Tent detection caveat (Fix 3):** the new rules use `category='TENTS'` exact match (same as the Pry bar rule), so a stop carrying only TENTS-category accessories (sidewalls/walls, no actual tent) will also pull Hammer + Sledgehammer. Matches the existing Pry bar behavior; revisit only if a walls-only stop wrongly triggers tent tools in practice.
+
 ## May 31, 2026 — AVA Phase 2 — Session 2: Haiku conversation sheet + SOP search (MERGED to `main`, merge `02abfc6`; branch deleted)
 
 Two deliverables + two follow-up fixes, all merged to `main` and the branch deleted (local + remote). `npx next build` green throughout and on the merged `main`. Prod SOP sync ran (`{synced:10}`). Migration 020 (`sop_entries` RLS) applied to the linked DB. **Pending: production smoke test on the live `main` deploy.** Next AVA work → a new `feature/ava-phase2-sN` branch.

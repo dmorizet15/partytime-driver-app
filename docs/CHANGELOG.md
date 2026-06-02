@@ -4,6 +4,16 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-06-02 — Three driver-app fixes (direct to `main`, `e41c976`)
+
+Investigation-first session: read CLAUDE.md + todo + lessons, traced each fix, confirmed scope (one `AskUserQuestion` on Fix 1), then implemented. `npx next build` green; pushed direct to `main` per the unrelated-fixes branch policy.
+
+**Fix 1 — Home post-inspection flow (`DayRouteSelectorScreen.tsx`, `InspectionScreen.tsx`).** Drivers read the post-inspection "quiet state" (stop list hidden once inspected, per AVA Phase 1/Session 2) as "stops cleared." Partial reversal: the day list + "The day, in N" header now persist post-inspection as the live route overview; completed stops show RouteListScreen's ink-circle + gold-checkmark treatment (new local `CheckIcon`) so completion reads identically on both views. AVA brief / weather / Ask Ava stay pre-inspection-only (still `!inspected`-gated) — stop-list-only persistence, confirmed with Darren. Removed the duplicate "REQUIRED FIRST / Pre-trip inspection" card (and now-orphaned `DocIcon`/`ChevronRightIcon`); the gold bottom CTA is the sole inspection trigger and is now persistent — "Inspect & Start Route" pre-inspection, "Continue route" (→ `/route/[id]`) post-inspection. The inspection completion CTA navigates to `/route/[routeId]` instead of `/`.
+
+**Fix 2 + Fix 3 — Migration 021 (`dependency_map`).** The morning checklist is DB-driven, so both were data, not code. Fix 2: cleared the stray "Dylan interview May 24" note off the `Zip ties` always-carry row. Fix 3: added `category='TENTS'` → `Hammer` + `Sledgehammer` rules (same shape as the existing `Pry bar` tent rule); inflatable → `Hammer` + `Hand truck` already existed, and `AvaChecklistSheet` dedupes by `required_item`, so a tent+inflatable day shows `Hammer` once. Idempotent migration (plain UPDATE + `NOT EXISTS`-guarded INSERT); applied via `supabase db query --linked --file` + `migration repair --status applied 20260602021`.
+
+---
+
 ## 2026-05-31 — AVA Phase 2 — Session 2: two fixes + merge to `main` — merge `02abfc6`
 
 Two follow-up fixes on `feature/ava-phase2-session2`, then merged to `main` (`--no-ff`, `09135db..02abfc6`) on Darren's go and the branch deleted (local + remote). `npx next build` green before each commit and on the merged `main`. Commits: `3cfa14b` (copy) · `d9e5425` (tent threshold) · `cdad015` (warehouse_notes).

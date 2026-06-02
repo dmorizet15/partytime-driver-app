@@ -6,6 +6,22 @@ Format: one lesson per block. Lead with the rule, then **Why** and **How to appl
 
 ---
 
+## When a request says "find where the checklist item / note is defined," check the DB before grepping `src/` — the morning checklist is `dependency_map`-driven, so item rows and their notes are DATA, not code.
+
+**Why:** 2026-06-02, two fixes ("remove the 'Dillon interview May 24th' note from the zip-ties item" and "auto-add tent/inflatable tools") both read like component edits. `grep -r "Dillon\|zip tie" src/` returned NOTHING — the items live in the `dependency_map` table (Migration 016), rendered generically by `AvaChecklistSheet` from `required_item`/`notes`/trigger rules. (The stray note was even misremembered: actual value was "Dylan interview May 24", not "Dillon … May 24th" — so a literal code grep for the quoted text would have failed twice over.) The conditional tool logic is also data: `trigger_type='category'|'keyword'` rows, fired by `ruleFires` in `dependencyHits.ts`. Both fixes were a single idempotent migration (021), zero component changes — inflatable→Hammer+Hand truck already existed, so only tent→Hammer+Sledgehammer (`category='TENTS'`) was missing.
+
+**How to apply:** For any "checklist / dropdown / catalog item" change, first ask "is this seeded data or hardcoded JSX?" Grep `src/`, and if it comes up empty, `SELECT` the obvious table. A generic list renderer (maps over DB rows) means the fix is a migration. Re-detection rules: reuse the existing trigger mechanism (`dependency_map` category/keyword rows + `ruleFires`), don't bolt on `resolveCategory`/`hasInflatableItem` — and check whether a sibling rule already covers half the ask (the inflatable rows did). Keep the data migration idempotent (guarded INSERT + plain UPDATE) since `dependency_map`'s seed only fires on an empty table.
+
+---
+
+## A documented "intentional" design decision can still be wrong for users — when a directive contradicts an architecture note, confirm scope, then reverse it deliberately and update the doc, rather than defending the note.
+
+**Why:** 2026-06-02 the AVA Phase 1/Session 2 "quiet state" (hide the Home stop list once inspected; Routes tab is the entry point) was documented as intentional in CLAUDE.md. But drivers experienced the hidden list as "stops cleared after inspection" — a bug, not a feature. The fix reversed the quiet-state hiding for the stop list (so it persists with completion checkmarks) while keeping the rest (AVA brief / weather / Ask Ava) pre-inspection-only. Because the reversal was partial and contradicted a written invariant, scope had to be pinned down first (stop-list-only vs. full reversal; what the post-inspection CTA becomes) before any edit.
+
+**How to apply:** When a user directive collides with a CLAUDE.md/docs "this is intentional" note, don't silently override OR silently obey — surface the conflict, ask the one or two scope questions that actually change the implementation (here: which elements persist, and the new CTA behavior), implement the agreed subset, and immediately rewrite the doc so the next session doesn't "fix" it back. Leave a breadcrumb in the new code comment ("reverses X for Y only — Fix N") so the partial reversal is legible.
+
+---
+
 ## When you broaden a COUNT, also update the DETAIL surface fed by the same collection — a count and its drawer/list must widen together or they silently disagree.
 
 **Why:** AVA Phase 2 Session 2 (2026-05-31) the "wire `warehouse_notes` like `dispatcher_notes`" fix broadened the morning-brief count from "stops with a dispatcher note" to "stops with a dispatcher OR warehouse note" (`stopsWithDispatchNotes` → `stopsWithNotes`). But that same filtered array also fed the review drawer `AvaDispatchNotesSheet`, which rendered only `s.dispatcher_notes`. Broadening the count alone would have made the drawer show a warehouse-only stop as a blank row — the count says "3 stops have notes" but one row is empty. The instruction only listed the count line as a surface, yet correctness forced updating the drawer too (render both note types labeled, retitle "Notes from dispatch" → "Notes for your stops"). The card-visibility gate (`… && notesStopCount === 0`) also had to broaden so warehouse-only-note days still show the card.
