@@ -43,10 +43,25 @@ interface SopEntry {
   department:  string | null
 }
 
-// Driver-visible = department mentions driver / field / all (case-insensitive).
-// Excludes Warehouse-only, Operations, and null. See header note.
-function isDriverVisible(department: string | null): boolean {
-  return !!department && /\b(driver|field|all)\b/i.test(department)
+// Driver-visible = department mentions drivers / field / all (case-insensitive),
+// OR the SOP is tent setup/teardown. Two reasons this is more than a simple
+// `IN(...)`:
+//   1. The Notion departments are PLURAL ("Drivers", "Drivers / Warehouse"). The
+//      original `/\b(driver|field|all)\b/i` failed every "Drivers" row — the `\b`
+//      after "driver" can't match before the trailing "s" — so only "All
+//      Departments" / "Field Operations" SOPs showed (005/008/009). `drivers?`
+//      fixes it (001/003/006 now surface).
+//   2. SOP-010 (Tent Setup & Teardown) has a NULL department — it's the one child
+//      page missing from the Notion summary table, so the sync had no metadata to
+//      attach. Tents are core driver work, so we surface it by title. Durable fix:
+//      chat-Claude adds SOP-010 to the summary table with a driver/field
+//      department; this title carve-out can then be removed.
+// Still excludes Warehouse-only (Forklift, Chair Return) and Operations (Scheduling).
+const TENT_TITLE_RE = /\b(tent|canopy|marquee)\b/i
+
+function isDriverVisible(sop: Pick<SopEntry, 'department' | 'title'>): boolean {
+  if (sop.department && /\b(drivers?|field|all)\b/i.test(sop.department)) return true
+  return TENT_TITLE_RE.test(sop.title)
 }
 
 const EXCERPT_LEN = 120
@@ -144,7 +159,7 @@ export default function SopSearchSection() {
       .then(({ data, error }) => {
         if (cancelled) return
         if (error) { setLoadError(true); setLoading(false); return }
-        setAllSops(((data ?? []) as SopEntry[]).filter((s) => isDriverVisible(s.department)))
+        setAllSops(((data ?? []) as SopEntry[]).filter((s) => isDriverVisible(s)))
         setLoading(false)
       })
     return () => { cancelled = true }
