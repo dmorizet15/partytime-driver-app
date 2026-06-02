@@ -4,6 +4,16 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-06-02 — Log Service UX fix: error visibility + compliance POST protection (direct to `main`, `52f4016`)
+
+Acted on the prior read-only investigation (see entry below). Two targeted fixes, one commit, `npx next build` green, pushed direct to `main`.
+
+**Fix 1 — Error visibility + Save-button feedback (`LogServiceEntryScreen.tsx`).** Validation errors used to render inside the scrollable body, often off-screen above the fixed footer — a failed Save looked like a dead button. Moved the error block into the fixed footer directly above the Save button (always visible). Added a 150ms red border flash on validation early-returns via a `failValidation()` helper (combines the existing `setError` + flash; conditions and messages unchanged). The button carries a constant `2px solid transparent` border with `box-sizing: border-box` so only the color flips — no layout shift.
+
+**Fix 2 — Compliance POST partial-failure protection (`queries.ts`, screen, new `FleetServiceToast`).** `postComplianceExpiry` (cross-app dashboard POST) ran after the `service_records` insert had already committed; a throw (bad env/route/network) surfaced as a save error, so retries inserted duplicate records. Now wrapped in its own try/catch in `createServiceEntry`: logs, does **not** rethrow, and returns `{ success, recordId, complianceUpdateFailed, complianceError }` (was `Promise<string>`; sole caller ignored the value). `save()` always navigates and, on `complianceUpdateFailed`, stashes a one-shot toast surfaced at the destination via the new `FleetServiceToast` (sessionStorage stash, mirrors the ReportIssue→StopDetail pill) dropped into `WorkOrderDetailScreen` + `AssetDetailScreen`: "Service logged. Compliance date couldn't be updated — please notify your manager." Navigation is never blocked. **Smoke test pending** (`tasks/todo.md`, top): force the failure locally by unsetting `NEXT_PUBLIC_DASHBOARD_URL`.
+
+---
+
 ## 2026-06-02 — Investigation: Log Service "Save doesn't work" (no code changes)
 
 Driver reported the Save button on Log Service (`LogServiceEntryScreen.tsx`) does nothing. Traced the form, `createServiceEntry`/`postComplianceExpiry`, RLS, and schema — no fix applied (read-only session). Findings recorded in `docs/claude/tech-debt.md` → Active Blockers. Headline: the Save button is never field-gated (`disabled={saving}` only); failures surface in a low-visibility spot and validation early-returns give zero button feedback. Most likely everyday cause = **Service type not selected** (required, not prefilled). Secondary = **compliance-type save** POSTing to the dashboard after the record insert already committed → throws on env/route failure → looks failed but record saved, retry duplicates. Ruled out: NULL mileage (column nullable, field optional) and a `service_term_months` schema regression (column exists). Verified via read-only `information_schema` + `pg_policies` queries against the linked DB.

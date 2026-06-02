@@ -1,5 +1,9 @@
 # Open Tasks — partytime-driver-app
 
+## June 2, 2026 — Log Service UX fix (direct to `main`, `52f4016`; `npx next build` green)
+
+- [ ] **Log Service fix (52f4016) — smoke test compliance POST protection:** force `complianceUpdateFailed` by unsetting `NEXT_PUBLIC_DASHBOARD_URL` locally, log a compliance service type, confirm (1) service record saved once, (2) FleetServiceToast appears at destination, (3) no duplicate on retry.
+
 ## June 2, 2026 — Three driver-app fixes (direct to `main`, `e41c976`; `npx next build` green; Migration 021 applied + repaired)
 
 - [ ] **Smoke test — Fix 1 (Home post-inspection flow):**
