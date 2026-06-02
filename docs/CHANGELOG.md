@@ -4,6 +4,20 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-06-02 — dependency_map note/trigger cleanup + tent-Hammer drop + AVA voice copy (direct to `main`, `12c2a91` → `f4785cd` → `3ef660e`)
+
+Investigation-first session. Data/copy only — no schema, no new migration. DB changes applied via `supabase db query --linked --file` and recorded as re-runnable `.sql` under a new `supabase/data-patches/` directory (the convention for non-migration data changes going forward). `npx next build` green before each push.
+
+**Commit 1 (`12c2a91`) — dependency_map note cleanup + Pry bar retarget + two no-change findings.** `dependency_map.notes` renders to drivers in `AvaChecklistSheet`, so dev artifacts don't belong there. Cleaned (kept the real-world text): Hammer/Sledgehammer ("… — added Migration 021 (Fix 3)" → "Tent setup" / "Drive tent stakes"), Wood blocks ("… — keyword match only" → "Not needed for frame tents"), Ladders ("… — Lucas confirmed" → "5+ walls threshold"). **Pry bar** retargeted from `category='TENTS'` (fired on EVERY tent item, plus showed "Any MQ or tent item" to drivers) → `keyword='cross cable'`, note cleared — chosen by querying real `dispatch_stops.items` names ("CROSS CABLE" is the contiguous substring across MQ cross-cable frame tents; bare "MQ" over-matches `MQSW`/`MQDW`/`MQCW` walls/doors). **No-change findings:** (a) "Sledgehammer appears twice" — verified ONE correctly-spelled row; dedup (sheet `seen` Set + morning-card count Set, keyed on `required_item`) works; the only double-row item is Hammer (TENTS + inflatable) and it dedupes by design. (b) `getMorningMessage.ts` was intact and already Session-2-compliant; the requested em-dash fix was rejected because `withSentencePauses()` only breaks on `.`/`!`/`?` — em dashes add no pause and would regress the fix.
+
+**Commit 2 (`f4785cd`) — drop tent Hammer + punch up easy-day copy.** Deleted the `Hammer`/`category='TENTS'` row (a sledgehammer covers tent setup + driving stakes); kept the `Hammer`/`keyword='inflatable'` row. Net: tent-only → Sledgehammer; inflatable-only → Hammer + Hand truck; both → Hammer + Sledgehammer + Hand truck (recorded in `supabase/data-patches/2026-06-02_dependency_map_drop_tent_hammer.sql`). Replaced the flat 2–3-stop personality fallback ("Smooth start." family) with punchier variants, within the Session 2 TTS rules; single-stop array left alone (already punchy).
+
+**Commit 3 (`3ef660e`) — second-person AVA voice.** AVA addresses the driver directly, so the single-stop and 2–3-stop personality fallbacks (both neutral/imperative) are now second person ("You've got one stop today. Quick win." / "You've got two stops today. Quick one. Let's roll." / "{N} stops on your route. Easy run. Let's get after it."). Weather, COD, tent, 4+-stop, and dispatch-note blocks untouched (out of scope).
+
+**Files:** `supabase/data-patches/2026-06-02_dependency_map_checklist_voice_fixes.sql` (new), `supabase/data-patches/2026-06-02_dependency_map_drop_tent_hammer.sql` (new), `src/lib/ava/getMorningMessage.ts`. **Smoke tests pending** — see `tasks/todo.md` (top).
+
+---
+
 ## 2026-06-02 — Log Service UX fix: error visibility + compliance POST protection (direct to `main`, `52f4016`)
 
 Acted on the prior read-only investigation (see entry below). Two targeted fixes, one commit, `npx next build` green, pushed direct to `main`.

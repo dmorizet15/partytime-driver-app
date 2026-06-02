@@ -1,5 +1,14 @@
 # Open Tasks — partytime-driver-app
 
+## June 2, 2026 — dependency_map data patches + AVA voice copy (direct to `main`, `12c2a91`/`f4785cd`/`3ef660e`; `npx next build` green)
+
+Data/copy only — no schema, no new migration. DB changes recorded under `supabase/data-patches/`. **A fresh DB rebuild re-runs the migrations, so the two data-patch `.sql` files must be re-applied after any rebuild** (they're re-runnable / idempotent-safe).
+
+- [ ] **Smoke test — Pry bar trigger (`12c2a91`):** a route with an MQ cross-cable frame tent (name contains "CROSS CABLE") → morning checklist "FOR TODAY'S ROUTE" includes **Pry bar** (no sub-note). A route whose only tents are pole/keder/legacy/traditional (no "cross cable" in the name) → **Pry bar does NOT appear**. (Was firing on every TENTS-category item.)
+- [ ] **Smoke test — checklist notes cleanup (`12c2a91`):** open the morning checklist → Hammer reads "Tent setup", Sledgehammer "Drive tent stakes", Wood blocks "Not needed for frame tents", Ladders "5+ walls threshold" — none show migration/fix/interview text.
+- [ ] **Smoke test — tent Hammer drop (`f4785cd`):** tent-only route → **Sledgehammer only** (no Hammer). Inflatable-only → **Hammer + Hand truck**. Tent + inflatable → **Hammer + Sledgehammer + Hand truck**.
+- [ ] **Smoke test — AVA morning copy second-person (`f4785cd` + `3ef660e`):** with `personality_preference='personality'`, a routine 1-stop day reads e.g. "You've got one stop today. Quick win." and a routine 2–3-stop day reads e.g. "You've got two stops today. Quick one. Let's roll." (second person, no em dashes). COD / tent / 4+-stop / weather lines unchanged.
+
 ## June 2, 2026 — Log Service UX fix (direct to `main`, `52f4016`; `npx next build` green)
 
 - [ ] **Log Service fix (52f4016) — smoke test compliance POST protection:** force `complianceUpdateFailed` by unsetting `NEXT_PUBLIC_DASHBOARD_URL` locally, log a compliance service type, confirm (1) service record saved once, (2) FleetServiceToast appears at destination, (3) no duplicate on retry.
