@@ -147,9 +147,9 @@ function personalityVariants(s: MorningSummary): string[] {
     ]
   }
   return [
-    `${Stops} today. Let's roll.${weatherTail}`,
-    `${Stops} on the board. Smooth start.${weatherTail}`,
-    `${Stops} lined up. Nice and standard.${weatherTail}`,
+    `${Stops} today. Easy run. Get moving.${weatherTail}`,
+    `${Stops} today. Quick one. Let's roll.${weatherTail}`,
+    `${Stops} today. Nothing wild. You've got this.${weatherTail}`,
   ]
 }
 
