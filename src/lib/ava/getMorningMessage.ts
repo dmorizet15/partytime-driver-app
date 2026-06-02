@@ -141,15 +141,15 @@ function personalityVariants(s: MorningSummary): string[] {
   }
   if (s.stopCount === 1) {
     return [
-      `One stop today. Quick win.${weatherTail}`,
-      `Single stop today. In and out.${weatherTail}`,
-      `One on the board. Hardly counts.${weatherTail}`,
+      `You've got one stop today. Quick win.${weatherTail}`,
+      `You've got a single stop today. In and out.${weatherTail}`,
+      `Just one on your route today. Hardly counts.${weatherTail}`,
     ]
   }
   return [
-    `${Stops} today. Easy run. Get moving.${weatherTail}`,
-    `${Stops} today. Quick one. Let's roll.${weatherTail}`,
-    `${Stops} today. Nothing wild. You've got this.${weatherTail}`,
+    `You've got ${stops} today. Quick one. Let's roll.${weatherTail}`,
+    `You've got ${stops} today. Nothing wild. You've got this.${weatherTail}`,
+    `${Stops} on your route. Easy run. Let's get after it.${weatherTail}`,
   ]
 }
 
