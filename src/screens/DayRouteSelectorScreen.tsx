@@ -154,18 +154,6 @@ function TruckIcon({ size = 16, color = C.ink }: IconProps) {
   )
 }
 
-function DocIcon({ size = 16, color = C.ink }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
-         strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-      <polyline points="14 2 14 8 20 8"/>
-      <line x1="8"  y1="13" x2="16" y2="13"/>
-      <line x1="8"  y1="17" x2="13" y2="17"/>
-    </svg>
-  )
-}
-
 function CashIcon({ size = 14, color = C.ink }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
@@ -185,11 +173,13 @@ function ArrowIcon({ size = 18, color = '#fff' }: IconProps) {
   )
 }
 
-function ChevronRightIcon({ size = 16, color = C.muted }: IconProps) {
+// Completed-stop checkmark — mirrors RouteListScreen's CheckIcon so the
+// "this stop is done" indicator reads identically on Home and the Route list.
+function CheckIcon({ size = 15, color = C.gold }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
-         strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <polyline points="9 6 15 12 9 18"/>
+         strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 12l5 5L20 6"/>
     </svg>
   )
 }
@@ -613,50 +603,9 @@ export default function DayRouteSelectorScreen() {
         {/* Populated body — pre-trip + COD cards + day list + Ava + CTA */}
         {!isLoading && !error && totalStopCount > 0 && (
           <>
-            {/* Pre-trip inspection card — only renders pre-pre-trip. AVA Phase 1
-                Session 2 dropped the post-inspection "receipt" branch: once the
-                route is active, Home goes quiet. Pre-trip → /inspection. */}
-            {!inspected && (
-              <div style={{ padding: '14px 18px 0' }}>
-                <button
-                  onClick={handleInspect}
-                  style={{
-                    width: '100%',
-                    background: C.ink,
-                    border: 0, cursor: 'pointer',
-                    borderRadius: 18,
-                    padding: '14px 16px',
-                    display: 'flex', alignItems: 'center', gap: 14,
-                    fontFamily: 'inherit',
-                    textAlign: 'left',
-                  }}
-                >
-                  <div style={{
-                    width: 44, height: 44, borderRadius: 11,
-                    background: C.gold,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    flexShrink: 0,
-                  }}>
-                    <DocIcon size={20} color={C.ink}/>
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{
-                      fontSize: 10.5, fontWeight: 900, letterSpacing: '0.18em',
-                      color: C.gold, textTransform: 'uppercase',
-                    }}>
-                      Required First
-                    </div>
-                    <div style={{
-                      marginTop: 2, fontSize: 15, fontWeight: 800, color: '#fff',
-                      fontFamily: FONT_DISPLAY, letterSpacing: '-0.01em',
-                    }}>
-                      Pre-trip inspection
-                    </div>
-                  </div>
-                  <ChevronRightIcon size={18} color="rgba(255,255,255,0.55)"/>
-                </button>
-              </div>
-            )}
+            {/* Pre-trip inspection card removed (Fix 1) — it was a duplicate
+                interactive entry point. The gold "Inspect & Start Route" CTA at
+                the bottom is now the sole trigger for the inspection flow. */}
 
             {/* Post-trip defect card — appears only after the route is complete
                 and the driver hasn't already submitted a post-trip defect today.
@@ -824,9 +773,8 @@ export default function DayRouteSelectorScreen() {
               />
             )}
 
-            {/* Day list eyebrow — hidden post-pre-trip; Routes tab is the
-                entry point for the active route. */}
-            {!inspected && (
+            {/* Day list eyebrow — persists post-inspection (Fix 1) so the stop
+                list stays visible on Home with completion state. */}
             <div style={{
               padding: '20px 22px 8px',
               fontFamily: FONT_DISPLAY,
@@ -835,11 +783,11 @@ export default function DayRouteSelectorScreen() {
             }}>
               The day, in {customerStopCount}
             </div>
-            )}
 
-            {/* Day stop list — vertical line + numbered circles. Hidden in
-                quiet state per AVA Phase 1 / Session 2 architecture. */}
-            {!inspected && (
+            {/* Day stop list — vertical line + numbered circles. Persists
+                pre- AND post-inspection (Fix 1): pre-inspection it's dimmed and
+                non-tappable; post-inspection it's the live route overview with
+                completed stops checkmarked. */}
             <div style={{ padding: '0 18px', position: 'relative' }}>
               {/* connector line — sits behind circles (z-index 0). Center
                   alignment: container padding-left=18, circle width=32 → center
@@ -861,6 +809,10 @@ export default function DayRouteSelectorScreen() {
                 // delivery leg involves cash collection; the pickup is just
                 // equipment retrieval. Gate `isCod` on stop_type to avoid
                 // showing COD treatment on the pickup row.
+                // Completed stop — mirrors RouteListScreen: the numbered circle
+                // flips to an ink fill with a gold checkmark so "this stop is
+                // done" reads identically on Home and the Route list (Fix 1).
+                const isCompleted  = stop.current_status === 'completed'
                 const isCod        = stop.stop_type === 'delivery' && COD_PAYMENT_STATES.has(stop.payment_state ?? '')
                 const isBalanceDue = stop.payment_state === 'balance_due'
                 const isPaidInFull = stop.payment_state === 'paid_in_full'
@@ -904,18 +856,20 @@ export default function DayRouteSelectorScreen() {
                       pointerEvents: inspected ? 'auto' : 'none',
                     }}
                   >
-                    {/* Numbered circle (32px) — gold for COD, white-ink for standard */}
+                    {/* Numbered circle (32px) — completed: ink fill + gold check;
+                        COD: gold fill; standard: white-ink. */}
                     <div style={{
                       width: 32, height: 32, borderRadius: '50%',
                       flexShrink: 0,
-                      background: isCod ? C.gold : C.paper,
-                      border: `2px solid ${C.ink}`, color: C.ink,
+                      background: isCompleted ? C.ink : isCod ? C.gold : C.paper,
+                      border: `2px solid ${C.ink}`,
+                      color: isCompleted ? C.gold : C.ink,
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       fontSize: 13, fontWeight: 900,
                       fontFamily: FONT_DISPLAY,
                       letterSpacing: '-0.02em',
                     }}>
-                      {num}
+                      {isCompleted ? <CheckIcon size={15} color={C.gold}/> : num}
                     </div>
 
                     {isCod ? (
@@ -1056,7 +1010,6 @@ export default function DayRouteSelectorScreen() {
                 )
               })}
             </div>
-            )}
 
             {/* "Ask Ava about today" — placeholder entry point (AVA Phase 2).
                 UI only for now; the Haiku-backed conversation sheet pre-seeded
@@ -1066,12 +1019,18 @@ export default function DayRouteSelectorScreen() {
 
             {/* Gold CTA — pre-pre-trip only. Once inspected, Home goes quiet
                 and the Routes tab becomes the active-route entry point.
-                Original (May 9, 2026) two-state design (Inspect → Start Route
-                in place) superseded by AVA Phase 1 / Session 2. */}
-            {!inspected && (
+                Original (May 9, 2026) two-state design superseded by AVA Phase 1
+                / Session 2, then reinstated as a single persistent CTA (Fix 1):
+                pre-inspection it triggers the inspection flow ("Inspect & Start
+                Route"); post-inspection it jumps to the active route
+                ("Continue route"). */}
             <div style={{ padding: '18px 18px 0' }}>
               <button
-                onClick={handleInspect}
+                onClick={
+                  inspected
+                    ? () => { if (primaryRouteId) router.push(`/route/${primaryRouteId}`) }
+                    : handleInspect
+                }
                 disabled={routes.length === 0}
                 style={{
                   width: '100%', height: 60, borderRadius: 999,
@@ -1086,7 +1045,7 @@ export default function DayRouteSelectorScreen() {
                   boxShadow: '0 14px 30px -10px rgba(255,184,0,0.55)',
                 }}
               >
-                <span>Inspect & Start Route</span>
+                <span>{inspected ? 'Continue route' : 'Inspect & Start Route'}</span>
                 <span style={{
                   width: 44, height: 44, borderRadius: '50%',
                   background: C.ink,
@@ -1097,7 +1056,6 @@ export default function DayRouteSelectorScreen() {
                 </span>
               </button>
             </div>
-            )}
           </>
         )}
       </div>
