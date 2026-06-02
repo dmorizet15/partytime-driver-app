@@ -514,11 +514,24 @@ export async function uploadInvoice(
 }
 
 /**
+ * Result of a successful createServiceEntry. The service_records row is
+ * committed by the time this resolves. `complianceUpdateFailed` flags the one
+ * non-fatal partial failure: the record saved but the dashboard compliance
+ * write threw (see note in createServiceEntry).
+ */
+export interface CreateServiceEntryResult {
+  success:                true
+  recordId:               string
+  complianceUpdateFailed: boolean
+  complianceError?:       string
+}
+
+/**
  * Create a service_records row (+ optional line items + optional invoice).
  * The work order is intentionally left untouched — resolving it is a separate,
  * deliberate action.
  */
-export async function createServiceEntry(input: ServiceEntryInput): Promise<string> {
+export async function createServiceEntry(input: ServiceEntryInput): Promise<CreateServiceEntryResult> {
   const { data, error } = await supabase
     .from('service_records')
     .insert({
@@ -541,14 +554,26 @@ export async function createServiceEntry(input: ServiceEntryInput): Promise<stri
   const recordId = (data as { id: string }).id
 
   // Compliance write — drive the trucks.<expiry> column via the dashboard
-  // route (the driver app can't hold the service-role key). The record is
-  // already saved; surface a clear error rather than leaving the truck stale.
+  // route (the driver app can't hold the service-role key). Guarded in its OWN
+  // try/catch, separate from the caller's: the service_record is already
+  // committed, so a compliance-POST failure (bad env var, dashboard error,
+  // network) must NOT rethrow — rethrowing would leave the driver retrying and
+  // inserting duplicate service_records. We flag it instead so the caller can
+  // navigate away and warn the driver to notify their manager.
+  let complianceUpdateFailed = false
+  let complianceError: string | undefined
   if (input.complianceExpiry) {
-    await postComplianceExpiry(
-      input.assetId,
-      input.complianceExpiry.field,
-      input.complianceExpiry.value,
-    )
+    try {
+      await postComplianceExpiry(
+        input.assetId,
+        input.complianceExpiry.field,
+        input.complianceExpiry.value,
+      )
+    } catch (e) {
+      complianceUpdateFailed = true
+      complianceError = e instanceof Error ? e.message : 'Compliance update failed.'
+      console.error('[fleet] compliance expiry update failed (service record saved)', e)
+    }
   }
 
   const items = input.lineItems
@@ -566,7 +591,7 @@ export async function createServiceEntry(input: ServiceEntryInput): Promise<stri
   if (input.invoice) {
     await uploadInvoice(recordId, input.invoice, input.performedByUserId)
   }
-  return recordId
+  return { success: true, recordId, complianceUpdateFailed, complianceError }
 }
 
 /** Close a work order. Does NOT create a service record — that is independent. */

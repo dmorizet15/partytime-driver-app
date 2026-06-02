@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import InvoiceUpload from '@/components/fleet/InvoiceUpload'
+import { stashFleetServiceToast } from '@/components/fleet/FleetServiceToast'
 import { CloseIcon, PlusIcon } from '@/components/fleet/fleetIcons'
 import { useAuth } from '@/hooks/useAuth'
 import { FC, FONT_BODY, FONT_DISPLAY } from '@/lib/fleet/theme'
@@ -112,6 +113,9 @@ export default function LogServiceEntryScreen({
 
   const [saving, setSaving] = useState(false)
   const [error, setError]   = useState<string | null>(null)
+  // Brief red border flash on the Save button when a validation early-return
+  // fires, so the tap visibly registers even if the error sits off-screen.
+  const [flashError, setFlashError] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -159,20 +163,28 @@ export default function LogServiceEntryScreen({
     setLineItems((rows) => (rows.length === 1 ? [{ name: '', qty: '' }] : rows.filter((_, idx) => idx !== i)))
   }
 
+  // Validation failure: surface the message AND flash the Save button border
+  // red for 150ms so the tap registers even when the error is scrolled away.
+  function failValidation(message: string) {
+    setError(message)
+    setFlashError(true)
+    setTimeout(() => setFlashError(false), 150)
+  }
+
   async function save() {
     const asset = ctx?.asset
-    if (!asset) { setError('No asset attached — cannot log a service entry.'); return }
-    if (!effectiveServiceType) { setError('Choose or enter a service type.'); return }
-    if (!serviceDate) { setError('Pick the date the work was performed.'); return }
+    if (!asset) { failValidation('No asset attached — cannot log a service entry.'); return }
+    if (!effectiveServiceType) { failValidation('Choose or enter a service type.'); return }
+    if (!serviceDate) { failValidation('Pick the date the work was performed.'); return }
     if (performedBy === 'external' && !externalName.trim()) {
-      setError('Enter who performed the work.')
+      failValidation('Enter who performed the work.')
       return
     }
 
     setSaving(true)
     setError(null)
     try {
-      await createServiceEntry({
+      const result = await createServiceEntry({
         assetType:         asset.assetType,
         assetId:           asset.id,
         serviceType:       effectiveServiceType,
@@ -193,6 +205,13 @@ export default function LogServiceEntryScreen({
           ? { field: compliance.field, value: computedExpiry }
           : null,
       })
+      // The service record saved. If the compliance write failed, never block
+      // navigation — leave the screen and warn the driver at the destination.
+      if (result.complianceUpdateFailed) {
+        stashFleetServiceToast(
+          "Service logged. Compliance date couldn't be updated — please notify your manager.",
+        )
+      }
       router.push(backHref)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save the service entry.')
@@ -467,16 +486,6 @@ export default function LogServiceEntryScreen({
                 Add another part
               </button>
             </Field>
-
-            {error && (
-              <div style={{
-                background: FC.redBg, color: FC.red,
-                border: `0.5px solid ${FC.redBorder}`, borderRadius: 10,
-                padding: '10px 12px', fontSize: 12.5,
-              }}>
-                {error}
-              </div>
-            )}
           </div>
         )}
       </div>
@@ -488,13 +497,29 @@ export default function LogServiceEntryScreen({
           borderTop: `0.5px solid ${FC.divider}`,
           padding: '12px 18px calc(12px + env(safe-area-inset-bottom))',
         }}>
+          {/* Error lives in the fixed footer (not the scroll body) so it's
+              always visible right above the button the driver just tapped. */}
+          {error && (
+            <div style={{
+              background: FC.redBg, color: FC.red,
+              border: `0.5px solid ${FC.redBorder}`, borderRadius: 10,
+              padding: '10px 12px', fontSize: 12.5, marginBottom: 10,
+            }}>
+              {error}
+            </div>
+          )}
           <button
             onClick={save}
             disabled={saving}
             style={{
-              width: '100%', cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit',
+              width: '100%', boxSizing: 'border-box',
+              cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit',
               background: FC.blue, color: FC.white,
-              border: 0, borderRadius: 12, padding: '14px 16px',
+              // Constant 2px border (transparent) keeps height stable; only the
+              // color flips on a failed-validation tap — no layout shift.
+              border: `2px solid ${flashError ? FC.red : 'transparent'}`,
+              transition: 'border-color 120ms ease-out',
+              borderRadius: 12, padding: '14px 16px',
               fontSize: 14, fontWeight: 800, opacity: saving ? 0.6 : 1,
             }}
           >

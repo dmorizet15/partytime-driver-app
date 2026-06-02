@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import BottomNav from '@/components/BottomNav'
 import WorkOrderCard from '@/components/fleet/WorkOrderCard'
 import ServiceLogEntry from '@/components/fleet/ServiceLogEntry'
+import FleetServiceToast from '@/components/fleet/FleetServiceToast'
 import PartCard from '@/components/fleet/PartCard'
 import PillTabs from '@/components/fleet/PillTabs'
 import ComplianceBadges from '@/components/fleet/ComplianceBadges'
@@ -208,6 +209,7 @@ export default function AssetDetailScreen({
       )}
 
       <BottomNav />
+      <FleetServiceToast />
     </div>
   )
 }

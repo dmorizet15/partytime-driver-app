@@ -6,6 +6,7 @@ import BottomNav from '@/components/BottomNav'
 import BottomSheet from '@/components/fleet/BottomSheet'
 import InvoiceUpload from '@/components/fleet/InvoiceUpload'
 import ServiceLogEntry from '@/components/fleet/ServiceLogEntry'
+import FleetServiceToast from '@/components/fleet/FleetServiceToast'
 import PartCard from '@/components/fleet/PartCard'
 import { PriorityPill, SourcePill, WorkOrderStatusPill } from '@/components/fleet/FleetPills'
 import { CheckIcon } from '@/components/fleet/fleetIcons'
@@ -222,6 +223,7 @@ export default function WorkOrderDetailScreen({ workOrderId }: { workOrderId: st
       )}
 
       {toast && <Toast text={toast} />}
+      <FleetServiceToast />
     </div>
   )
 }
