@@ -22,6 +22,8 @@ import { cookies }                   from 'next/headers'
 import { createServerClient }        from '@supabase/ssr'
 import { createClient }              from '@supabase/supabase-js'
 import Anthropic                     from '@anthropic-ai/sdk'
+import { isDriverVisibleSop }        from '@/lib/ava/sopVisibility'
+import { isElevatedRole }            from '@/lib/ava/access'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -78,20 +80,65 @@ function getAdminClient() {
   )
 }
 
-// Build the AVA persona + today's-route context into one system prompt.
-function buildSystemPrompt(ctx: AskContext): string {
+interface SopRow {
+  sop_number: string
+  title:      string
+  content:    string
+  department: string | null
+}
+
+// ─── System prompt: two blocks, split for caching ────────────────────────────
+// Render order is system[0] → system[1]. Block 0 (persona + style + the SOP
+// knowledge base) is STABLE per role — identical across every driver and every
+// turn — so it carries the cache_control breakpoint and is shared across all
+// driver conversations (the SOP base alone clears Haiku's 4096-token cache
+// minimum). Block 1 (today's route) is VOLATILE — it differs per conversation
+// from the client seed — so it sits after the breakpoint and is never cached.
+// Keeping driverName + route data out of block 0 is what lets the cache prefix
+// be shared rather than per-driver.
+
+// Block 0 — persona, voice rules, and the role-scoped SOP knowledge base.
+function buildKnowledgeBlock(sops: SopRow[]): string {
   const lines: string[] = [
     "You are AVA, the in-cab assistant for a PartyTime Rentals delivery driver.",
-    "You help with TODAY'S route while the driver is on the road: their stops,",
-    "what's loaded, cash collection, dispatch notes, and weather that affects setups.",
+    "You help with TODAY'S route while the driver is on the road — their stops,",
+    "what's loaded, cash collection, dispatch notes, and weather that affects",
+    "setups — and you answer how-to questions about the job using PartyTime's",
+    "standard operating procedures.",
     "",
     "Style: concise and spoken-word — your answers are read aloud in the truck.",
     "1–3 short sentences. No markdown, no bullet lists, no headers. Lead with the",
-    "answer. If something isn't in the context below, say you don't have that detail",
-    "and suggest they check with dispatch — never invent stop names, totals, or notes.",
-    "",
-    "── Today's route ──",
+    "answer. Never invent stop names, totals, notes, or procedure steps; if",
+    "something isn't in the procedures or today's route below, say you don't have",
+    "that detail and suggest they check with dispatch.",
   ]
+
+  if (sops.length > 0) {
+    lines.push(
+      "",
+      "You have PartyTime's standard operating procedures memorized (below). When",
+      "the driver asks how to do something operational — detaching the gooseneck",
+      "trailer, securing a load, setting up or striking a tent, what to do after a",
+      "vehicle accident, reporting an incident — answer their actual question in",
+      "plain spoken language, drawing on the relevant procedure. Give the steps",
+      "that matter for what they asked; don't recite the whole procedure. Do NOT",
+      'say "per SOP-001" or cite procedure numbers unless the driver explicitly',
+      "asks which procedure covers it.",
+      "",
+      "── Standard operating procedures ──",
+    )
+    for (const s of sops) {
+      const dept = s.department ? ` (${s.department})` : ''
+      lines.push("", `${s.sop_number} · ${s.title}${dept}`, s.content.trim())
+    }
+  }
+
+  return lines.join('\n')
+}
+
+// Block 1 — today's route, built from the client-seeded context (volatile).
+function buildRouteContextBlock(ctx: AskContext): string {
+  const lines: string[] = ["── Today's route ──"]
 
   if (ctx.driverName) lines.push(`Driver: ${ctx.driverName}.`)
   lines.push(`Customer stops scheduled today: ${ctx.stopCount ?? 'unknown'}.`)
@@ -124,6 +171,48 @@ function buildSystemPrompt(ctx: AskContext): string {
   }
 
   return lines.join('\n')
+}
+
+// Role-scoped SOP load. Drivers get the driver-visible set (same filter as the
+// Training Hub); elevated roles (super_admin) get every SOP. Reads roles
+// server-side from the authenticated user — never a client-supplied flag —
+// and defaults to the driver scope (least privilege) if the role lookup fails.
+// SOPs are best-effort: a failure here logs and returns [] so AVA still answers
+// route questions.
+async function loadScopedSops(admin: ReturnType<typeof getAdminClient>, userId: string): Promise<SopRow[]> {
+  let elevated = false
+  try {
+    const { data: profile, error } = await admin
+      .from('profiles')
+      .select('roles')
+      .eq('id', userId)
+      .single()
+    if (error) {
+      console.warn('[/api/ava/ask] role lookup failed — defaulting to driver scope:', error.message)
+    } else {
+      elevated = isElevatedRole(profile?.roles as string[] | null)
+    }
+  } catch (e) {
+    console.warn('[/api/ava/ask] role lookup threw — defaulting to driver scope:',
+      e instanceof Error ? e.message : String(e))
+  }
+
+  try {
+    const { data, error } = await admin
+      .from('sop_entries')
+      .select('sop_number, title, content, department')
+      .order('sop_number', { ascending: true })
+    if (error) {
+      console.warn('[/api/ava/ask] SOP load failed (non-fatal):', error.message)
+      return []
+    }
+    const all = (data ?? []) as SopRow[]
+    return elevated ? all : all.filter(isDriverVisibleSop)
+  } catch (e) {
+    console.warn('[/api/ava/ask] SOP load threw (non-fatal):',
+      e instanceof Error ? e.message : String(e))
+    return []
+  }
 }
 
 function sanitizeHistory(raw: unknown): ChatTurn[] {
@@ -170,6 +259,10 @@ export async function POST(request: NextRequest) {
   const history = sanitizeHistory(body.history)
   const routeId = typeof body.routeId === 'string' && body.routeId ? body.routeId : null
 
+  // ── Role-scoped knowledge load (SOPs) ───────────────────────────────────────
+  const admin = getAdminClient()
+  const sops  = await loadScopedSops(admin, user.id)
+
   // ── Build messages: prior turns + the new question ──────────────────────────
   const messages: Anthropic.MessageParam[] = [
     ...history.map((t): Anthropic.MessageParam => ({
@@ -186,13 +279,20 @@ export async function POST(request: NextRequest) {
     const response = await client.messages.create({
       model:      MODEL,
       max_tokens: MAX_TOKENS,
-      // Cache the route-context system prompt across turns of one conversation.
-      // (Small prompts may fall under the cacheable minimum — harmless no-op then.)
-      system: [{
-        type: 'text',
-        text: buildSystemPrompt(ctx),
-        cache_control: { type: 'ephemeral' },
-      }],
+      // Block 0 (persona + SOP base) is stable per role → cache_control here,
+      // shared across all driver conversations. Block 1 (today's route) is
+      // volatile and sits after the breakpoint, so it's never cached.
+      system: [
+        {
+          type: 'text',
+          text: buildKnowledgeBlock(sops),
+          cache_control: { type: 'ephemeral' },
+        },
+        {
+          type: 'text',
+          text: buildRouteContextBlock(ctx),
+        },
+      ],
       messages,
     })
     answer = response.content
@@ -212,7 +312,6 @@ export async function POST(request: NextRequest) {
 
   // ── Log the exchange (audit trail; never blocks the response) ───────────────
   try {
-    const admin = getAdminClient()
     const { error: logErr } = await admin.from('ava_conversations').insert({
       driver_id:  user.id,
       surface:    'driver_home',
