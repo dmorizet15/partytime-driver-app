@@ -8,11 +8,11 @@ Next.js 14 PWA for the driver mobile workflow. Downstream of `partytime-dashboar
 
 | Item | Status |
 |---|---|
-| Active feature | None in flight — `dependency_map` data patches + AVA voice-copy fixes pushed direct to `main` (`12c2a91`/`f4785cd`/`3ef660e`, 2026-06-02). Next AVA work → new `feature/ava-phase2-sN` branch |
-| Latest merge | Direct to `main`: `dependency_map` note/trigger cleanup + tent-Hammer drop + AVA morning-copy second-person (`12c2a91`/`f4785cd`/`3ef660e`, 2026-06-02). Prior feature merge: AVA Phase 2 Session 2 (`02abfc6`, 2026-05-31) |
+| Active feature | None in flight — AVA Phase 2 **Session 3** (SOPs in `/api/ava/ask` + foundational role-based access scoping) pushed direct to `main` (`48d5487`, 2026-06-02), preceded by an SOP visibility-filter fix (`1a1d714`). Next AVA work → new `feature/ava-phase2-sN` branch |
+| Latest merge | Direct to `main`: AVA SOP knowledge in the conversation endpoint + role scoping (`48d5487`); SOP driver-visibility regex fix — plural "Drivers" + tent SOP (`1a1d714`/`64356dd`), all 2026-06-02. Prior: `dependency_map` cleanup + AVA voice copy (`12c2a91`/`f4785cd`/`3ef660e`); AVA Phase 2 Session 2 (`02abfc6`, 2026-05-31) |
 | Latest migrations | 021 `dependency_map_tent_tools` + 020 `sop_entries_rls` + 019 `sop_entries`; local = 21 files. **Non-migration DB data changes are now recorded under `supabase/data-patches/`** (re-runnable `.sql`, applied via `supabase db query --linked --file`), NOT as numbered migrations |
 | Branch strategy | Feature work → named branch; unrelated fixes → direct to `main` |
-| Next priority | See `tasks/todo.md` (top of file) — smoke-test the 2026-06-02 `dependency_map` patches + AVA voice copy; then Session 1/2 production smoke tests |
+| Next priority | See `tasks/todo.md` (top of file) — smoke-test AVA Session 3 (SOP answers + driver/super_admin scoping) and the SOP visibility fix; then the 2026-06-02 `dependency_map` patches + AVA voice copy; then Session 1/2 production smoke tests |
 
 **Phase 2 Session 1 delivered (merged, smoke-test pending):** `geocodeAddress` (Nominatim, cache-first, server-side write-back), `getWindAtTime` (Tomorrow.io+NWS, gust-inclusive, UTC-bucket matched), `POST /api/ava/route-weather` (per-stop enrichment), `useRouteWeather` → `hasWeatherFlag` + red `WIND {mph}` pills (≥20 mph). SOP: `POST /api/sop/sync` mirrors Notion SOP Library → `sop_entries` (token-gated, inert until `NOTION_API_KEY` set, returns 501). "Ask Ava about today" placeholder button (UI-only, coming-soon toast). Home stop-count fix: `customerStopCount` excludes depot from hero + section totals.
 

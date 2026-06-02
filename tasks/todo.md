@@ -1,5 +1,14 @@
 # Open Tasks — partytime-driver-app
 
+## June 2, 2026 — AVA Session 3: SOPs in conversation + role-based access scoping (direct to `main`, `1a1d714`/`64356dd`/`48d5487`; `npx next build` green)
+
+Investigation-first session. No new migration; no UI changes. New libs: `src/lib/ava/sopVisibility.ts` (shared driver-visibility) + `src/lib/ava/access.ts` (`isElevatedRole`). **Not yet smoke-tested against live Haiku — needs an authed session on the deployed build.**
+
+- [ ] **Smoke test — SOP visibility fix (`1a1d714`):** Training Hub → "Look up an SOP" now lists **7** SOPs (001 Gooseneck, 003 Load Securement, 005 Incident, 006 Vehicle Accident, 008 Inflatables, 009 Anti-Shortcut, 010 Tent) — was only 005/008/009. Forklift (002), Chair Return (007), Scheduling (004) stay hidden. (Root cause was the `\b(driver…)\b` regex missing the plural "Drivers"; data was always complete — all 10 in `sop_entries`.)
+- [ ] **Smoke test — AVA answers procedural questions (`48d5487`):** as a driver, open "Ask Ava about today" → ask "how do I hook up the gooseneck trailer?" → AVA answers from SOP-001 in plain spoken language and does **NOT** say "per SOP-001." Ask "what do I do after a vehicle accident?" → answers from SOP-006. Ask something with no SOP + not in today's route → she says she doesn't have it / check dispatch (no invented steps).
+- [ ] **Smoke test — role scoping (`48d5487`):** as a **driver**, ask AVA about a warehouse-only procedure (forklift inspection / chair return cleaning) → she has no detail (those SOPs aren't loaded for drivers). As a **super_admin**, ask the same → she answers from SOP-002 / SOP-007. (Role read server-side from `profiles.roles`; elevated = `super_admin`.)
+- [ ] **Verify prompt-cache hit (optional, logs):** repeated AVA questions in one session should show `cache_read_input_tokens > 0` on the Haiku call — block 0 (persona + SOP base, ≥4096 tokens) is the cached prefix.
+
 ## June 2, 2026 — dependency_map data patches + AVA voice copy (direct to `main`, `12c2a91`/`f4785cd`/`3ef660e`; `npx next build` green)
 
 Data/copy only — no schema, no new migration. DB changes recorded under `supabase/data-patches/`. **A fresh DB rebuild re-runs the migrations, so the two data-patch `.sql` files must be re-applied after any rebuild** (they're re-runnable / idempotent-safe).
