@@ -4,6 +4,12 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-06-02 — Investigation: Log Service "Save doesn't work" (no code changes)
+
+Driver reported the Save button on Log Service (`LogServiceEntryScreen.tsx`) does nothing. Traced the form, `createServiceEntry`/`postComplianceExpiry`, RLS, and schema — no fix applied (read-only session). Findings recorded in `docs/claude/tech-debt.md` → Active Blockers. Headline: the Save button is never field-gated (`disabled={saving}` only); failures surface in a low-visibility spot and validation early-returns give zero button feedback. Most likely everyday cause = **Service type not selected** (required, not prefilled). Secondary = **compliance-type save** POSTing to the dashboard after the record insert already committed → throws on env/route failure → looks failed but record saved, retry duplicates. Ruled out: NULL mileage (column nullable, field optional) and a `service_term_months` schema regression (column exists). Verified via read-only `information_schema` + `pg_policies` queries against the linked DB.
+
+---
+
 ## 2026-06-02 — Three driver-app fixes (direct to `main`, `e41c976`)
 
 Investigation-first session: read CLAUDE.md + todo + lessons, traced each fix, confirmed scope (one `AskUserQuestion` on Fix 1), then implemented. `npx next build` green; pushed direct to `main` per the unrelated-fixes branch policy.

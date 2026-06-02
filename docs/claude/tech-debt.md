@@ -9,6 +9,13 @@ Last reviewed: 2026-05-16.
 ## Active Blockers
 - Easy RFID Pro does not launch on real Android device (out of v1.1 scope)
 - CoPilot destination import needs final validation on real device
+- **Log Service "Save doesn't work" (reported 2026-06-02, investigated — NOT yet fixed).** `src/screens/fleet/LogServiceEntryScreen.tsx`. Root cause is low-visibility failure, not user error:
+  - The Save button is **never field-gated** — `disabled={saving}` only. All required-field checks live inside `save()` (`:162-201`) as early-returns. On a **validation** failure `setSaving(true)` is never reached, so the button gives **zero feedback**; the error renders in a red box at the end of the scroll body (`:471-479`), *above* the fixed footer button, so it can be off-screen.
+  - **Required + NOT prefilled: Service type** (default `''`; "Custom" with empty text also fails) → *"Choose or enter a service type."* — the most likely everyday trip-wire. (Date prefills to today; mileage/hours/notes/parts/invoice/vendor are optional; external-name required only when "External" picked.)
+  - Mileage NULL is **not** a cause: `service_records.mileage_at_service` is nullable and the field is optional.
+  - **Compliance partial-failure bug:** picking a compliance service type (NYS Inspection / Registration / Insurance) makes `createServiceEntry` (`queries.ts:546-552`) POST to the dashboard via `postComplianceExpiry` **after** the `service_records` insert already succeeded. If `NEXT_PUBLIC_DASHBOARD_URL` is unset or the dashboard route fails, it throws → no `router.push` → reads as "save failed" but the record IS saved; **re-tapping creates duplicate records.** `NEXT_PUBLIC_DASHBOARD_URL` is only in `.env.local.example` (unset in local dev → throws locally); confirm it's set in the driver-app Vercel project and the dashboard route `/api/fleet/trucks/[truckId]/compliance-expiry` accepts the driver bearer.
+  - Schema regression ruled out: `09135db` added `service_term_months` to the insert, but the column exists (nullable int).
+  - Likely-fix directions (not yet implemented): give the Save button inline feedback / scroll-to-error, run validation before the API call with the error near the button, and make the compliance POST non-fatal / idempotent (or move it before the record insert) to avoid duplicate `service_records` on retry.
 
 ## Out of v1.1 Scope
 - RFID launch feature (dropped)
