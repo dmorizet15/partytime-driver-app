@@ -13,6 +13,7 @@ import FleetAlertCard                   from '@/components/fleet/FleetAlertCard'
 import AvaChip                          from '@/components/AvaChip'
 import WeatherFlagCard                  from '@/components/WeatherFlagCard'
 import AvaMorningCard                   from '@/components/ava/AvaMorningCard'
+import RouteStartWarehouseSheet          from '@/components/ava/RouteStartWarehouseSheet'
 import { useRouteWeather }               from '@/hooks/ava/useRouteWeather'
 import AskAvaButton                      from '@/components/ava/AskAvaButton'
 
@@ -361,10 +362,27 @@ export default function DayRouteSelectorScreen() {
     router.push(`/route/${stop.route_id}/stop/${stop.stop_id}`)
   }
 
-  // Pre-trip card and Gold CTA both launch the inspection flow.
-  function handleInspect() {
+  // Route-level warehouse note (dashboard Migration 078) — when present, a
+  // FROM WAREHOUSE sheet intercepts the route-start tap so the driver sees +
+  // hears it at the yard before the inspection screen loads.
+  const routeWarehouseNote = primaryRoute?.warehouse_notes?.trim() || null
+  const [showWarehouseStart, setShowWarehouseStart] = useState(false)
+
+  function startInspection() {
     if (!primaryRouteId) return
     router.push(`/inspection?route_id=${primaryRouteId}`)
+  }
+
+  // Pre-trip card and Gold CTA both launch the inspection flow. If there's a
+  // route-level warehouse note, gate the launch behind the FROM WAREHOUSE sheet
+  // (read aloud at the yard); otherwise go straight into the inspection.
+  function handleInspect() {
+    if (!primaryRouteId) return
+    if (routeWarehouseNote) {
+      setShowWarehouseStart(true)
+      return
+    }
+    startInspection()
   }
 
   return (
@@ -769,6 +787,7 @@ export default function DayRouteSelectorScreen() {
                 dayStops={dayStops}
                 todayKey={today}
                 routeDispatcherNote={primaryRoute?.dispatcher_notes ?? null}
+                routeWarehouseNote={routeWarehouseNote}
                 hasWeatherFlag={routeWeather.hasWeatherFlag}
               />
             )}
@@ -837,6 +856,26 @@ export default function DayRouteSelectorScreen() {
                     padding: '2px 7px', borderRadius: 999, whiteSpace: 'nowrap',
                   }}>
                     Wind {Math.round(stopWeather.windMph)}
+                  </span>
+                ) : null
+                // Warehouse-note pill — signals a per-stop warehouse note exists
+                // to read before this stop (dispatch_stops.warehouse_notes, dash
+                // Migration 077). No existing "WH" token, so this borrows the
+                // warehouse-context blue (same blue as the StopDetail "From
+                // warehouse" card) but in an OUTLINED/tinted treatment — the solid
+                // pills (red wind, gold COD, solid-blue delivery type) are all
+                // filled, so an outlined blue pill stays distinct from every one.
+                const hasWhNote    = !!stop.warehouse_notes && stop.warehouse_notes.trim().length > 0
+                const whPill       = hasWhNote ? (
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center',
+                    background: 'rgba(0,0,255,0.10)', color: C.blue,
+                    border: `1px solid rgba(0,0,255,0.35)`,
+                    fontSize: 9, fontWeight: 900, letterSpacing: '0.16em',
+                    textTransform: 'uppercase',
+                    padding: '1px 6px', borderRadius: 999, whiteSpace: 'nowrap',
+                  }}>
+                    WH
                   </span>
                 ) : null
 
@@ -911,6 +950,7 @@ export default function DayRouteSelectorScreen() {
                           <span style={{
                             display: 'inline-flex', alignItems: 'center', gap: 8, flexShrink: 0,
                           }}>
+                            {whPill}
                             {windPill}
                             {paymentPill && (
                               <span style={{
@@ -975,6 +1015,7 @@ export default function DayRouteSelectorScreen() {
                           <span style={{
                             display: 'inline-flex', alignItems: 'center', gap: 8, flexShrink: 0,
                           }}>
+                            {whPill}
                             {windPill}
                             {paymentPill && (
                               <span style={{
@@ -1059,6 +1100,17 @@ export default function DayRouteSelectorScreen() {
           </>
         )}
       </div>
+
+      {/* Route-start FROM WAREHOUSE sheet — intercepts "Inspect & Start Route"
+          when a route-level warehouse note exists. Reads the note aloud on
+          mount; the CTA proceeds into the pre-trip inspection. */}
+      {showWarehouseStart && routeWarehouseNote && (
+        <RouteStartWarehouseSheet
+          warehouseNote={routeWarehouseNote}
+          dispatcherNote={primaryRoute?.dispatcher_notes ?? null}
+          onProceed={() => { setShowWarehouseStart(false); startInspection() }}
+        />
+      )}
 
       <BottomNav/>
     </div>

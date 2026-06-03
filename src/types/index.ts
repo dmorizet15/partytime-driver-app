@@ -24,6 +24,10 @@ export interface Route {
   // Route-level dispatcher note (dashboard-owned). Surfaced in the AVA
   // morning brief "FROM DISPATCH" block. Read-only here.
   dispatcher_notes?: string
+  // Route-level warehouse note (dashboard/warehouse-owned, Migration 078).
+  // Surfaced at route start (FROM WAREHOUSE sheet, read aloud) + an awareness
+  // line in the AVA morning brief. Read-only here.
+  warehouse_notes?: string
 }
 
 // ─── Equipment summary ───────────────────────────────────────────────────────

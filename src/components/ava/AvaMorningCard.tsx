@@ -51,6 +51,7 @@ interface AvaMorningCardProps {
   dayStops:            Stop[]
   todayKey:            string  // YYYY-MM-DD — drives stable personality-variant selection
   routeDispatcherNote: string | null  // routes.dispatcher_notes for the active route
+  routeWarehouseNote?: string | null  // routes.warehouse_notes — drives the brief awareness line
   hasWeatherFlag?:     boolean  // ≥1 stop forecast above the wind threshold at arrival
 }
 
@@ -62,7 +63,7 @@ interface CardSignals {
   loading:            boolean
 }
 
-export default function AvaMorningCard({ profile, dayStops, todayKey, routeDispatcherNote, hasWeatherFlag = false }: AvaMorningCardProps) {
+export default function AvaMorningCard({ profile, dayStops, todayKey, routeDispatcherNote, routeWarehouseNote = null, hasWeatherFlag = false }: AvaMorningCardProps) {
   const [signals, setSignals] = useState<CardSignals>({
     weekStopsCompleted: null,
     notesByAddress:     new Map(),
@@ -163,6 +164,10 @@ export default function AvaMorningCard({ profile, dayStops, todayKey, routeDispa
   const notesCount       = signals.notesByAddress.size
   const showNotesNudge   = notesCount > 0
   const routeNote          = routeDispatcherNote?.trim() ? routeDispatcherNote.trim() : null
+  // Route-level warehouse note presence — awareness only (full text is read at
+  // route start). Also a card-visibility trigger, mirroring routeNote: a route
+  // with only a warehouse note still surfaces the brief + its awareness line.
+  const hasWarehouseRouteNote = !!routeWarehouseNote?.trim()
   const notesStopCount = stopsWithNotes.length
 
   const preference: PersonalityPreference =
@@ -177,6 +182,8 @@ export default function AvaMorningCard({ profile, dayStops, todayKey, routeDispa
       hasWeatherFlag,  // AVA Phase 2: ≥1 stop forecast above the wind threshold
                        //   at arrival (from useRouteWeather → /api/ava/route-weather).
                        //   Adds the wind-advisory line to the brief copy.
+      hasWarehouseNote: hasWarehouseRouteNote,  // adds the "you'll hear it when
+                       //   you start" awareness line (full text plays at route start).
     },
     profile.id,
     todayKey,
@@ -211,7 +218,7 @@ export default function AvaMorningCard({ profile, dayStops, todayKey, routeDispa
   if (signals.loading && (profile.stats_enabled || true /* notes always queried */)) {
     return null
   }
-  if (!checklistOffered && !showStats && !showNotesNudge && !routeNote && notesStopCount === 0) {
+  if (!checklistOffered && !showStats && !showNotesNudge && !routeNote && !hasWarehouseRouteNote && notesStopCount === 0) {
     return null
   }
 

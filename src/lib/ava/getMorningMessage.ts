@@ -6,10 +6,11 @@
 export type PersonalityPreference = 'direct' | 'personality'
 
 export interface MorningSummary {
-  stopCount:       number
-  codCount:        number
-  tentCount:       number   // count of tent items across today's manifest
-  hasWeatherFlag:  boolean  // true if WeatherFlagCard is showing wind/rain/snow
+  stopCount:        number
+  codCount:         number
+  tentCount:        number   // count of tent items across today's manifest
+  hasWeatherFlag:   boolean  // true if WeatherFlagCard is showing wind/rain/snow
+  hasWarehouseNote: boolean  // true if routes.warehouse_notes is set for the route
 }
 
 // Stable-within-day RNG: same driver + same date returns the same variant
@@ -165,7 +166,17 @@ export function getMorningMessage(
   driverId: string,
   dateKey: string,
 ): string {
-  if (preference === 'direct') return directMessage(summary, `${driverId}|${dateKey}`)
-  const variants = personalityVariants(summary)
-  return variants[pickVariantIndex(`${driverId}|${dateKey}`, variants.length)]
+  const base = preference === 'direct'
+    ? directMessage(summary, `${driverId}|${dateKey}`)
+    : personalityVariants(summary)[pickVariantIndex(`${driverId}|${dateKey}`, personalityVariants(summary).length)]
+
+  // Awareness only — the full note text is read at route start (FROM WAREHOUSE
+  // sheet), never here. Spoken + displayed as part of the brief. No em dash:
+  // withSentencePauses() only inserts the ElevenLabs <break> after . / ! / ?,
+  // so the line is two short sentences to land the pause (Session 2 rule).
+  const warehouseTail = summary.hasWarehouseNote
+    ? " There's a warehouse note for your route. You'll hear it when you start."
+    : ''
+
+  return `${base}${warehouseTail}`
 }

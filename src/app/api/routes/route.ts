@@ -138,6 +138,7 @@ export async function GET(req: NextRequest) {
       truck_id_2,
       break_blocks,
       dispatcher_notes,
+      warehouse_notes,
       truck:trucks!routes_truck_id_fkey(id, name, plate, dvir_requirement, current_defect_status),
       truck_2:trucks!routes_truck_id_2_fkey(id, name, plate)
     `)

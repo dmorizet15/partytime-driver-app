@@ -20,8 +20,9 @@ interface StopNotesPreSheetProps {
 }
 
 const SECTION_ORDER: Array<{ key: keyof StopNotesSections; label: string }> = [
-  { key: 'dispatcherNote', label: 'DISPATCHER NOTE' },
+  // FROM WAREHOUSE renders first — warehouse note before dispatcher note.
   { key: 'warehouseNote',  label: 'FROM WAREHOUSE' },
+  { key: 'dispatcherNote', label: 'DISPATCHER NOTE' },
   { key: 'deliveryInstr',  label: 'DELIVERY INSTRUCTIONS' },
   { key: 'staffNote',      label: 'STAFF NOTE' },
   { key: 'flipNote',       label: 'FLIP / TEARDOWN NOTE' },

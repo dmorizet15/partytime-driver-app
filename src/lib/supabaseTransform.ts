@@ -40,6 +40,7 @@ export interface SupabaseRouteRow {
   truck_id_2:       string | null
   break_blocks:     BreakBlock[] | null
   dispatcher_notes: string | null
+  warehouse_notes:  string | null
   truck:            SupabaseTruckRow | SupabaseTruckRow[] | null
   truck_2:          SupabaseTruckRow | SupabaseTruckRow[] | null
 }
@@ -302,6 +303,7 @@ export function transformSupabase({ routes: routeRows, assignments, stops: stopR
       truck_current_defect_status: truck?.current_defect_status ?? undefined,
       truck_2_name:                truck_2?.name,
       dispatcher_notes:            r.dispatcher_notes?.trim() ? r.dispatcher_notes : undefined,
+      warehouse_notes:             r.warehouse_notes?.trim() ? r.warehouse_notes : undefined,
     }
   })
 

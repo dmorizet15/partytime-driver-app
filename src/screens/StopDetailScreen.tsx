@@ -1711,11 +1711,50 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
             </div>
             )}
 
-            {/* Note from dispatch — persistent "View note" link card. Always
-                visible when dispatcher_notes exists; auto-opens once on stop
-                mount (see useEffect above) and stays here so the driver can
-                re-open the modal any time. Solid blue border distinguishes
-                it from the dashed gold TapGoods notes card below. */}
+            {/* FROM WAREHOUSE — warehouse_notes (dashboard Migration 077).
+                Renders FIRST, before "Note from dispatch" below it. Same
+                solid-blue card pattern, shown inline (no modal). Internal note
+                from the warehouse team. */}
+            {stop.warehouse_notes && stop.warehouse_notes.trim().length > 0 && (
+              <div style={{ padding: '14px 18px 0' }}>
+                <div style={{
+                  width: '100%',
+                  background: C.paper,
+                  border: `1.5px solid ${C.blue}`,
+                  borderRadius: 14,
+                  padding: '12px 14px',
+                  display: 'flex', gap: 10, alignItems: 'flex-start',
+                }}>
+                  <div style={{
+                    width: 24, height: 24, flexShrink: 0,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }} aria-hidden="true">
+                    <NoteIcon size={18} color={C.blue}/>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontSize: 10.5, fontWeight: 900, letterSpacing: '0.18em',
+                      color: C.blue, textTransform: 'uppercase',
+                    }}>
+                      From warehouse
+                    </div>
+                    <div style={{
+                      marginTop: 4, fontSize: 13.5, color: C.ink, lineHeight: 1.45,
+                      whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                    }}>
+                      {stop.warehouse_notes}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Note from dispatch — persistent "View note" link card. Renders
+                AFTER the FROM WAREHOUSE block above. Always visible when
+                dispatcher_notes exists; auto-opens once on stop mount (see
+                useEffect above) and stays here so the driver can re-open the
+                modal any time. Solid blue border distinguishes it from the
+                dashed gold TapGoods notes card below. */}
             {stop.dispatcher_notes && stop.dispatcher_notes.trim().length > 0 && (
               <div style={{ padding: '14px 18px 0' }}>
                 <button
@@ -1754,43 +1793,6 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
                   </div>
                   <ArrowIcon size={16} color={C.blue}/>
                 </button>
-              </div>
-            )}
-
-            {/* FROM WAREHOUSE — warehouse_notes (dashboard Migration 077). Same
-                solid-blue card pattern as "Note from dispatch" above, shown
-                inline (no modal). Internal note from the warehouse team. */}
-            {stop.warehouse_notes && stop.warehouse_notes.trim().length > 0 && (
-              <div style={{ padding: '14px 18px 0' }}>
-                <div style={{
-                  width: '100%',
-                  background: C.paper,
-                  border: `1.5px solid ${C.blue}`,
-                  borderRadius: 14,
-                  padding: '12px 14px',
-                  display: 'flex', gap: 10, alignItems: 'flex-start',
-                }}>
-                  <div style={{
-                    width: 24, height: 24, flexShrink: 0,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  }} aria-hidden="true">
-                    <NoteIcon size={18} color={C.blue}/>
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{
-                      fontSize: 10.5, fontWeight: 900, letterSpacing: '0.18em',
-                      color: C.blue, textTransform: 'uppercase',
-                    }}>
-                      From warehouse
-                    </div>
-                    <div style={{
-                      marginTop: 4, fontSize: 13.5, color: C.ink, lineHeight: 1.45,
-                      whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                    }}>
-                      {stop.warehouse_notes}
-                    </div>
-                  </div>
-                </div>
               </div>
             )}
 
