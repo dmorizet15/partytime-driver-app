@@ -4,6 +4,18 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-06-03 — Warehouse notes surfacing, route + stop level (direct to `main`, `de05529`)
+
+Fetch + display + AVA-wiring session. No schema changes — `dispatch_stops.warehouse_notes` (dashboard mig 077) and `routes.warehouse_notes` (mig 078) pre-exist. `npx next build` green; Vercel deploy `de05529` READY on production. Five steps:
+
+1. **`routes.warehouse_notes` fetched** — added to the `/api/routes` routes-table SELECT, `SupabaseRouteRow`, the `routes.map` transform, and the `Route` type. (Stop-level `warehouse_notes` was already selected since Session 2.)
+2. **Home "WH" pill** (`DayRouteSelectorScreen`) — shows on any stop card with a non-empty `warehouse_notes`, in both card layouts. No existing warehouse-pill token, so it uses the warehouse-context blue (`#0000FF`, matching the StopDetail "From warehouse" card) but **outlined/tinted** to stay distinct from the solid red WIND / gold COD / solid-blue delivery-type pills.
+3. **Route-start FROM WAREHOUSE sheet** (`RouteStartWarehouseSheet.tsx`) — intercepts "Inspect & Start Route" when `routes.warehouse_notes` exists; dark sheet (mirrors `StopNotesPreSheet`, no backdrop/auto-dismiss) shown **before** `/inspection`. FROM WAREHOUSE (full text) first, FROM DISPATCH second. **Reads the warehouse note aloud verbatim on mount** (no tap). No note → straight to inspection (unchanged).
+4. **Morning-brief awareness line** — `getMorningMessage` gained `MorningSummary.hasWarehouseNote`; appends "There's a warehouse note for your route. You'll hear it when you start." (awareness only; full text plays at route start). `AvaMorningCard` takes a `routeWarehouseNote` prop and treats a route warehouse note as a card-visibility trigger.
+5. **Stop-note ordering reversed** — FROM WAREHOUSE now renders **before** the dispatcher note in `StopNotesPreSheet` (SECTION_ORDER swap) and `StopDetailScreen` (JSX reorder, styling untouched). Supersedes the Session-2 "right after the dispatcher note" ordering.
+
+**Judgment calls:** (a) WH-pill color — the spec said "use an existing warehouse-context token if one exists"; that token is solid blue, which collides with the solid-blue delivery type pill, so the pill is outlined/tinted blue instead of solid. (b) Step-4 brief line used a **period, not the spec's em dash** — `withSentencePauses()` only inserts the ElevenLabs `<break>` after `.`/`!`/`?` (locked Session-2 rule), so an em dash would add no pause. (c) The Step-3 sheet also shows the route dispatcher note (FROM DISPATCH, second) to honor the spec's explicit "warehouse first, dispatch second" ordering, even though no FROM DISPATCH block previously existed in the route-start→inspection transition; only the warehouse note is read aloud.
+
 ## 2026-06-02 — AVA Session 3: SOP visibility fix + SOPs in conversation + role-based access scoping (direct to `main`, `1a1d714` → `64356dd` → `48d5487`)
 
 Investigation-first session. No new migration; no UI changes. `npx next build` green before each push.

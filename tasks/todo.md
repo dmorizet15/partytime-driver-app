@@ -1,5 +1,14 @@
 # Open Tasks — partytime-driver-app
 
+## June 3, 2026 — Warehouse notes surfacing, route + stop level (direct to `main`, `de05529`; `npx next build` green; Vercel READY)
+
+Fetch + display + AVA wiring only — no schema changes (columns pre-exist: `dispatch_stops.warehouse_notes` mig 077, `routes.warehouse_notes` mig 078). Needs a route/stop carrying warehouse notes to test (dispatcher/warehouse sets them dashboard-side).
+
+- [ ] **Smoke test — Home WH pill (Step 2):** a stop with a warehouse note shows a blue outlined `WH` pill on its Home card (visible without tapping), distinct from the red WIND and gold COD pills. A stop with no warehouse note shows no WH pill.
+- [ ] **Smoke test — route-start FROM WAREHOUSE sheet + TTS (Step 3):** a route with `routes.warehouse_notes` set → tapping "Inspect & Start Route" opens the dark "Before you head out" sheet **before** the inspection screen, showing the full warehouse note (FROM WAREHOUSE first, FROM DISPATCH second if a route dispatcher note exists) and **reading the warehouse note aloud automatically** (no tap). "Got it — Start Inspection" proceeds into the pre-trip. A route with NO warehouse note → tapping goes straight to inspection (no sheet). **iOS check:** confirm ElevenLabs (not the robotic Web Speech fallback) plays — if it falls back, the AudioContext wasn't unlocked yet this session (tap "Hear your morning brief" first, then retry).
+- [ ] **Smoke test — morning-brief awareness line (Step 4):** a route with a warehouse note → the AVA morning brief includes "There's a warehouse note for your route. You'll hear it when you start." (spoken + displayed). A route with only a warehouse note (no stats/checklist/dispatcher note) → the brief card still appears (warehouse note is a visibility trigger). Full note text is NOT in the brief.
+- [ ] **Smoke test — stop-note ordering (Step 5):** on Stop Detail AND the pre-launch notes sheet (`StopNotesPreSheet`), for a stop with both notes, **FROM WAREHOUSE renders ABOVE the dispatcher note** (was below).
+
 ## June 2, 2026 — AVA Session 3: SOPs in conversation + role-based access scoping (direct to `main`, `1a1d714`/`64356dd`/`48d5487`; `npx next build` green)
 
 Investigation-first session. No new migration; no UI changes. New libs: `src/lib/ava/sopVisibility.ts` (shared driver-visibility) + `src/lib/ava/access.ts` (`isElevatedRole`). **Not yet smoke-tested against live Haiku — needs an authed session on the deployed build.**
