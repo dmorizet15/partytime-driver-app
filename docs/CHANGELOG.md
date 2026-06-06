@@ -4,6 +4,20 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-06-06 — wall→ladder `dependency_map` data patch (direct to `main`, `eac74f0`)
+
+Data patch only — no schema, no migration, no code changes. Reported by Dylan Morizet (2026-06-06): a `40x80` pole-tent pickup didn't surface a ladder on the morning checklist because the walls were named `MQSW 8'X10' SOLID WHITE WALL` and the Ladders rule keyed only off `keyword='sidewall'` with a `quantity_threshold` of 5.
+
+**Investigation:** confirmed the production `dependency_map` Ladders row (`id 11576f1f-9448-4ed1-ab3f-0623fd09178e`) was `keyword`/`sidewall`/threshold-5/qty-2. Read `src/lib/ava/dependencyHits.ts` to confirm the matcher: `ruleFires` lowercases both sides and does a single `.includes()` substring test (line 45), summing matching item qty against `quantity_threshold`. So `'sidewall'` literally cannot match an item named `…SOLID WHITE WALL` (no `sidewall` substring), and even a matching wall needed ≥5 units.
+
+**Patch (authorized, applied to prod via `supabase db query --linked --file`):** `trigger_value` `sidewall`→`wall`, `quantity_threshold` 5→1, `required_quantity` 2→1, notes refreshed to "Any wall item on route requires a ladder…". Verified: exactly the one Ladders row updated (same `id`), no other rows touched. `'wall'` is now a substring of every wall variant (`sidewall`, `solid white wall`, `wind wall`, …) so any single wall on the manifest adds 1 ladder.
+
+**Durability:** recorded re-runnably at `supabase/data-patches/wall-ladder-threshold-fix.sql` (third file in that dir). Its `WHERE` keys off `trigger_type='keyword' AND required_item ILIKE '%ladder%'` — **not** `trigger_value` — so it re-applies cleanly after a fresh DB rebuild, where the Migration 016 seed recreates the row with the old `sidewall`/threshold-5 values.
+
+**Note on breadth:** the broadened keyword + threshold-1 means the ladder fires far more often now (intended). No false-positive item-name collision identified for the `'wall'` substring. **Smoke test pending** — see `tasks/todo.md` (top).
+
+---
+
 ## 2026-06-03 — Warehouse notes surfacing, route + stop level (direct to `main`, `de05529`)
 
 Fetch + display + AVA-wiring session. No schema changes — `dispatch_stops.warehouse_notes` (dashboard mig 077) and `routes.warehouse_notes` (mig 078) pre-exist. `npx next build` green; Vercel deploy `de05529` READY on production. Five steps:

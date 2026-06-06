@@ -1,5 +1,13 @@
 # Open Tasks — partytime-driver-app
 
+## June 6, 2026 — wall→ladder `dependency_map` data patch (direct to `main`, `eac74f0`; no build — data only)
+
+Production `dependency_map` Ladders rule broadened: `keyword` `sidewall`→`wall`, `quantity_threshold` 5→1, `required_quantity` 2→1. Applied to prod + recorded at `supabase/data-patches/wall-ladder-threshold-fix.sql`. Triggered by Dylan Morizet's missing-ladder report on a `40x80` pole-tent pickup (walls named `MQSW … SOLID WHITE WALL`).
+
+- [ ] **Smoke test — wall→ladder fires (`eac74f0`):** a route with **any** stop carrying a wall item (`sidewall`, `solid white wall`, `wind wall`, qty ≥ 1) → morning checklist "FOR TODAY'S ROUTE" shows **Ladders** (qty 1). Confirm it fires with a single wall (not the old 5-wall threshold) and that the `MQSW … SOLID WHITE WALL` case specifically now triggers it.
+- [ ] **Smoke test — no over-broadening:** a route with **no** wall items → Ladders does NOT appear. Spot-check that no non-wall item name accidentally contains the `'wall'` substring and false-triggers.
+- [ ] **Rebuild durability:** if the DB is ever rebuilt, re-apply `supabase/data-patches/wall-ladder-threshold-fix.sql` (the Migration 016 seed restores the old `sidewall`/threshold-5 row; the patch's `WHERE` keys off `trigger_type+required_item` so it re-corrects it).
+
 ## June 3, 2026 — Warehouse notes surfacing, route + stop level (direct to `main`, `de05529`; `npx next build` green; Vercel READY)
 
 Fetch + display + AVA wiring only — no schema changes (columns pre-exist: `dispatch_stops.warehouse_notes` mig 077, `routes.warehouse_notes` mig 078). Needs a route/stop carrying warehouse notes to test (dispatcher/warehouse sets them dashboard-side).
