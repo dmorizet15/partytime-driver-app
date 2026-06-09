@@ -393,8 +393,13 @@ export default function DayRouteSelectorScreen() {
   const pendingRoute = routes.find((r) => !!r.transfer_pending_to && r.transfer_pending_to === profileId) ?? null
   // The signed-in user owns the primary route's actions (Phase 2B-aware).
   const ownsPrimary  = isActiveDriver(primaryRoute, profileId)
-  // Primary route was handed off to someone else (this user is the ex-primary).
-  const transferredAwayName = isTransferredAway(primaryRoute, profileId)
+  // Primary route was handed off to someone else (active_driver_id set AND it's
+  // not me). Drives the locked "Transferred to [Name]" card AND gates the gold
+  // Inspect & Start Route CTA off — once you hand off driving, you can't start
+  // the route. When active_driver_id is NULL, isTransferredAway is false →
+  // behavior unchanged (is_primary still drives it).
+  const lostOwnership = isTransferredAway(primaryRoute, profileId)
+  const transferredAwayName = lostOwnership
     ? crewMemberName(primaryRoute, primaryRoute?.active_driver_id)
     : null
   // A transfer this user initiated that's still awaiting the recipient's answer.
@@ -456,6 +461,9 @@ export default function DayRouteSelectorScreen() {
       : 'Inspect & Start Route'
   function handleCtaTap() {
     if (!primaryRouteId) return
+    // Phase 2B: route handed off to someone else — the ex-primary can't start
+    // it. Defense-in-depth; the CTA is also hidden when lostOwnership is true.
+    if (lostOwnership) return
     if (hasTruck && !inspected) { handleInspect(); return }
     router.push(`/route/${primaryRouteId}`)
   }
@@ -1226,7 +1234,11 @@ export default function DayRouteSelectorScreen() {
                 ctaLabel/handleCtaTap): no-truck crew "Join Route" straight to
                 the route; truck-holders "Inspect & Start Route" pre-trip, then
                 "Start Route" once inspected. Pre-inspection a route-level
-                warehouse note still detours through the FROM WAREHOUSE sheet. */}
+                warehouse note still detours through the FROM WAREHOUSE sheet.
+                Phase 2B: hidden when the route was handed off to someone else —
+                the ex-primary keeps the locked "Transferred to [Name]" card
+                above and loses every start-the-route entry point. */}
+            {!lostOwnership && (
             <div style={{ padding: '18px 18px 0' }}>
               <button
                 onClick={handleCtaTap}
@@ -1255,6 +1267,7 @@ export default function DayRouteSelectorScreen() {
                 </span>
               </button>
             </div>
+            )}
           </>
         )}
       </div>
