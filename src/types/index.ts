@@ -28,6 +28,22 @@ export interface Route {
   // Surfaced at route start (FROM WAREHOUSE sheet, read aloud) + an awareness
   // line in the AVA morning brief. Read-only here.
   warehouse_notes?: string
+  // ── Phase 2A — multi-crew ownership (dashboard route_crew) ────────────────
+  // Visibility + ownership now flow from route_crew, not route_assignments.
+  // The truck_* fields above are sourced from THIS user's own crew truck (a
+  // secondary driver sees their own truck, not the route's primary truck);
+  // truck_id is undefined for no-truck crew. The fields below describe the
+  // signed-in user's crew membership for this route — they drive the pre-trip
+  // gate (truck_id presence), the ETA/SMS ownership gate (is_primary), and the
+  // Co-driver badge. All undefined in the /api/routes soft-fail fallback path
+  // (no crew row resolved).
+  route_number?: number
+  crew_role?: 'primary_driver' | 'secondary_driver'
+  is_primary?: boolean
+  // Display name of this route's primary driver (the is_primary crew row),
+  // resolved profiles.display_name ?? route_crew.wiw_user_name. Powers the
+  // no-truck co-driver chip ("Route N with <name>").
+  primary_driver_name?: string
 }
 
 // ─── Equipment summary ───────────────────────────────────────────────────────

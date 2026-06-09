@@ -147,6 +147,11 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
   // the regulatory hard-stop.
   const inspection = useInspectionStatus(route?.route_id, route?.truck_id)
   const inspected  = inspection !== null
+  // Phase 2A — pre-trip (and thus the stop lock) applies only to truck-holders.
+  // truck_id is now THIS user's crew truck; no-truck crew tap stops freely
+  // (the actual_departure_at read-only gate is a deferred dashboard session).
+  const stopsLocked   = !!route?.truck_id && !inspected
+  const stopsTappable = !stopsLocked
 
   // Week view is reachable regardless of route assignment — the toggle must
   // never short-circuit just because this driver has no route on the URL.
@@ -236,7 +241,7 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
   function handleStopTap(stop: Stop) {
     // Belt-and-braces guard against keyboard/SR bypass — the visual treatment
     // below (40% opacity + pointer-events: none) handles affordance.
-    if (!inspected) return
+    if (stopsLocked) return
     router.push(`/route/${routeId}/stop/${stop.stop_id}`)
   }
 
@@ -401,15 +406,15 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
                 <button
                   key={stop.stop_id}
                   onClick={() => handleStopTap(stop)}
-                  aria-disabled={!inspected || undefined}
+                  aria-disabled={!stopsTappable || undefined}
                   style={{
                     width: '100%', textAlign: 'left',
                     background: 'transparent', border: 0,
-                    cursor: inspected ? 'pointer' : 'default',
+                    cursor: stopsTappable ? 'pointer' : 'default',
                     padding: '12px 0', display: 'flex', gap: 16,
                     alignItems: 'flex-start', fontFamily: 'inherit',
-                    opacity:       inspected ? 1 : 0.4,
-                    pointerEvents: inspected ? 'auto' : 'none',
+                    opacity:       stopsTappable ? 1 : 0.4,
+                    pointerEvents: stopsTappable ? 'auto' : 'none',
                   }}
                 >
                   {/* Numbered circle (with optional gold-dot OTW indicator) */}

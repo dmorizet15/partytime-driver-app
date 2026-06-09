@@ -35,6 +35,7 @@ export interface BreakBlock {
 export interface SupabaseRouteRow {
   id:               string
   route_date:       string
+  route_number:     number | null
   label:            string
   truck_id:         string | null
   truck_id_2:       string | null
@@ -45,9 +46,25 @@ export interface SupabaseRouteRow {
   truck_2:          SupabaseTruckRow | SupabaseTruckRow[] | null
 }
 
-export interface SupabaseAssignmentRow {
+// ── Phase 2A — route_crew rows ───────────────────────────────────────────────
+// The signed-in user's own crew rows for the day (one per assigned route).
+// `truck` is the embedded trucks join — the driver's OWN truck, null for
+// no-truck crew. Drives per-route truck identity + the ownership gates.
+export interface SupabaseMyCrewRow {
   route_id:   string
-  staff_name: string | null
+  role:       string
+  is_primary: boolean
+  truck:      SupabaseTruckRow | SupabaseTruckRow[] | null
+}
+
+// Every crew row on the visible routes — used only to build the driver-name
+// list and resolve each route's primary-driver name (profiles join).
+export interface SupabaseCrewRow {
+  route_id:      string
+  role:          string
+  is_primary:    boolean
+  wiw_user_name: string | null
+  profile:       { display_name: string | null } | { display_name: string | null }[] | null
 }
 
 export interface SupabaseStopRow {
@@ -249,7 +266,10 @@ function buildWarehouseStop(block: BreakBlock, routeId: string, seq: number): St
 // ─── Public API ──────────────────────────────────────────────────────────────
 export interface TransformInput {
   routes:       SupabaseRouteRow[]
-  assignments:  SupabaseAssignmentRow[]
+  // All crew rows on the visible routes (driver-name list + primary name).
+  crew:         SupabaseCrewRow[]
+  // The signed-in user's own crew rows (per-route truck + ownership flags).
+  myCrew:       SupabaseMyCrewRow[]
   stops:        SupabaseStopRow[]
   targetDate:   string
 }
@@ -259,16 +279,37 @@ export interface TransformResult {
   stops:  Stop[]
 }
 
-export function transformSupabase({ routes: routeRows, assignments, stops: stopRows, targetDate }: TransformInput): TransformResult {
-  // Build driver-name list per route from route_assignments. Multiple crew
-  // members can be assigned; concatenate non-empty names.
-  const driversByRoute = new Map<string, string[]>()
-  for (const a of assignments) {
-    if (!a.staff_name) continue
-    const list = driversByRoute.get(a.route_id) ?? []
-    list.push(a.staff_name)
-    driversByRoute.set(a.route_id, list)
+// Resolve a crew row's display name: profiles.display_name first (migrated
+// route_crew rows carry wiw_user_name = 'Unknown' until WIW sync populates it),
+// then wiw_user_name as a fallback.
+function crewDisplayName(c: SupabaseCrewRow): string | null {
+  const p = Array.isArray(c.profile) ? (c.profile[0] ?? null) : c.profile
+  return p?.display_name?.trim() || c.wiw_user_name?.trim() || null
+}
+
+export function transformSupabase({ routes: routeRows, crew, myCrew, stops: stopRows, targetDate }: TransformInput): TransformResult {
+  // Build driver-name list + primary-driver name per route from route_crew.
+  // Drivers only (helpers excluded from the name list); the primary name comes
+  // from the is_primary row and powers the no-truck co-driver chip.
+  const driversByRoute     = new Map<string, string[]>()
+  const primaryNameByRoute = new Map<string, string>()
+  for (const c of crew) {
+    const name = crewDisplayName(c)
+    if (!name) continue
+    if (c.role === 'primary_driver' || c.role === 'secondary_driver') {
+      const list = driversByRoute.get(c.route_id) ?? []
+      list.push(name)
+      driversByRoute.set(c.route_id, list)
+    }
+    if (c.is_primary && !primaryNameByRoute.has(c.route_id)) {
+      primaryNameByRoute.set(c.route_id, name)
+    }
   }
+
+  // The signed-in user's own crew row per route — source of per-route truck
+  // identity + ownership flags.
+  const myCrewByRoute = new Map<string, SupabaseMyCrewRow>()
+  for (const m of myCrew) myCrewByRoute.set(m.route_id, m)
 
   // Count stops per route once, instead of N filter passes. Warehouse blocks
   // (synthesized as stops below) are folded into the count so the route hero's
@@ -286,12 +327,24 @@ export function transformSupabase({ routes: routeRows, assignments, stops: stopR
   }
 
   const routes: Route[] = routeRows.map((r) => {
-    const truck   = firstRel(r.truck)
+    const mine = myCrewByRoute.get(r.id)
+    // Driver's truck = their OWN crew truck (null for no-truck crew). When no
+    // crew row resolved — the /api/routes soft-fail unscoped fallback — drop
+    // back to the route's primary truck so a transient crew-read failure never
+    // strips a real driver's truck.
+    const truck = mine
+      ? firstRel(mine.truck)
+      : firstRel(r.truck)
     const truck_2 = firstRel(r.truck_2)
     const drivers = driversByRoute.get(r.id) ?? []
+    const crewRole: Route['crew_role'] =
+      mine?.role === 'primary_driver' || mine?.role === 'secondary_driver'
+        ? mine.role
+        : undefined
     return {
       route_id:        r.id,
       route_name:      r.label,
+      route_number:    r.route_number ?? undefined,
       operating_date:  targetDate,
       assigned_driver: drivers.length ? drivers.join(', ') : undefined,
       stop_count:      stopCountByRoute.get(r.id) ?? 0,
@@ -302,6 +355,9 @@ export function transformSupabase({ routes: routeRows, assignments, stops: stopR
       truck_dvir_requirement:      truck?.dvir_requirement      ?? undefined,
       truck_current_defect_status: truck?.current_defect_status ?? undefined,
       truck_2_name:                truck_2?.name,
+      crew_role:                   crewRole,
+      is_primary:                  mine?.is_primary,
+      primary_driver_name:         primaryNameByRoute.get(r.id),
       dispatcher_notes:            r.dispatcher_notes?.trim() ? r.dispatcher_notes : undefined,
       warehouse_notes:             r.warehouse_notes?.trim() ? r.warehouse_notes : undefined,
     }

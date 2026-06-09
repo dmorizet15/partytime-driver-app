@@ -3,22 +3,24 @@
 // (partytime-east) — the same source of truth Melissa writes to from the
 // dashboard. Service-role key never reaches the browser.
 //
-// Driver-scope: the response is narrowed to the caller's `route_assignments`
-// for the requested date. If the caller is authenticated but has no
-// assignment, the endpoint returns an empty result — the driver app is the
-// driver's tool, this day-view endpoint is always assignment-scoped for
-// everyone including super_admin. An unassigned super_admin should see
-// nothing here (same empty state as an unassigned driver), and should use
-// GET /api/schedule/week (WeekScheduleView, /schedule route) for the full
-// board. Unauthenticated callers also receive an empty result.
+// Driver-scope: the response is narrowed to the caller's `route_crew`
+// membership for the requested date (Phase 2A — was `route_assignments`).
+// Visibility = crew rows where role IN ('primary_driver','secondary_driver');
+// helpers and WIW-only rows (user_id NULL) are excluded. If the caller is
+// authenticated but on no crew today, the endpoint returns an empty result —
+// the driver app is the driver's tool, this day-view endpoint is always
+// crew-scoped for everyone including super_admin. An unassigned super_admin
+// should see nothing here (same empty state as an unassigned driver), and
+// should use GET /api/schedule/week (WeekScheduleView, /schedule route) for
+// the full board. Unauthenticated callers also receive an empty result.
 //
-// Soft-fail exception: if the `route_assignments` lookup itself errors
-// (transient Postgres / RLS hiccup), fall through to the unscoped query so
-// a real driver isn't locked out of their route by a flaky read.
+// Soft-fail exception: if the `route_crew` lookup itself errors (transient
+// Postgres / RLS hiccup), fall through to the unscoped query so a real driver
+// isn't locked out of their route by a flaky read.
 //
 // Auth: session cookie identifies the caller (`user.id` can't be spoofed).
 // The actual reads run through a service-role client to sidestep RLS
-// verification on the dashboard-side route_assignments policies (matches
+// verification on the dashboard-side route_crew policies (matches
 // /api/inspection/status and /api/defects/post-trip).
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -27,7 +29,8 @@ import { createServerClient }        from '@supabase/ssr'
 import { createClient }              from '@supabase/supabase-js'
 import {
   transformSupabase,
-  type SupabaseAssignmentRow,
+  type SupabaseCrewRow,
+  type SupabaseMyCrewRow,
   type SupabaseRouteRow,
   type SupabaseStopRow,
 } from '@/lib/supabaseTransform'
@@ -78,15 +81,17 @@ export async function GET(req: NextRequest) {
 
   // ── Driver scope lookup ─────────────────────────────────────────────────
   // Identify caller via session cookie. Narrow routeIds to the caller's
-  // route_assignments rows for this date. Service-role reads do the actual
-  // join (RLS-bypass).
+  // route_crew rows for this date (Phase 2A). The crew row also carries the
+  // driver's OWN truck + ownership flags (role, is_primary), threaded into the
+  // transform so the truck chip / pre-trip gate / SMS gate reflect this user,
+  // not the route's primary driver. Service-role reads do the actual join
+  // (RLS-bypass).
   //
   // `assignedRouteIds`:
   //   - string[] (possibly empty)  → use as the .in() filter
-  //   - null                       → assignment lookup errored; soft-fail
-  //                                  through to the unscoped query so a
-  //                                  driver isn't locked out by a transient
-  //                                  read failure.
+  //   - null                       → crew lookup errored; soft-fail through to
+  //                                  the unscoped query so a driver isn't
+  //                                  locked out by a transient read failure.
   const session = getSessionClient()
   const { data: { user } } = await session.auth.getUser()
 
@@ -97,18 +102,21 @@ export async function GET(req: NextRequest) {
   }
 
   let assignedRouteIds: string[] | null = []
+  let myCrew: SupabaseMyCrewRow[] = []
   if (user) {
-    const assignRes = await supabase
-      .from('route_assignments')
-      .select('route_id, routes!inner(route_date)')
+    const crewRes = await supabase
+      .from('route_crew')
+      .select('route_id, role, is_primary, truck:trucks(id, name, plate, dvir_requirement, current_defect_status), routes!inner(route_date)')
       .eq('user_id', user.id)
+      .in('role', ['primary_driver', 'secondary_driver'])
       .eq('routes.route_date', date)
 
-    if (assignRes.error) {
-      console.warn('[/api/routes] assignment lookup failed (non-fatal):', assignRes.error.message)
+    if (crewRes.error) {
+      console.warn('[/api/routes] crew lookup failed (non-fatal):', crewRes.error.message)
       assignedRouteIds = null
     } else {
-      assignedRouteIds = (assignRes.data ?? []).map((r) => r.route_id as string)
+      myCrew = (crewRes.data ?? []) as unknown as SupabaseMyCrewRow[]
+      assignedRouteIds = myCrew.map((r) => r.route_id)
     }
   }
   // else: unauthenticated → assignedRouteIds stays []. Production callers
@@ -133,6 +141,7 @@ export async function GET(req: NextRequest) {
     .select(`
       id,
       route_date,
+      route_number,
       label,
       truck_id,
       truck_id_2,
@@ -166,8 +175,11 @@ export async function GET(req: NextRequest) {
 
   const routeIds = routeRows.map((r) => r.id)
 
-  // Stops + assignments in parallel — both keyed off routeIds.
-  const [stopsRes, assignmentsRes] = await Promise.all([
+  // Stops + crew in parallel — both keyed off routeIds. The crew read pulls
+  // every crew member on these routes (with a profiles join) so the transform
+  // can build the driver-name list and resolve each route's primary-driver
+  // name for the no-truck co-driver chip.
+  const [stopsRes, crewNamesRes] = await Promise.all([
     supabase
       .from('dispatch_stops')
       .select(`
@@ -200,8 +212,8 @@ export async function GET(req: NextRequest) {
       .eq('scheduled_date', date)
       .order('route_position', { ascending: true, nullsFirst: false }),
     supabase
-      .from('route_assignments')
-      .select('route_id, staff_name')
+      .from('route_crew')
+      .select('route_id, role, is_primary, wiw_user_name, profile:profiles(display_name)')
       .in('route_id', routeIds),
   ])
 
@@ -209,17 +221,18 @@ export async function GET(req: NextRequest) {
     console.error('[/api/routes] stops query failed:', stopsRes.error.message)
     return NextResponse.json({ error: stopsRes.error.message }, { status: 500 })
   }
-  if (assignmentsRes.error) {
-    // Assignments are non-fatal — drivers can still see the route, just without
-    // a name attribution.
-    console.warn('[/api/routes] assignments query failed (non-fatal):', assignmentsRes.error.message)
+  if (crewNamesRes.error) {
+    // Crew names are non-fatal — drivers can still see the route, just without
+    // name attribution / a resolved primary-driver name.
+    console.warn('[/api/routes] crew names query failed (non-fatal):', crewNamesRes.error.message)
   }
 
   const { routes, stops } = transformSupabase({
-    routes:      routeRows,
-    assignments: (assignmentsRes.data ?? []) as SupabaseAssignmentRow[],
-    stops:       (stopsRes.data ?? []) as SupabaseStopRow[],
-    targetDate:  date,
+    routes:     routeRows,
+    crew:       (crewNamesRes.data ?? []) as unknown as SupabaseCrewRow[],
+    myCrew,
+    stops:      (stopsRes.data ?? []) as SupabaseStopRow[],
+    targetDate: date,
   })
 
   return NextResponse.json(

@@ -228,6 +228,14 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   const stop = getStop(stopId)
   const allStops = getStopsForRoute(routeId)
 
+  // ── Phase 2A — ETA/SMS ownership gate ────────────────────────────────────
+  // Customer ETA texts are the primary driver's alone. Hide the Send-ETA card
+  // entirely (not just suppress the send) for any non-primary crew member.
+  // Undefined is_primary (the /api/routes soft-fail fallback, where no crew row
+  // resolved) shows the button — a transient crew-read miss must never block a
+  // real primary driver from texting their customer.
+  const canSendEta = route?.is_primary !== false
+
   const [navLoading, setNavLoading] = useState(false)
   const [showCompleteModal, setShowCompleteModal] = useState(false)
   const [completeLoading, setCompleteLoading] = useState(false)
@@ -1619,8 +1627,9 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
         ) : (
           <>
             {/* ETA / SMS block — hidden for any depot stop (warehouse reload
-                + warehouse_return) since there's no customer to text. */}
-            {!isDepotStop && (
+                + warehouse_return) since there's no customer to text, and for
+                non-primary crew (Phase 2A: ETA texts are the primary's alone). */}
+            {!isDepotStop && canSendEta && (
             <div style={{ padding: '16px 18px 0' }}>
               {etaStatus === 'sent' ? (
                 <>

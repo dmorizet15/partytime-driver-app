@@ -357,8 +357,21 @@ export default function DayRouteSelectorScreen() {
   // to flip Home from "morning briefing" (full layout) to "quiet state" (hero
   // + operational flags only — see post-pre-trip block below).
   const inspected = inspection !== null
+  // ── Phase 2A — crew ownership gates ──────────────────────────────────────
+  // Pre-trip is gated on TRUCK assignment, not role: a crew member with a
+  // truck (primary or secondary) inspects; a no-truck crew member skips
+  // straight to the route. truck_id now comes from THIS user's route_crew row.
+  const hasTruck  = !!primaryRoute?.truck_id
+  // Co-driver = explicitly not the primary. Undefined (soft-fail / no crew
+  // row) is treated as NOT a co-driver so the badge never shows on bad data.
+  const isCoDriver = primaryRoute?.is_primary === false
+  // Stops are locked only for truck-holders who haven't inspected yet. No-truck
+  // crew tap freely (the actual_departure_at read-only gate is a later
+  // dashboard session — deferred this phase).
+  const stopsLocked    = hasTruck && !inspected
+  const stopsTappable  = !stopsLocked
   function handleStopTap(stop: Stop) {
-    if (!inspected) return
+    if (stopsLocked) return
     router.push(`/route/${stop.route_id}/stop/${stop.stop_id}`)
   }
 
@@ -383,6 +396,23 @@ export default function DayRouteSelectorScreen() {
       return
     }
     startInspection()
+  }
+
+  // ── Phase 2A — gold CTA state machine ────────────────────────────────────
+  //   no truck            → "Join Route"          → straight to the route view
+  //   has truck, pre-trip → "Inspect & Start Route" → inspection flow
+  //   has truck, inspected→ "Start Route"         → route view (the
+  //                          actual_departure_at write lands with the deferred
+  //                          dashboard session; today it just navigates).
+  const ctaLabel = !hasTruck
+    ? 'Join Route'
+    : inspected
+      ? 'Start Route'
+      : 'Inspect & Start Route'
+  function handleCtaTap() {
+    if (!primaryRouteId) return
+    if (hasTruck && !inspected) { handleInspect(); return }
+    router.push(`/route/${primaryRouteId}`)
   }
 
   return (
@@ -481,10 +511,11 @@ export default function DayRouteSelectorScreen() {
           </div>
         )}
 
-        {/* Truck pill — primary truck for today's route (driver app is single-truck
-            per login, so truck_2 is intentionally ignored). Hidden when there's
-            no truck assignment yet. Plate appears in regular weight after a
-            middle dot when present; name-only otherwise. */}
+        {/* Truck pill — THIS driver's own crew truck (Phase 2A: a secondary
+            driver sees their truck, not the route's primary). Hidden when the
+            crew member has no truck (the standalone co-driver chip below takes
+            over). Plate in regular weight after a middle dot when present; a
+            "· Co-driver" suffix is appended when this user isn't the primary. */}
         {!isEmpty && truckName && (
           <div style={{
             marginTop: 18, position: 'relative',
@@ -515,6 +546,36 @@ export default function DayRouteSelectorScreen() {
                   <span style={{ fontWeight: 400 }}>{truckPlate}</span>
                 </>
               )}
+              {isCoDriver && (
+                <span style={{ fontWeight: 400, opacity: 0.85 }}> · Co-driver</span>
+              )}
+            </span>
+          </div>
+        )}
+
+        {/* No-truck co-driver chip — Phase 2A. A secondary crew member with no
+            truck gets a standalone identity chip instead of a truck pill:
+            "Co-driver · Route N with <primary driver>". Route number falls back
+            to the route label's trailing context only via route_number; the
+            primary name resolves profiles.display_name ?? wiw_user_name. */}
+        {!isEmpty && !truckName && isCoDriver && (
+          <div style={{
+            marginTop: 18,
+            display: 'inline-flex', alignItems: 'center', gap: 10,
+            background: 'rgba(255,255,255,0.10)',
+            border: '1px solid rgba(255,255,255,0.16)',
+            padding: '6px 14px',
+            borderRadius: 999,
+            fontFamily: 'inherit',
+            color: '#fff',
+            fontSize: 12.5, letterSpacing: '-0.005em',
+            fontVariantNumeric: 'tabular-nums',
+          }}>
+            <span style={{ fontWeight: 700 }}>Co-driver</span>
+            <span style={{ fontWeight: 400, opacity: 0.85 }}>
+              {' · '}
+              {primaryRoute?.route_number != null ? `Route ${primaryRoute.route_number}` : 'Route'}
+              {primaryRoute?.primary_driver_name ? ` with ${primaryRoute.primary_driver_name}` : ''}
             </span>
           </div>
         )}
@@ -649,7 +710,7 @@ export default function DayRouteSelectorScreen() {
                 <div key={`cod-${stop.stop_id}`} style={{ padding: '12px 18px 0' }}>
                   <button
                     onClick={() => handleStopTap(stop)}
-                    aria-disabled={!inspected || undefined}
+                    aria-disabled={!stopsTappable || undefined}
                     style={{
                       width: '100%',
                       background: C.goldSoft,
@@ -657,12 +718,12 @@ export default function DayRouteSelectorScreen() {
                       borderRadius: 18,
                       padding: '14px 16px',
                       display: 'flex', alignItems: 'center', gap: 14,
-                      cursor: inspected ? 'pointer' : 'default',
+                      cursor: stopsTappable ? 'pointer' : 'default',
                       fontFamily: 'inherit',
                       textAlign: 'left',
                       boxShadow: '0 14px 28px -16px rgba(176,127,0,0.45)',
-                      opacity:       inspected ? 1 : 0.4,
-                      pointerEvents: inspected ? 'auto' : 'none',
+                      opacity:       stopsTappable ? 1 : 0.4,
+                      pointerEvents: stopsTappable ? 'auto' : 'none',
                     }}
                   >
                     <div style={{
@@ -728,7 +789,7 @@ export default function DayRouteSelectorScreen() {
                     padding: '14px 16px',
                     display: 'flex', alignItems: 'flex-start', gap: 14,
                     boxShadow: '0 14px 28px -16px rgba(176,127,0,0.45)',
-                    opacity: inspected ? 1 : 0.4,
+                    opacity: stopsTappable ? 1 : 0.4,
                   }}>
                     <div style={{
                       width: 44, height: 44, borderRadius: '50%',
@@ -883,16 +944,16 @@ export default function DayRouteSelectorScreen() {
                   <button
                     key={stop.stop_id}
                     onClick={() => handleStopTap(stop)}
-                    aria-disabled={!inspected || undefined}
+                    aria-disabled={!stopsTappable || undefined}
                     style={{
                       width: '100%', textAlign: 'left',
                       background: 'transparent', border: 0,
-                      cursor: inspected ? 'pointer' : 'default',
+                      cursor: stopsTappable ? 'pointer' : 'default',
                       padding: '8px 0', display: 'flex', gap: 16,
                       alignItems: 'flex-start', fontFamily: 'inherit',
                       position: 'relative', zIndex: 1,
-                      opacity:       inspected ? 1 : 0.4,
-                      pointerEvents: inspected ? 'auto' : 'none',
+                      opacity:       stopsTappable ? 1 : 0.4,
+                      pointerEvents: stopsTappable ? 'auto' : 'none',
                     }}
                   >
                     {/* Numbered circle (32px) — completed: ink fill + gold check;
@@ -1058,20 +1119,14 @@ export default function DayRouteSelectorScreen() {
                 alongside the Inspect CTA. */}
             {!inspected && <AskAvaButton seedContext={seedContext} routeId={primaryRouteId ?? null} />}
 
-            {/* Gold CTA — pre-pre-trip only. Once inspected, Home goes quiet
-                and the Routes tab becomes the active-route entry point.
-                Original (May 9, 2026) two-state design superseded by AVA Phase 1
-                / Session 2, then reinstated as a single persistent CTA (Fix 1):
-                pre-inspection it triggers the inspection flow ("Inspect & Start
-                Route"); post-inspection it jumps to the active route
-                ("Continue route"). */}
+            {/* Gold CTA — persistent. Phase 2A made it crew-aware (see
+                ctaLabel/handleCtaTap): no-truck crew "Join Route" straight to
+                the route; truck-holders "Inspect & Start Route" pre-trip, then
+                "Start Route" once inspected. Pre-inspection a route-level
+                warehouse note still detours through the FROM WAREHOUSE sheet. */}
             <div style={{ padding: '18px 18px 0' }}>
               <button
-                onClick={
-                  inspected
-                    ? () => { if (primaryRouteId) router.push(`/route/${primaryRouteId}`) }
-                    : handleInspect
-                }
+                onClick={handleCtaTap}
                 disabled={routes.length === 0}
                 style={{
                   width: '100%', height: 60, borderRadius: 999,
@@ -1086,7 +1141,7 @@ export default function DayRouteSelectorScreen() {
                   boxShadow: '0 14px 30px -10px rgba(255,184,0,0.55)',
                 }}
               >
-                <span>{inspected ? 'Continue route' : 'Inspect & Start Route'}</span>
+                <span>{ctaLabel}</span>
                 <span style={{
                   width: 44, height: 44, borderRadius: '50%',
                   background: C.ink,
