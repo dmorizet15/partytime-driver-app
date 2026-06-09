@@ -26,6 +26,7 @@ import {
 } from '@/lib/stopConstraints'
 import { reportIssueSuccessKey } from '@/screens/workOrders/ReportIssueScreen'
 import { useAuthContext } from '@/context/AuthContext'
+import { isActiveDriver, isTransferredAway, crewMemberName } from '@/lib/routeOwnership'
 import { normalizeAddressKey } from '@/lib/ava/addressKey'
 import { fetchTodayNotesHitCount, listNotesForAddress } from '@/lib/ava/stopNotesClient'
 import AvaNoteSheet from '@/components/ava/AvaNoteSheet'
@@ -224,17 +225,28 @@ function BanIcon({ size = 14, color = C.muted }: IconProps) {
 export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenProps) {
   const router = useRouter()
   const { getRoute, getStop, getStopsForRoute, markOtw, markComplete, markArrived, loadDay } = useAppState()
+  const { user: authUser } = useAuthContext()
   const route = getRoute(routeId)
   const stop = getStop(stopId)
   const allStops = getStopsForRoute(routeId)
 
-  // ── Phase 2A — ETA/SMS ownership gate ────────────────────────────────────
-  // Customer ETA texts are the primary driver's alone. Hide the Send-ETA card
-  // entirely (not just suppress the send) for any non-primary crew member.
-  // Undefined is_primary (the /api/routes soft-fail fallback, where no crew row
-  // resolved) shows the button — a transient crew-read miss must never block a
-  // real primary driver from texting their customer.
-  const canSendEta = route?.is_primary !== false
+  // ── Phase 2A/2B — ETA/SMS ownership gate ─────────────────────────────────
+  // Customer ETA texts belong to whoever currently OWNS the route. Hide the
+  // Send-ETA card entirely (not just suppress the send) for any non-owner.
+  // isActiveDriver folds in Phase 2B route handoff: no transfer → the existing
+  // is_primary gate (undefined ⇒ owner, per the /api/routes soft-fail); active
+  // transfer → only the active_driver_id profile owns SMS/ETA.
+  const canSendEta = isActiveDriver(route, authUser?.id)
+
+  // ── Phase 2B — completion gate (active-transfer only) ────────────────────
+  // Completion was UNGATED in Phase 2A (any crew member could complete). We
+  // preserve that: completion is restricted to the active driver ONLY while a
+  // transfer is active (active_driver_id set). No transfer → anyone completes.
+  const canComplete = !route?.active_driver_id || isActiveDriver(route, authUser?.id)
+  // Original primary who just lost the route — drives the "Transferred" note.
+  const transferredAwayName = isTransferredAway(route, authUser?.id)
+    ? crewMemberName(route, route?.active_driver_id)
+    : null
 
   const [navLoading, setNavLoading] = useState(false)
   const [showCompleteModal, setShowCompleteModal] = useState(false)
@@ -324,7 +336,6 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   // when > 0; the entry surface below the action buttons swaps copy at the
   // same threshold. `noteRefreshKey` re-runs the count fetch after a save so
   // the surface updates without a page reload.
-  const { user: authUser } = useAuthContext()
   const [avaNoteOpen,     setAvaNoteOpen]     = useState(false)
   const [avaNoteCount,    setAvaNoteCount]    = useState(0)
   const [avaNoteRefresh,  setAvaNoteRefresh]  = useState(0)
@@ -484,7 +495,7 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
       // dashboard's realtime toast surfaces immediately without waiting
       // for the driver to tap Mark Complete. Idempotent — repeating the
       // POST against an already-completed stop is harmless.
-      if (stop?.stop_type === 'warehouse_return') {
+      if (stop?.stop_type === 'warehouse_return' && canComplete) {
         try {
           const r = await fetch('/api/complete-stop', {
             method:  'POST',
@@ -729,6 +740,15 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   // paths (collected / not_collected) after the cash POST resolves.
   async function runStopComplete(closeModal: () => void, setLoading: (b: boolean) => void): Promise<boolean> {
     if (!stop || !route) return false
+    // Phase 2B — block completion for the handed-off original primary while a
+    // transfer is active. Server is the authority, but this stops the optimistic
+    // local mark + the wasted POST and surfaces why.
+    if (!canComplete) {
+      setNavMessage(`Route was transferred to ${transferredAwayName ?? 'another driver'} — completion is theirs now.`)
+      closeModal()
+      setLoading(false)
+      return false
+    }
     const completedAt = new Date().toISOString()
     try {
       const r = await fetch('/api/complete-stop', {
@@ -2057,19 +2077,21 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
                         <NavigateIcon size={18} color={C.gold}/>
                       </span>
                     </button>
-                    <button
-                      onClick={handleMarkCompleteTap}
-                      style={{
-                        marginTop: 10,
-                        width: '100%', height: 40, borderRadius: 999,
-                        background: 'transparent', color: C.ink,
-                        border: `1.5px solid ${C.ink}`, cursor: 'pointer',
-                        fontSize: 13, fontWeight: 800, fontFamily: FONT_DISPLAY,
-                        letterSpacing: '-0.01em',
-                      }}
-                    >
-                      Mark Complete
-                    </button>
+                    {canComplete && (
+                      <button
+                        onClick={handleMarkCompleteTap}
+                        style={{
+                          marginTop: 10,
+                          width: '100%', height: 40, borderRadius: 999,
+                          background: 'transparent', color: C.ink,
+                          border: `1.5px solid ${C.ink}`, cursor: 'pointer',
+                          fontSize: 13, fontWeight: 800, fontFamily: FONT_DISPLAY,
+                          letterSpacing: '-0.01em',
+                        }}
+                      >
+                        Mark Complete
+                      </button>
+                    )}
                     {welcomeBackAt && (
                       <div
                         role="status"
@@ -2122,6 +2144,24 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
                       <NavigateIcon size={18} color={C.gold}/>
                     </span>
                   </button>
+                ) : transferredAwayName ? (
+                  // Phase 2B — the original primary handed this route off. All
+                  // ownership actions (Mark Arrived / complete / SMS) are hidden;
+                  // a locked note names who holds the route now.
+                  <div style={{ textAlign: 'center', padding: '6px 2px' }}>
+                    <div style={{
+                      fontSize: 10.5, fontWeight: 900, letterSpacing: '0.18em',
+                      color: C.ink, opacity: 0.55, textTransform: 'uppercase',
+                    }}>
+                      Transferred
+                    </div>
+                    <div style={{
+                      marginTop: 4, fontSize: 15, fontWeight: 800,
+                      fontFamily: FONT_DISPLAY, letterSpacing: '-0.01em', color: C.ink,
+                    }}>
+                      Transferred to {transferredAwayName}
+                    </div>
+                  </div>
                 ) : (
                 <>
                 {/* Mark Arrived — gold (pending) or green (otw_sent) */}

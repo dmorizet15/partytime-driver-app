@@ -1,5 +1,17 @@
 # Open Tasks — partytime-driver-app
 
+## June 9, 2026 — Phase 2B: Route Handoff (build green, NOT yet pushed; schema mig 093 applied to shared DB)
+
+Driver-to-driver mid-route transfer. Owner offers → recipient accepts (takes over ETAs/SMS/completion) or declines. Schema columns `routes.active_driver_id` + `transfer_pending_to` applied from this repo as mig 093 (recorded at `supabase/data-patches/2026-06-09_route-handoff-093-columns.sql`). **Needs two devices / two crew accounts on the same route to test.**
+
+- [ ] **chat-Claude — reconcile mig 093:** the prompt said the columns shipped with mig 092 but they did not exist; applied here as 093 per the locked Notion spec. Mirror the DDL into the dashboard repo's numbered migration 093 and fix the Notion migration ledger (092 stays = warehouse_return sentinel).
+- [ ] **Smoke test — initiate + accept:** sign in as the route's primary on device A; "Transfer Route" appears below the stop list. Tap → picker lists the OTHER crew (not self). Pick a co-driver. Device A shows "Waiting for [Name] to accept". Device B (the co-driver), without refreshing, sees the "[Name] is offering you Route N" card appear (realtime). Tap Accept → device B becomes owner (ETA/SMS/Mark Complete available), device A's stop screens show ETA/SMS hidden + Mark Complete hidden + "Transferred to [Name]".
+- [ ] **Smoke test — decline:** repeat initiate; on device B tap Decline. Device B's card disappears; device A returns to showing "Transfer Route" (state back to Idle). No ownership changed.
+- [ ] **Smoke test — completion gate is active-transfer-only:** BEFORE any transfer, confirm a co-driver can still Mark Complete a stop (Phase 2A behavior preserved). AFTER a transfer, the non-active original primary cannot complete (button hidden; `runStopComplete` blocks with a "transferred" message).
+- [ ] **Smoke test — re-transfer, no reclaim:** after B accepts, B sees "Transfer Route" and can offer it onward (e.g. back to A). The original primary A canNOT reclaim — A has no owner actions while `active_driver_id` ≠ A.
+- [ ] **Smoke test — Melissa unaffected:** dashboard route view shows nothing new; no WIW writes.
+- [ ] **Edge — soft-fail:** if `/api/routes` hits its crew-read soft-fail (no crew row, `is_primary` undefined), with no transfer active the user still sees owner actions (`isActiveDriver` treats undefined `is_primary` as owner). Confirm a transient read miss never strips a real primary.
+
 ## June 6, 2026 — wall→ladder `dependency_map` data patch (direct to `main`, `eac74f0`; no build — data only)
 
 Production `dependency_map` Ladders rule broadened: `keyword` `sidewall`→`wall`, `quantity_threshold` 5→1, `required_quantity` 2→1. Applied to prod + recorded at `supabase/data-patches/wall-ladder-threshold-fix.sql`. Triggered by Dylan Morizet's missing-ladder report on a `40x80` pole-tent pickup (walls named `MQSW … SOLID WHITE WALL`).

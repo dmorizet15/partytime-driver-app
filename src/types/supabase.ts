@@ -1301,6 +1301,7 @@ export type Database = {
           roles: Database["public"]["Enums"]["user_role"][]
           stats_enabled: boolean
           status: string
+          wiw_user_id: number | null
           work_order_technician: boolean
         }
         Insert: {
@@ -1319,6 +1320,7 @@ export type Database = {
           roles?: Database["public"]["Enums"]["user_role"][]
           stats_enabled?: boolean
           status?: string
+          wiw_user_id?: number | null
           work_order_technician?: boolean
         }
         Update: {
@@ -1337,6 +1339,7 @@ export type Database = {
           roles?: Database["public"]["Enums"]["user_role"][]
           stats_enabled?: boolean
           status?: string
+          wiw_user_id?: number | null
           work_order_technician?: boolean
         }
         Relationships: [
@@ -1569,46 +1572,91 @@ export type Database = {
         }
         Relationships: []
       }
-      route_assignments: {
+      route_crew: {
         Row: {
-          assigned_at: string
-          assigned_by: string | null
+          created_at: string | null
+          end_time_overridden: boolean
           id: string
+          is_primary: boolean
+          is_published: boolean
           role: string
           route_id: string
-          staff_name: string | null
+          scheduled_end: string | null
+          scheduled_start: string | null
+          truck_id: string | null
+          updated_at: string | null
           user_id: string | null
+          wiw_job_site_id: number | null
+          wiw_position: string
+          wiw_shift_id: number | null
+          wiw_user_id: number
+          wiw_user_name: string
         }
         Insert: {
-          assigned_at?: string
-          assigned_by?: string | null
+          created_at?: string | null
+          end_time_overridden?: boolean
           id?: string
-          role?: string
+          is_primary?: boolean
+          is_published?: boolean
+          role: string
           route_id: string
-          staff_name?: string | null
+          scheduled_end?: string | null
+          scheduled_start?: string | null
+          truck_id?: string | null
+          updated_at?: string | null
           user_id?: string | null
+          wiw_job_site_id?: number | null
+          wiw_position: string
+          wiw_shift_id?: number | null
+          wiw_user_id: number
+          wiw_user_name: string
         }
         Update: {
-          assigned_at?: string
-          assigned_by?: string | null
+          created_at?: string | null
+          end_time_overridden?: boolean
           id?: string
+          is_primary?: boolean
+          is_published?: boolean
           role?: string
           route_id?: string
-          staff_name?: string | null
+          scheduled_end?: string | null
+          scheduled_start?: string | null
+          truck_id?: string | null
+          updated_at?: string | null
           user_id?: string | null
+          wiw_job_site_id?: number | null
+          wiw_position?: string
+          wiw_shift_id?: number | null
+          wiw_user_id?: number
+          wiw_user_name?: string
         }
         Relationships: [
           {
-            foreignKeyName: "route_assignments_route_id_fkey"
+            foreignKeyName: "route_crew_route_id_fkey"
             columns: ["route_id"]
             isOneToOne: false
             referencedRelation: "routes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "route_crew_truck_id_fkey"
+            columns: ["truck_id"]
+            isOneToOne: false
+            referencedRelation: "trucks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "route_crew_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
       }
       routes: {
         Row: {
+          active_driver_id: string | null
           break_blocks: Json
           created_at: string
           created_by: string | null
@@ -1619,10 +1667,12 @@ export type Database = {
           id: string
           label: string
           loading_bay: number | null
+          loading_bay_2: number | null
           route_date: string
           route_number: number | null
           route_start_time: string | null
           status: Database["public"]["Enums"]["route_status_enum"]
+          transfer_pending_to: string | null
           truck_id: string | null
           truck_id_2: string | null
           unload_completed_at: string | null
@@ -1633,6 +1683,7 @@ export type Database = {
           warehouse_notes: string | null
         }
         Insert: {
+          active_driver_id?: string | null
           break_blocks?: Json
           created_at?: string
           created_by?: string | null
@@ -1643,10 +1694,12 @@ export type Database = {
           id?: string
           label: string
           loading_bay?: number | null
+          loading_bay_2?: number | null
           route_date: string
           route_number?: number | null
           route_start_time?: string | null
           status?: Database["public"]["Enums"]["route_status_enum"]
+          transfer_pending_to?: string | null
           truck_id?: string | null
           truck_id_2?: string | null
           unload_completed_at?: string | null
@@ -1657,6 +1710,7 @@ export type Database = {
           warehouse_notes?: string | null
         }
         Update: {
+          active_driver_id?: string | null
           break_blocks?: Json
           created_at?: string
           created_by?: string | null
@@ -1667,10 +1721,12 @@ export type Database = {
           id?: string
           label?: string
           loading_bay?: number | null
+          loading_bay_2?: number | null
           route_date?: string
           route_number?: number | null
           route_start_time?: string | null
           status?: Database["public"]["Enums"]["route_status_enum"]
+          transfer_pending_to?: string | null
           truck_id?: string | null
           truck_id_2?: string | null
           unload_completed_at?: string | null
@@ -1681,6 +1737,20 @@ export type Database = {
           warehouse_notes?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "routes_active_driver_id_fkey"
+            columns: ["active_driver_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "routes_transfer_pending_to_fkey"
+            columns: ["transfer_pending_to"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "routes_truck_id_2_fkey"
             columns: ["truck_id_2"]
@@ -2444,6 +2514,9 @@ export type Database = {
           has_discrepancy: boolean | null
           id: string
           items: Json | null
+          needs_manual_followup: boolean
+          overdue_last_sent_at: string | null
+          overdue_reminder_count: number
           payment_state: string | null
           picked_up_at: string | null
           picked_up_by: string | null
@@ -2484,6 +2557,9 @@ export type Database = {
           has_discrepancy?: boolean | null
           id?: string
           items?: Json | null
+          needs_manual_followup?: boolean
+          overdue_last_sent_at?: string | null
+          overdue_reminder_count?: number
           payment_state?: string | null
           picked_up_at?: string | null
           picked_up_by?: string | null
@@ -2524,6 +2600,9 @@ export type Database = {
           has_discrepancy?: boolean | null
           id?: string
           items?: Json | null
+          needs_manual_followup?: boolean
+          overdue_last_sent_at?: string | null
+          overdue_reminder_count?: number
           payment_state?: string | null
           picked_up_at?: string | null
           picked_up_by?: string | null
@@ -2545,6 +2624,48 @@ export type Database = {
           tapgoods_sync_updated_at?: string | null
           tapgoods_token?: string | null
           updated_at?: string | null
+        }
+        Relationships: []
+      }
+      wiw_token_store: {
+        Row: {
+          expires_at: string
+          id: number
+          token: string
+          updated_at: string | null
+        }
+        Insert: {
+          expires_at: string
+          id?: number
+          token: string
+          updated_at?: string | null
+        }
+        Update: {
+          expires_at?: string
+          id?: number
+          token?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      wiw_users_cache: {
+        Row: {
+          name: string
+          positions: string[]
+          updated_at: string | null
+          wiw_user_id: number
+        }
+        Insert: {
+          name: string
+          positions: string[]
+          updated_at?: string | null
+          wiw_user_id: number
+        }
+        Update: {
+          name?: string
+          positions?: string[]
+          updated_at?: string | null
+          wiw_user_id?: number
         }
         Relationships: []
       }

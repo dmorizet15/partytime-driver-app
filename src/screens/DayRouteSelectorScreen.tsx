@@ -16,6 +16,10 @@ import AvaMorningCard                   from '@/components/ava/AvaMorningCard'
 import RouteStartWarehouseSheet          from '@/components/ava/RouteStartWarehouseSheet'
 import { useRouteWeather }               from '@/hooks/ava/useRouteWeather'
 import AskAvaButton                      from '@/components/ava/AskAvaButton'
+import PendingTransferCard               from '@/components/transfer/PendingTransferCard'
+import TransferPickerSheet               from '@/components/transfer/TransferPickerSheet'
+import { isActiveDriver, isTransferredAway, crewMemberName } from '@/lib/routeOwnership'
+import { supabase }                      from '@/lib/supabase'
 
 // ─── Direction 03 (Editorial) tokens ──────────────────────────────────────────
 const C = {
@@ -381,6 +385,47 @@ export default function DayRouteSelectorScreen() {
   const routeWarehouseNote = primaryRoute?.warehouse_notes?.trim() || null
   const [showWarehouseStart, setShowWarehouseStart] = useState(false)
 
+  // ── Phase 2B — Route Handoff ──────────────────────────────────────────────
+  const profileId = profile?.id ?? null
+  // The route (if any) currently offered TO the signed-in user — show the
+  // accept/decline card. Checks every route the user is crew on, not just
+  // routes[0] (a co-driver could be the recipient).
+  const pendingRoute = routes.find((r) => !!r.transfer_pending_to && r.transfer_pending_to === profileId) ?? null
+  // The signed-in user owns the primary route's actions (Phase 2B-aware).
+  const ownsPrimary  = isActiveDriver(primaryRoute, profileId)
+  // Primary route was handed off to someone else (this user is the ex-primary).
+  const transferredAwayName = isTransferredAway(primaryRoute, profileId)
+    ? crewMemberName(primaryRoute, primaryRoute?.active_driver_id)
+    : null
+  // A transfer this user initiated that's still awaiting the recipient's answer.
+  const pendingOutName = ownsPrimary && primaryRoute?.transfer_pending_to
+    ? crewMemberName(primaryRoute, primaryRoute.transfer_pending_to)
+    : null
+  // Other crew on the primary route who could receive a transfer (excludes self).
+  const transferCandidates = (primaryRoute?.crew ?? []).filter((c) => c.profileId !== profileId)
+  const [showTransferPicker, setShowTransferPicker] = useState(false)
+
+  // Realtime: both drivers see handoff state changes (transfer_pending_to /
+  // active_driver_id) without a hard refresh. `routes` is in the supabase_realtime
+  // publication. On any UPDATE to one of today's routes, refetch the day.
+  const routeIdsKey = routes.map((r) => r.route_id).join(',')
+  useEffect(() => {
+    if (!routeIdsKey) return
+    const ids = new Set(routeIdsKey.split(','))
+    const channel = supabase
+      .channel(`route-transfers:${today}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'routes' },
+        (payload) => {
+          const id = (payload.new as { id?: string } | null)?.id
+          if (id && ids.has(id)) loadDay(today, true)
+        },
+      )
+      .subscribe()
+    return () => { void supabase.removeChannel(channel) }
+  }, [routeIdsKey, today, loadDay])
+
   function startInspection() {
     if (!primaryRouteId) return
     router.push(`/inspection?route_id=${primaryRouteId}`)
@@ -682,6 +727,17 @@ export default function DayRouteSelectorScreen() {
         {/* Populated body — pre-trip + COD cards + day list + Ava + CTA */}
         {!isLoading && !error && totalStopCount > 0 && (
           <>
+            {/* Phase 2B — pending route offer FOR this user. Top of the body so
+                the recipient sees it the moment it lands (realtime-driven). */}
+            {pendingRoute && (
+              <PendingTransferCard
+                routeId={pendingRoute.route_id}
+                routeNumber={pendingRoute.route_number}
+                fromName={crewMemberName(pendingRoute, pendingRoute.active_driver_id) ?? pendingRoute.primary_driver_name ?? null}
+                onResolved={() => loadDay(today, true)}
+              />
+            )}
+
             {/* Pre-trip inspection card removed (Fix 1) — it was a duplicate
                 interactive entry point. The gold "Inspect & Start Route" CTA at
                 the bottom is now the sole trigger for the inspection flow. */}
@@ -1119,6 +1175,53 @@ export default function DayRouteSelectorScreen() {
                 alongside the Inspect CTA. */}
             {!inspected && <AskAvaButton seedContext={seedContext} routeId={primaryRouteId ?? null} />}
 
+            {/* Phase 2B — route handoff controls (below the stop list). One of
+                three states on the primary route:
+                  • owner, no offer out → "Transfer Route" → crew picker
+                  • owner, offer pending → "Waiting for [Name] to accept"
+                  • handed off to someone else → "Transferred to [Name]" (locked) */}
+            {transferredAwayName ? (
+              <div style={{ padding: '18px 18px 0' }}>
+                <div style={{
+                  background: C.off, border: `1.5px solid ${C.ink}`, borderRadius: 16,
+                  padding: '14px 16px', textAlign: 'center',
+                }}>
+                  <div style={{ fontSize: 10.5, fontWeight: 900, letterSpacing: '0.16em', color: C.muted, textTransform: 'uppercase' }}>
+                    Transferred
+                  </div>
+                  <div style={{ marginTop: 4, fontSize: 15, fontWeight: 800, fontFamily: FONT_DISPLAY, letterSpacing: '-0.01em', color: C.ink }}>
+                    Transferred to {transferredAwayName}
+                  </div>
+                </div>
+              </div>
+            ) : pendingOutName ? (
+              <div style={{ padding: '18px 18px 0' }}>
+                <div style={{
+                  background: C.goldSoft, border: `1.5px solid ${C.goldDeep}`, borderRadius: 16,
+                  padding: '14px 16px', textAlign: 'center',
+                }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, fontFamily: FONT_DISPLAY, color: C.ink }}>
+                    Waiting for {pendingOutName} to accept Route {primaryRoute?.route_number ?? ''}…
+                  </div>
+                </div>
+              </div>
+            ) : ownsPrimary && transferCandidates.length > 0 ? (
+              <div style={{ padding: '18px 18px 0' }}>
+                <button
+                  onClick={() => setShowTransferPicker(true)}
+                  style={{
+                    width: '100%', height: 50, borderRadius: 999,
+                    background: 'transparent', color: C.ink,
+                    border: `1.5px solid ${C.ink}`, cursor: 'pointer',
+                    fontSize: 14, fontWeight: 800, fontFamily: FONT_DISPLAY,
+                    letterSpacing: '-0.01em',
+                  }}
+                >
+                  Transfer Route
+                </button>
+              </div>
+            ) : null}
+
             {/* Gold CTA — persistent. Phase 2A made it crew-aware (see
                 ctaLabel/handleCtaTap): no-truck crew "Join Route" straight to
                 the route; truck-holders "Inspect & Start Route" pre-trip, then
@@ -1164,6 +1267,18 @@ export default function DayRouteSelectorScreen() {
           warehouseNote={routeWarehouseNote}
           dispatcherNote={primaryRoute?.dispatcher_notes ?? null}
           onProceed={() => { setShowWarehouseStart(false); startInspection() }}
+        />
+      )}
+
+      {/* Phase 2B — transfer picker. Opened by the "Transfer Route" button;
+          lists the primary route's other crew, initiates on pick, refetches. */}
+      {showTransferPicker && primaryRoute && profileId && (
+        <TransferPickerSheet
+          route={primaryRoute}
+          selfProfileId={profileId}
+          routeNumber={primaryRoute.route_number}
+          onClose={() => setShowTransferPicker(false)}
+          onDone={() => { setShowTransferPicker(false); loadDay(today, true) }}
         />
       )}
 

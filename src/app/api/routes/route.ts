@@ -148,6 +148,8 @@ export async function GET(req: NextRequest) {
       break_blocks,
       dispatcher_notes,
       warehouse_notes,
+      active_driver_id,
+      transfer_pending_to,
       truck:trucks!routes_truck_id_fkey(id, name, plate, dvir_requirement, current_defect_status),
       truck_2:trucks!routes_truck_id_2_fkey(id, name, plate)
     `)
@@ -213,7 +215,7 @@ export async function GET(req: NextRequest) {
       .order('route_position', { ascending: true, nullsFirst: false }),
     supabase
       .from('route_crew')
-      .select('route_id, role, is_primary, wiw_user_name, profile:profiles(display_name)')
+      .select('route_id, user_id, role, is_primary, wiw_user_name, profile:profiles(id, display_name)')
       .in('route_id', routeIds),
   ])
 

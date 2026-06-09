@@ -6,6 +6,22 @@ Format: one lesson per block. Lead with the rule, then **Why** and **How to appl
 
 ---
 
+## When a prompt asserts a migration is "live," verify the columns exist in the DB before building on them — a migration NUMBER is not a guarantee.
+
+**Why:** 2026-06-09 the Phase 2B prompt stated "Migration 092 is live on the shared DB (active_driver_id + transfer_pending_to on routes table)." A live `information_schema.columns` check found neither column on `routes` — nor on any table. The locked Notion spec actually said 092 = the warehouse_return sentinel fix and that Phase 2B had been re-allocated to mig **093**, which was never written. Building the select/gates/endpoints against non-existent columns would have produced a green-compiling app that 500s at runtime (Postgres "column does not exist"). The 2-minute schema check turned a silent runtime failure into a clean STEP-1 blocker report + a one-line fix (apply 093).
+
+**How to apply:** before threading any "new" column through the select/transform/types, run `supabase db query --linked "SELECT column_name FROM information_schema.columns WHERE table_name='X' AND column_name IN (...)"`. If it's empty, STOP and report — don't assume the migration ran just because the prompt names a number. Preview DDL you apply yourself with `BEGIN … ROLLBACK` first.
+
+---
+
+## Realtime delivery to the driver (anon) client needs BOTH publication membership AND a permissive RLS SELECT — check the policy, not just the publication.
+
+**Why:** 2026-06-09 Phase 2B needs both drivers to see `routes` handoff-state changes without a refresh. `routes` being in the `supabase_realtime` publication is necessary but NOT sufficient: `postgres_changes` events are filtered through RLS as the subscribing role, so if the driver's `authenticated` role can't SELECT the changed row, the event is silently dropped — no error, the UI just never updates. Here it worked because `routes_authenticated_read` USING `auth.role() = 'authenticated'` lets any signed-in driver read any route row. Had `/api/routes`'s service-role pattern reflected a *restrictive* routes SELECT policy (it doesn't — that pattern is for the dashboard-side `route_crew` policies), realtime would have needed a polling fallback.
+
+**How to apply:** when wiring realtime for a driver-app table, confirm the authenticated SELECT policy actually exposes the rows the client must see (`SELECT polname, polcmd, pg_get_expr(polqual, polrelid) FROM pg_policy …`). Publication membership alone is a false green.
+
+---
+
 ## A re-runnable data-patch `UPDATE` must key its `WHERE` off the columns it does NOT change — never the column whose value it mutates.
 
 **Why:** 2026-06-06 the wall→ladder patch changed `dependency_map.trigger_value` from `'sidewall'` to `'wall'`. The original ad-hoc UPDATE matched `WHERE trigger_value = 'sidewall'` — fine for the one-time apply, but useless as a saved patch: after it runs once the row is `'wall'`, so a second run matches zero rows; and after a fresh DB rebuild the Migration 016 seed restores `'sidewall'`, where a WHERE keyed on the *new* value (`'wall'`) would silently no-op instead of re-correcting. The `supabase/data-patches/` convention is "safe to re-run / survives rebuild," so the saved file's WHERE was rewritten to `trigger_type='keyword' AND required_item ILIKE '%ladder%'` — a stable identity that holds whether the row currently reads `sidewall` (fresh seed) or `wall` (already patched). Same `id` in both verify queries confirmed exactly one row each time.

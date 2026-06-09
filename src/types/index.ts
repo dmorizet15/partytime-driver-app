@@ -44,6 +44,26 @@ export interface Route {
   // resolved profiles.display_name ?? route_crew.wiw_user_name. Powers the
   // no-truck co-driver chip ("Route N with <name>").
   primary_driver_name?: string
+  // ── Phase 2B — route handoff (dashboard migration 093) ────────────────────
+  // active_driver_id: the profile (= auth uid) currently in active control.
+  //   undefined ⇒ no transfer; is_primary determines ownership (existing gate).
+  //   set       ⇒ that profile owns SMS/ETA/completion + can re-transfer.
+  // transfer_pending_to: the profile awaiting accept/decline. undefined ⇒ none.
+  //   When it equals the signed-in user, Home shows the pending-transfer card.
+  // crew: every driver on this route's crew (excluding helpers/WIW-only rows)
+  //   with a resolvable profile id — feeds the transfer picker (self filtered
+  //   out at render). Use isActiveDriver(route, profileId) for all gates.
+  active_driver_id?: string
+  transfer_pending_to?: string
+  crew?: RouteCrewMember[]
+}
+
+// A driver on a route's crew, with a resolvable profile id. Feeds the Phase 2B
+// transfer picker. profileId = profiles.id = auth.uid = route_crew.user_id.
+export interface RouteCrewMember {
+  profileId: string
+  name: string
+  role: 'primary_driver' | 'secondary_driver'
 }
 
 // ─── Equipment summary ───────────────────────────────────────────────────────

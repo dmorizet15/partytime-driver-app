@@ -4,6 +4,23 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-06-09 — Phase 2B: Route Handoff (driver app + schema mig 093; build green, NOT yet pushed)
+
+Driver-to-driver mid-route handoff. A route's current owner offers it to another crew member; the recipient accepts (taking over ETAs/SMS/completion) or declines. Both devices update live via realtime.
+
+**Schema blocker, reconciled (mig 093, applied from this repo):** the prompt said the columns shipped with mig 092, but a live-DB check found neither `active_driver_id` nor `transfer_pending_to` on `routes` (nor anywhere). The locked Notion spec agrees: 092 = the `warehouse_return` order_status sentinel fix; Phase 2B was re-allocated to **093**, unwritten. Authored + applied `routes.active_driver_id` + `transfer_pending_to` (both `uuid NULL` FK → `profiles`) via `supabase db query --linked --file` after a `BEGIN…ROLLBACK` preview. Recorded re-runnably at `supabase/data-patches/2026-06-09_route-handoff-093-columns.sql`. **chat-Claude must mirror this into the dashboard repo's numbered mig 093 + fix the Notion ledger.**
+
+**Code:**
+- `/api/routes` select gained `active_driver_id`, `transfer_pending_to`; crew-names select gained `user_id` + `profiles(id)` so the picker can resolve crew profile ids. Threaded through `SupabaseRouteRow`/`SupabaseCrewRow` → `transformSupabase` → `Route` (+ new `RouteCrewMember`, `crew[]`). `src/types/supabase.ts` regenerated.
+- `src/lib/routeOwnership.ts` — `isActiveDriver(route, profileId)` (no transfer → existing `is_primary` gate; active transfer → `profileId === active_driver_id`), plus `isTransferredAway` / `isTransferPendingForMe` / `crewMemberName`. Replaced the raw `is_primary` ETA/SMS gate in `StopDetailScreen`.
+- **Completion gate (decision: active-transfer only).** Completion was UNGATED in Phase 2A. To preserve that, completion is restricted to the active driver ONLY when `active_driver_id` is set; no transfer → anyone completes (co-drivers keep their Phase 2A ability). Guarded at `runStopComplete`, the warehouse_return geofence auto-fire, and both Mark Complete buttons; handed-off primary sees a "Transferred to [Name]" locked note.
+- `POST /api/routes/transfer/initiate` ({routeId, toProfileId}) — owner-gated, validates target is route crew, writes `transfer_pending_to`. `POST /api/routes/transfer/respond` ({routeId, accept}) — recipient-gated; accept → `active_driver_id`=caller + clears pending, decline → clears pending. Both: session-cookie auth + service-role admin writes, server-authoritative gates.
+- Home (`DayRouteSelectorScreen`): `PendingTransferCard` (recipient accept/decline, top of body), `TransferPickerSheet` (owner picks crew, excludes self), "Transfer Route" button / "Waiting for [Name]…" / "Transferred to [Name]" states below the stop list, and a `routes` realtime subscription (`postgres_changes` UPDATE → `loadDay(today, true)`). Realtime confirmed viable: `routes` is in `supabase_realtime` AND `routes_authenticated_read` RLS lets the driver client receive the events.
+
+No dashboard changes; Melissa's view is unchanged. `npx next build` green. **Held from push** pending Darren's two-device smoke test + chat-Claude's dashboard/Notion mig-093 reconciliation.
+
+---
+
 ## 2026-06-06 — wall→ladder `dependency_map` data patch (direct to `main`, `eac74f0`)
 
 Data patch only — no schema, no migration, no code changes. Reported by Dylan Morizet (2026-06-06): a `40x80` pole-tent pickup didn't surface a ladder on the morning checklist because the walls were named `MQSW 8'X10' SOLID WHITE WALL` and the Ladders rule keyed only off `keyword='sidewall'` with a `quantity_threshold` of 5.

@@ -1,4 +1,4 @@
-import type { PaymentState, Route, Stop, StopStatus } from '@/types'
+import type { PaymentState, Route, RouteCrewMember, Stop, StopStatus } from '@/types'
 import type {
   ConstraintTier,
   DispatcherTimeOverride,
@@ -42,6 +42,11 @@ export interface SupabaseRouteRow {
   break_blocks:     BreakBlock[] | null
   dispatcher_notes: string | null
   warehouse_notes:  string | null
+  // Phase 2B — route handoff (dashboard migration 093). active_driver_id NULL ⇒
+  // is_primary controls; non-NULL ⇒ that profile has ownership. transfer_pending_to
+  // = the profile awaiting accept/decline (NULL ⇒ no pending transfer).
+  active_driver_id:    string | null
+  transfer_pending_to: string | null
   truck:            SupabaseTruckRow | SupabaseTruckRow[] | null
   truck_2:          SupabaseTruckRow | SupabaseTruckRow[] | null
 }
@@ -61,10 +66,14 @@ export interface SupabaseMyCrewRow {
 // list and resolve each route's primary-driver name (profiles join).
 export interface SupabaseCrewRow {
   route_id:      string
+  // Phase 2B — needed to expose crew profile IDs to the transfer picker.
+  // user_id = profiles.id = auth.uid (verified: all route_crew.user_id join
+  // profiles.id, and profiles.id = auth.users.id).
+  user_id:       string | null
   role:          string
   is_primary:    boolean
   wiw_user_name: string | null
-  profile:       { display_name: string | null } | { display_name: string | null }[] | null
+  profile:       { id: string; display_name: string | null } | { id: string; display_name: string | null }[] | null
 }
 
 export interface SupabaseStopRow {
@@ -293,6 +302,10 @@ export function transformSupabase({ routes: routeRows, crew, myCrew, stops: stop
   // from the is_primary row and powers the no-truck co-driver chip.
   const driversByRoute     = new Map<string, string[]>()
   const primaryNameByRoute = new Map<string, string>()
+  // Phase 2B — crew members with a resolvable profile id, used to populate the
+  // transfer picker (driver app filters out self at render time). Drivers only
+  // (helpers / WIW-only rows have user_id NULL and can't be a transfer target).
+  const crewMembersByRoute = new Map<string, RouteCrewMember[]>()
   for (const c of crew) {
     const name = crewDisplayName(c)
     if (!name) continue
@@ -300,6 +313,11 @@ export function transformSupabase({ routes: routeRows, crew, myCrew, stops: stop
       const list = driversByRoute.get(c.route_id) ?? []
       list.push(name)
       driversByRoute.set(c.route_id, list)
+      if (c.user_id) {
+        const members = crewMembersByRoute.get(c.route_id) ?? []
+        members.push({ profileId: c.user_id, name, role: c.role })
+        crewMembersByRoute.set(c.route_id, members)
+      }
     }
     if (c.is_primary && !primaryNameByRoute.has(c.route_id)) {
       primaryNameByRoute.set(c.route_id, name)
@@ -360,6 +378,10 @@ export function transformSupabase({ routes: routeRows, crew, myCrew, stops: stop
       primary_driver_name:         primaryNameByRoute.get(r.id),
       dispatcher_notes:            r.dispatcher_notes?.trim() ? r.dispatcher_notes : undefined,
       warehouse_notes:             r.warehouse_notes?.trim() ? r.warehouse_notes : undefined,
+      // Phase 2B — route handoff
+      active_driver_id:            r.active_driver_id ?? undefined,
+      transfer_pending_to:         r.transfer_pending_to ?? undefined,
+      crew:                        crewMembersByRoute.get(r.id) ?? [],
     }
   })
 
