@@ -1,6 +1,17 @@
 # Open Tasks — partytime-driver-app
 
-## June 9, 2026 — Phase 2B: Route Handoff (build green, NOT yet pushed; schema mig 093 applied to shared DB)
+## June 9, 2026 — Warehouse IN TRANSIT writer (PUSHED: driver `eaedfb2`, dashboard `ff5c8eb`; schema mig 095 applied to shared DB)
+
+`routes.actual_departure_at` is stamped on route start (`POST /api/routes/[routeId]/depart`), so the warehouse Overview 5-stage tracker + the warehouse board `'out'` column advance on departure. Both repos built green + pushed to `main`. DB-level smoke (rolled-back txn `pulled→in_transit`; dev-server `401`/`405`) done — device-level flow still to verify.
+
+- [ ] **chat-Claude — reconcile mig 095:** add `routes.actual_departure_at` (mig 095) to the Notion migration ledger. Dashboard mirror `20260609200000_095_routes_actual_departure_at.sql` is committed + marked applied in the shared tracker — do NOT `supabase db push` it. Next dashboard migration = 096.
+- [ ] **Smoke test — fresh inspection path:** complete a pre-trip on a real route with a clear/non_oos outcome, tap the completion CTA. Confirm `routes.actual_departure_at` stamps (check the row) and the dashboard warehouse Overview shows that route at **IN TRANSIT** + the warehouse board column flips to **OUT**.
+- [ ] **Smoke test — already-inspected "Start Route" path:** inspect, return to Home, tap "Start Route". Confirm the stamp fires here too (best-effort, fire-and-navigate).
+- [ ] **Smoke test — OOS does NOT stamp:** complete a pre-trip that fails out-of-service; confirm the CTA navigates but `actual_departure_at` stays null (truck is hard-blocked, not departing).
+- [ ] **Smoke test — "Join Route" does NOT stamp:** a no-truck co-driver tapping "Join Route" must not stamp departure (and the endpoint would 403 them anyway — primary/active only).
+- [ ] **Smoke test — idempotent:** re-tap a start CTA / re-hit the endpoint on an already-departed route → returns the existing timestamp, no overwrite.
+
+## June 9, 2026 — Phase 2B: Route Handoff (ON `main` / origin; schema mig 093 applied to shared DB)
 
 Driver-to-driver mid-route transfer. Owner offers → recipient accepts (takes over ETAs/SMS/completion) or declines. Schema columns `routes.active_driver_id` + `transfer_pending_to` applied from this repo as mig 093 (recorded at `supabase/data-patches/2026-06-09_route-handoff-093-columns.sql`). **Needs two devices / two crew accounts on the same route to test.**
 

@@ -22,6 +22,22 @@ Format: one lesson per block. Lead with the rule, then **Why** and **How to appl
 
 ---
 
+## A status signal needs the right GRAIN — don't reuse an existing column whose meaning is one level off, even when the name matches.
+
+**Why:** 2026-06-09 the warehouse Overview never reached IN TRANSIT. The prompt pointed at `dispatch_stops.actual_departure_at` ("never written"). But that column is the **per-stop** departure leg ("left THIS stop") — the wrong grain for "the truck left the warehouse," which is a **route**-level event with no stop attached. Writing the warehouse departure onto stop[0]'s `actual_departure_at` would have been semantically false (the driver hasn't departed any stop yet) and would have corrupted downstream per-stop ETA logic that reads that field. The correct fix was a NEW `routes.actual_departure_at` (route grain) with a single writer, which both dashboard surfaces (`deriveStage` Overview + `deriveColState` board column) then read.
+
+**How to apply:** when adding a lifecycle/status signal, first ask "what entity does this event belong to?" — route vs stop vs truck. A same-named column on a different table is a trap, not a shortcut. One writer at the correct grain, many readers. Also: `boardClient.fetchRoutes` uses `select('*')`, so a new `routes` column flows into the board's `Route` object with no SELECT edit — only the hand-written type (`board.ts`) needs the field added.
+
+---
+
+## Verify push-state from git (`origin/main..HEAD`), not from a CLAUDE.md "NOT yet pushed" note — status docs go stale.
+
+**Why:** 2026-06-09 CLAUDE.md's build-state table said Phase 2B was "built on main, NOT yet pushed (held for two-device smoke test)." Before pushing this session's work I checked `git log origin/main..HEAD` — it was **empty**: Phase 2B was already on `origin/main`. Trusting the doc would have either wrongly "held" the new feature from shipping, or stoked an unfounded worry that pushing would drag unvetted work to origin. The doc was simply stale.
+
+**How to apply:** before any push, run `git log --oneline origin/main..HEAD` to see exactly what will ship. Trust the ref, not the prose. When a status doc and git disagree, fix the doc.
+
+---
+
 ## A re-runnable data-patch `UPDATE` must key its `WHERE` off the columns it does NOT change — never the column whose value it mutates.
 
 **Why:** 2026-06-06 the wall→ladder patch changed `dependency_map.trigger_value` from `'sidewall'` to `'wall'`. The original ad-hoc UPDATE matched `WHERE trigger_value = 'sidewall'` — fine for the one-time apply, but useless as a saved patch: after it runs once the row is `'wall'`, so a second run matches zero rows; and after a fresh DB rebuild the Migration 016 seed restores `'sidewall'`, where a WHERE keyed on the *new* value (`'wall'`) would silently no-op instead of re-correcting. The `supabase/data-patches/` convention is "safe to re-run / survives rebuild," so the saved file's WHERE was rewritten to `trigger_type='keyword' AND required_item ILIKE '%ladder%'` — a stable identity that holds whether the row currently reads `sidewall` (fresh seed) or `wall` (already patched). Same `id` in both verify queries confirmed exactly one row each time.
