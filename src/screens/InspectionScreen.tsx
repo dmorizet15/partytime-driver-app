@@ -3,6 +3,7 @@
 import { useEffect, useReducer } from 'react'
 import { useRouter }             from 'next/navigation'
 import { useAppState }           from '@/context/AppStateContext'
+import { departRoute }           from '@/lib/departApi'
 
 interface InspectionScreenProps {
   routeId: string
@@ -1344,7 +1345,13 @@ export default function InspectionScreen({ routeId }: InspectionScreenProps) {
               // After a completed inspection the driver goes straight to the
               // active route (not back to Home) — Home is no longer the
               // post-inspection landing surface. routeId is the inspected route.
-              onClick={() => router.replace(`/route/${routeId}`)}
+              // A passing pre-trip = the truck is leaving the yard, so stamp the
+              // warehouse departure (best-effort, never blocks nav). NOT on 'oos'
+              // — an out-of-service truck is hard-blocked and isn't departing.
+              onClick={() => {
+                if (result.outcome !== 'oos') void departRoute(routeId)
+                router.replace(`/route/${routeId}`)
+              }}
             />
           </Footer>
         </Shell>

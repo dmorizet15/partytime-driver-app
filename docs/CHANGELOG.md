@@ -4,6 +4,23 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-06-09 — Warehouse IN TRANSIT writer: `routes.actual_departure_at` (driver app + schema mig 095)
+
+The warehouse Overview's 5-stage tracker (Dispatched → Pulled → Loaded → In Transit → Returned) never reached **IN TRANSIT**: `deriveStage` only got there via `dispatched_at && hasActivity`, where `hasActivity` is a *stop-level* arrival/completion — neither exists between the truck leaving the yard and reaching stop 1. There was no writer for "truck departed warehouse." `dispatch_stops.actual_departure_at` exists but is the per-stop leg ("left this stop"), the wrong grain, and was itself never written.
+
+**Schema (mig 095, applied from this repo):** added `routes.actual_departure_at timestamptz NULL` — verified absent first (live `information_schema` check: routes had `active_driver_id`/`dispatched_at`/`transfer_pending_to` but not this). Applied via `supabase db query --linked --file` after a `BEGIN…ROLLBACK` preview; recorded re-runnably at `supabase/data-patches/2026-06-09_routes_actual_departure_at.sql`. Dashboard mirror written at `supabase/migrations/20260609200000_095_routes_actual_departure_at.sql` and marked applied in the shared remote tracker (so a future dashboard `db push` won't re-run it). `src/types/supabase.ts` regenerated (also picked up the already-live `route_crew.start_time_overridden` from dashboard mig 094).
+
+**Code:**
+- `POST /api/routes/[routeId]/depart` (no body) — session-cookie auth + service-role admin client, **server-authoritative ownership gate** mirroring `transfer/initiate` (`active_driver_id` set → caller must BE it; else caller must be the `is_primary` `route_crew` row). **Idempotent:** already-stamped → 200 with the existing timestamp, no write; the `.is('actual_departure_at', null)` update guard makes a concurrent double-start a no-op.
+- `src/lib/departApi.ts` — `departRoute(routeId)`, a **best-effort** wrapper that never throws and never blocks navigation (a failed stamp must not trap the driver on the start screen).
+- Wired at both route-start paths: `InspectionScreen` `complete`-step CTA (stamps unless outcome is `oos` — an out-of-service truck is hard-blocked and isn't departing) and `DayRouteSelectorScreen.handleCtaTap`'s already-inspected "Start Route" branch (stamps only when truck + inspected; the no-truck "Join Route" path does NOT stamp — joining ≠ departing). Both fire-and-navigate.
+
+**Dashboard (same session, see its CHANGELOG):** `warehouseOverviewServer.deriveStage` fires `in_transit` on `routes.actual_departure_at`; `WarehouseRouteColumn.deriveColState`'s `'out'` state reads it too; `board.ts` `Route` type + `supabase.ts` updated. One writer (this column), both warehouse surfaces.
+
+**Smoke tests:** (1) rolled-back txn on a real route — stamping flipped the derived stage `pulled → in_transit`, then ROLLBACK left production `actual_departure_at` null; (2) live dev server — `POST …/depart` unauth → `401 Unauthenticated`, `GET` → `405` (routing + dynamic param + auth gate confirmed). `npx next build` green both repos.
+
+---
+
 ## 2026-06-09 — Phase 2B: Route Handoff (driver app + schema mig 093; build green, NOT yet pushed)
 
 Driver-to-driver mid-route handoff. A route's current owner offers it to another crew member; the recipient accepts (taking over ETAs/SMS/completion) or declines. Both devices update live via realtime.

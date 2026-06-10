@@ -1583,6 +1583,7 @@ export type Database = {
           route_id: string
           scheduled_end: string | null
           scheduled_start: string | null
+          start_time_overridden: boolean
           truck_id: string | null
           updated_at: string | null
           user_id: string | null
@@ -1602,6 +1603,7 @@ export type Database = {
           route_id: string
           scheduled_end?: string | null
           scheduled_start?: string | null
+          start_time_overridden?: boolean
           truck_id?: string | null
           updated_at?: string | null
           user_id?: string | null
@@ -1621,6 +1623,7 @@ export type Database = {
           route_id?: string
           scheduled_end?: string | null
           scheduled_start?: string | null
+          start_time_overridden?: boolean
           truck_id?: string | null
           updated_at?: string | null
           user_id?: string | null
@@ -1657,6 +1660,7 @@ export type Database = {
       routes: {
         Row: {
           active_driver_id: string | null
+          actual_departure_at: string | null
           break_blocks: Json
           created_at: string
           created_by: string | null
@@ -1684,6 +1688,7 @@ export type Database = {
         }
         Insert: {
           active_driver_id?: string | null
+          actual_departure_at?: string | null
           break_blocks?: Json
           created_at?: string
           created_by?: string | null
@@ -1711,6 +1716,7 @@ export type Database = {
         }
         Update: {
           active_driver_id?: string | null
+          actual_departure_at?: string | null
           break_blocks?: Json
           created_at?: string
           created_by?: string | null

@@ -150,6 +150,18 @@ Built 2026-06-09, build green, **not yet pushed** (pending two-device smoke test
 
 ---
 
+## Warehouse Departure / IN TRANSIT writer (Driver App)
+
+Shipped 2026-06-09. Stamps `routes.actual_departure_at` when the driver starts the route, so the warehouse Overview's 5-stage tracker (Dispatched → Pulled → Loaded → **In Transit** → Returned) and the warehouse board `'out'` column finally advance on departure. Dashboard mig 095 (`routes.actual_departure_at timestamptz NULL`) applied from THIS repo (data-patch `supabase/data-patches/2026-06-09_routes_actual_departure_at.sql`; dashboard mirror `20260609200000_095_*`, marked applied in the shared tracker).
+
+- **Why a new `routes` column.** `dispatch_stops.actual_departure_at` already existed but is the per-stop leg ("left this stop"), the wrong grain for "left the warehouse," and was never written. The dashboard's `deriveStage` previously only reached `in_transit` via `dispatched_at && hasActivity` (a stop-level arrival), so nothing fired between the yard and stop 1.
+- **`POST /api/routes/[routeId]/depart`** (no body) — the ONLY writer. Session-cookie auth + service-role admin client; **server-authoritative ownership gate mirrors `transfer/initiate`** (`active_driver_id` set → caller must BE it; else caller must be the `is_primary` `route_crew` row — only primary/active driver departs, not co-drivers). **Idempotent:** already-stamped → 200 with existing timestamp, no write; `.is('actual_departure_at', null)` update guard makes a concurrent double-start a no-op. This is a `routes`-column WRITE endpoint — distinct from the `/api/routes` read SELECT (the "single endpoint for `routes` columns" rule governs reads; departure needs its own gated write, like the transfer endpoints).
+- **`src/lib/departApi.ts` `departRoute(routeId)`** — **best-effort**: never throws, never blocks navigation. A failed stamp must not trap the driver on the start screen; worst case the Overview lags one IN TRANSIT until a later action.
+- **Two call sites, both fire-and-navigate.** `InspectionScreen` `complete`-step CTA (fresh inspection) stamps **unless outcome is `oos`** — an out-of-service truck is hard-blocked from assignments and isn't departing. `DayRouteSelectorScreen.handleCtaTap`'s already-inspected "Start Route" branch stamps only when `hasTruck && inspected` — the no-truck "Join Route" path does NOT stamp (joining ≠ departing).
+- **Dashboard reads it on both surfaces** (same column, one writer): `warehouseOverviewServer.deriveStage` → `in_transit`; `WarehouseRouteColumn.deriveColState` → `'out'` (via `boardClient`'s `select('*')`, no SELECT change). No `dispatch_stops` write.
+
+---
+
 ## AVA (Driver App)
 
 ### Phase 1 — merged to `main` 2026-05-28 (merge `37f83a9`), branch deleted

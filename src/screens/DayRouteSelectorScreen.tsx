@@ -14,6 +14,7 @@ import AvaChip                          from '@/components/AvaChip'
 import WeatherFlagCard                  from '@/components/WeatherFlagCard'
 import AvaMorningCard                   from '@/components/ava/AvaMorningCard'
 import RouteStartWarehouseSheet          from '@/components/ava/RouteStartWarehouseSheet'
+import { departRoute }                    from '@/lib/departApi'
 import { useRouteWeather }               from '@/hooks/ava/useRouteWeather'
 import AskAvaButton                      from '@/components/ava/AskAvaButton'
 import PendingTransferCard               from '@/components/transfer/PendingTransferCard'
@@ -465,6 +466,11 @@ export default function DayRouteSelectorScreen() {
     // it. Defense-in-depth; the CTA is also hidden when lostOwnership is true.
     if (lostOwnership) return
     if (hasTruck && !inspected) { handleInspect(); return }
+    // Already inspected (truck + pre-trip done) → "Start Route": the truck is
+    // leaving the yard, so stamp the warehouse departure (best-effort, never
+    // blocks nav — see departApi). The no-truck "Join Route" path falls through
+    // WITHOUT stamping — joining a route is not departing the warehouse.
+    if (hasTruck && inspected) void departRoute(primaryRouteId)
     router.push(`/route/${primaryRouteId}`)
   }
 
