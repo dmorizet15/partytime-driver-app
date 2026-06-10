@@ -554,6 +554,7 @@ export type Database = {
           stop_type: Database["public"]["Enums"]["stop_type_enum"]
           sync_date_updated_at: string | null
           sync_prev_scheduled_date: string | null
+          tapgoods_discrepancy_emailed_at: string | null
           tapgoods_order_token: string | null
           tapgoods_stop_id: string | null
           tapgoods_writeback_at: string | null
@@ -642,6 +643,7 @@ export type Database = {
           stop_type: Database["public"]["Enums"]["stop_type_enum"]
           sync_date_updated_at?: string | null
           sync_prev_scheduled_date?: string | null
+          tapgoods_discrepancy_emailed_at?: string | null
           tapgoods_order_token?: string | null
           tapgoods_stop_id?: string | null
           tapgoods_writeback_at?: string | null
@@ -730,6 +732,7 @@ export type Database = {
           stop_type?: Database["public"]["Enums"]["stop_type_enum"]
           sync_date_updated_at?: string | null
           sync_prev_scheduled_date?: string | null
+          tapgoods_discrepancy_emailed_at?: string | null
           tapgoods_order_token?: string | null
           tapgoods_stop_id?: string | null
           tapgoods_writeback_at?: string | null
@@ -1999,6 +2002,73 @@ export type Database = {
           version?: string | null
         }
         Relationships: []
+      }
+      stop_item_checkoffs: {
+        Row: {
+          confirmed_at: string
+          confirmed_by: string
+          confirmed_qty: number
+          created_at: string
+          damaged: boolean
+          id: string
+          item_name: string
+          ordered_qty: number
+          stop_id: string
+          stop_type: Database["public"]["Enums"]["stop_type_enum"]
+          tapgoods_pick_list_item_id: number | null
+          work_order_id: string | null
+        }
+        Insert: {
+          confirmed_at?: string
+          confirmed_by: string
+          confirmed_qty: number
+          created_at?: string
+          damaged?: boolean
+          id?: string
+          item_name: string
+          ordered_qty: number
+          stop_id: string
+          stop_type: Database["public"]["Enums"]["stop_type_enum"]
+          tapgoods_pick_list_item_id?: number | null
+          work_order_id?: string | null
+        }
+        Update: {
+          confirmed_at?: string
+          confirmed_by?: string
+          confirmed_qty?: number
+          created_at?: string
+          damaged?: boolean
+          id?: string
+          item_name?: string
+          ordered_qty?: number
+          stop_id?: string
+          stop_type?: Database["public"]["Enums"]["stop_type_enum"]
+          tapgoods_pick_list_item_id?: number | null
+          work_order_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stop_item_checkoffs_confirmed_by_fkey"
+            columns: ["confirmed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stop_item_checkoffs_stop_id_fkey"
+            columns: ["stop_id"]
+            isOneToOne: false
+            referencedRelation: "dispatch_stops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stop_item_checkoffs_work_order_id_fkey"
+            columns: ["work_order_id"]
+            isOneToOne: false
+            referencedRelation: "field_work_orders"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       stops: {
         Row: {

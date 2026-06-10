@@ -124,7 +124,17 @@ export interface SupabaseStopRow {
 }
 
 // Local alias — the items[] row shape coming back from dispatch_stops.
-type RawItem = { category?: string | null; name?: string | null; qty?: number | null }
+// tapgoods_pick_list_item_id is written by the dashboard sync (Part A,
+// c0428a4) and has flowed through this transform untouched at runtime since —
+// declaring it here (TapGoods check-off build) is types-only, no fetch change.
+// NULL/absent = Tier-1 bundle wrapper or pre-write-back sync row: the line
+// still gates the check-off locally but is never written to TapGoods.
+type RawItem = {
+  category?: string | null
+  name?: string | null
+  qty?: number | null
+  tapgoods_pick_list_item_id?: number | null
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 // PostgREST embedded relationships can come back as either an object or a

@@ -125,7 +125,15 @@ export interface Stop {
   notes_set_by_time?:         string  // TG setByTimeNotes
   notes_strike_time?:         string  // TG strikeTimeNotes
   equipment: EquipmentSummary
-  items?: Array<{ category?: string | null; name?: string | null; qty?: number | null }>
+  // tapgoods_pick_list_item_id: TapGoods pick-list line id, written into the
+  // items JSONB by the dashboard sync. Addresses each line in the check-off
+  // write-back; null/absent lines gate locally but never write to TapGoods.
+  items?: Array<{
+    category?: string | null
+    name?: string | null
+    qty?: number | null
+    tapgoods_pick_list_item_id?: number | null
+  }>
   payment_state?: PaymentState
   balance_due_amount?: number | null  // dollars owed at delivery; null when nothing to collect
   calculated_eta?: string | null      // dispatcher cascade ETA written by dashboard; ISO timestamptz

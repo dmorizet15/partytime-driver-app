@@ -9,6 +9,7 @@ import ReportIssueForm, {
 } from '@/components/workOrders/ReportIssueForm'
 import { useAppState } from '@/context/AppStateContext'
 import { WC, FONT_BODY, FONT_DISPLAY } from '@/lib/workOrders/theme'
+import { stashCheckoffWoReturn } from '@/lib/checkoff/service'
 
 // sessionStorage key — StopDetailScreen reads this on mount to show the
 // post-submit "WO ### · {assignee} notified" green pill, then clears it.
@@ -22,9 +23,20 @@ export interface ReportIssueScreenProps {
   // from AppStateContext. Standalone mode: leave undefined.
   routeId?: string
   stopId?:  string
+  // Item check-off damage flow (?item=N&checkoff=1): pre-select the damaged
+  // stop.items line and, on success, stash the created WO for the check-off
+  // sheet to attach to its line (instead of the standard green-pill stash —
+  // the sheet's WO chip is the feedback surface there).
+  preSelectedItemIndex?: number
+  checkoffReturn?: boolean
 }
 
-export default function ReportIssueScreen({ routeId, stopId }: ReportIssueScreenProps) {
+export default function ReportIssueScreen({
+  routeId,
+  stopId,
+  preSelectedItemIndex,
+  checkoffReturn,
+}: ReportIssueScreenProps) {
   const router = useRouter()
   const { getStop } = useAppState()
 
@@ -59,6 +71,18 @@ export default function ReportIssueScreen({ routeId, stopId }: ReportIssueScreen
 
   function handleSuccess(result: ReportIssueFormResult) {
     setDone(result)
+    // Check-off damage flow: stash the WO for the check-off sheet's line
+    // (it must ride the audit INSERT — drivers can't UPDATE checkoff rows),
+    // then bounce back to the stop, where the sheet auto-reopens.
+    if (checkoffReturn && result.stopId && routeId && typeof preSelectedItemIndex === 'number') {
+      stashCheckoffWoReturn(result.stopId, {
+        itemIndex:       preSelectedItemIndex,
+        workOrderId:     result.workOrderId,
+        workOrderNumber: result.workOrderNumber,
+      })
+      router.replace(`/route/${routeId}/stop/${result.stopId}`)
+      return
+    }
     // Stop-context: stash for the stop screen's pill, then nav back.
     if (result.stopId && routeId) {
       try {
@@ -99,6 +123,7 @@ export default function ReportIssueScreen({ routeId, stopId }: ReportIssueScreen
       ) : (
         <ReportIssueForm
           stop={stopContext}
+          preSelectedItemIndex={preSelectedItemIndex}
           onSuccess={handleSuccess}
           onCancel={handleBack}
         />

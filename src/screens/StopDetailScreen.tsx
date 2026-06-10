@@ -31,6 +31,13 @@ import { normalizeAddressKey } from '@/lib/ava/addressKey'
 import { fetchTodayNotesHitCount, listNotesForAddress } from '@/lib/ava/stopNotesClient'
 import AvaNoteSheet from '@/components/ava/AvaNoteSheet'
 import StopNotesPreSheet, { type StopNotesSections } from '@/components/ava/StopNotesPreSheet'
+import ItemCheckoffSheet from '@/components/checkoff/ItemCheckoffSheet'
+import {
+  hasCheckoffRows,
+  hasCheckoffWoReturn,
+  isCheckoffCommittedLocal,
+  type CheckoffCommitSummary,
+} from '@/lib/checkoff/service'
 
 // sessionStorage key — driver chose to proceed despite the pickup window
 // not yet being open. Set by the standby card's dismiss button AND by the
@@ -276,6 +283,15 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   const [cashReasonVisible, setCashReasonVisible] = useState<boolean>(false)
   const [cashReasonError,   setCashReasonError]   = useState<string | null>(null)
 
+  // ── TapGoods item check-off (hard completion gate) ───────────────────────
+  // Delivery/pickup stops with items must have every line confirmed before
+  // Mark Complete proceeds (spec 37b0aa6451b881e39a1bcde70e6bd288). The gate
+  // FAILS CLOSED: null = hydrating, treated as unconfirmed. Committed state =
+  // instant local flag (survives offline) OR any existing audit row in
+  // stop_item_checkoffs (covers device loss / a co-driver having confirmed).
+  const [checkoffCommitted, setCheckoffCommitted] = useState<boolean | null>(null)
+  const [showCheckoff, setShowCheckoff] = useState(false)
+
   // Dispatcher note (NEW-D) — read-only modal that pops on stop open when
   // the dashboard has saved a dispatcher_notes value. "Got it" dismisses
   // it for this screen lifetime; the persistent "View note" link below
@@ -402,6 +418,29 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     }
     rehydrate()
   }, [stopId])
+
+  // Hydrate check-off state for delivery/pickup stops with items. Local flag
+  // first (synchronous truth, works offline), then the DB probe under RLS.
+  // Also auto-reopen the sheet when returning from the damage → Report-an-
+  // issue round trip (the WO stash means the driver was mid-check-off).
+  useEffect(() => {
+    if (!stop || (stop.stop_type !== 'delivery' && stop.stop_type !== 'pickup')
+        || (stop.items?.length ?? 0) === 0) {
+      setCheckoffCommitted(true) // nothing to confirm — gate is vacuous
+      return
+    }
+    if (isCheckoffCommittedLocal(stop.stop_id)) {
+      setCheckoffCommitted(true)
+      return
+    }
+    if (hasCheckoffWoReturn(stop.stop_id)) setShowCheckoff(true)
+    let cancelled = false
+    hasCheckoffRows(stop.stop_id).then((exists) => {
+      if (!cancelled) setCheckoffCommitted(exists)
+    })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stopId, stop?.stop_type, stop?.items?.length])
 
   // Hydrate cash-collection state for COD delivery stops only.
   useEffect(() => {
@@ -786,28 +825,65 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     return true
   }
 
-  // Mark-Complete tap — for COD delivery stops with no cash record yet,
-  // open the cash modal (which IS the confirmation). For every other case
-  // (non-COD, pickup, warehouse, or COD where a row already exists), open
-  // the standard yes/no confirmation modal.
+  // Open the COD cash modal with form state reset so a previously aborted
+  // attempt doesn't leak stale input. Shared by the Mark-Complete tap and
+  // the post-check-off funnel (items → cash → complete).
+  function openCashModal() {
+    if (!stop) return
+    const prefill = typeof stop.balance_due_amount === 'number' && stop.balance_due_amount > 0
+      ? stop.balance_due_amount.toFixed(2)
+      : ''
+    setCashAmountInput(prefill)
+    setCashReasonInput('')
+    setCashReasonVisible(false)
+    setCashReasonError(null)
+    setCashError(null)
+    setShowCashModal(true)
+  }
+
+  // Mark-Complete tap — ONE funnel: items → cash → complete.
+  //
+  // 1. ITEM CHECK-OFF HARD GATE (delivery/pickup with items only): unconfirmed
+  //    items open the check-off sheet instead of any confirm/cash modal. The
+  //    warehouse_return geofence auto-complete bypasses by design (no items;
+  //    it never routes through this tap handler), and service/depot stops are
+  //    excluded. Permissions are the EXISTING completion rights (canComplete
+  //    in runStopComplete — co-driver included, never primary-only).
+  // 2. COD delivery with no cash record yet → cash modal (the confirmation).
+  // 3. Everything else → standard yes/no confirmation modal.
   function handleMarkCompleteTap() {
     if (!stop) return
+    const needsCheckoff =
+      (stop.stop_type === 'delivery' || stop.stop_type === 'pickup')
+      && (stop.items?.length ?? 0) > 0
+      && checkoffCommitted !== true // null (hydrating) fails closed
+    if (needsCheckoff) {
+      setShowCheckoff(true)
+      return
+    }
     const isCodDelivery = stop.payment_state === 'cod' && stop.stop_type === 'delivery'
     if (isCodDelivery && cashConfirmed === false) {
-      // Reset modal form state on open so a previously aborted attempt
-      // doesn't leak stale input.
-      const prefill = typeof stop.balance_due_amount === 'number' && stop.balance_due_amount > 0
-        ? stop.balance_due_amount.toFixed(2)
-        : ''
-      setCashAmountInput(prefill)
-      setCashReasonInput('')
-      setCashReasonVisible(false)
-      setCashReasonError(null)
-      setCashError(null)
-      setShowCashModal(true)
+      openCashModal()
       return
     }
     setShowCompleteModal(true)
+  }
+
+  // Check-off success-overlay Continue → resume the completion funnel. The
+  // check-off gate button ("Mark Delivery/Pickup Complete") already carried
+  // the completion intent, so non-COD stops complete directly — no second
+  // yes/no modal. COD deliveries still owe the cash step first.
+  function handleCheckoffCommitted(_summary: CheckoffCommitSummary) {
+    setCheckoffCommitted(true)
+    setShowCheckoff(false)
+    if (!stop) return
+    const isCodDelivery = stop.payment_state === 'cod' && stop.stop_type === 'delivery'
+    if (isCodDelivery && cashConfirmed === false) {
+      openCashModal()
+      return
+    }
+    setCompleteLoading(true)
+    void runStopComplete(() => setShowCompleteModal(false), setCompleteLoading)
   }
 
   async function handleConfirmComplete() {
@@ -2481,6 +2557,21 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
       </div>
 
       <BottomNav/>
+
+      {/* TapGoods item check-off — the hard gate on Mark Complete for
+          delivery/pickup stops with items. Draft survives a back-out and the
+          damage → Report-an-issue round trip via sessionStorage. */}
+      {showCheckoff && stop
+        && (stop.stop_type === 'delivery' || stop.stop_type === 'pickup')
+        && !!authUser?.id && (
+        <ItemCheckoffSheet
+          stop={stop}
+          routeId={routeId}
+          userId={authUser.id}
+          onClose={() => setShowCheckoff(false)}
+          onCommitted={handleCheckoffCommitted}
+        />
+      )}
 
       {showCompleteModal && (
         <ConfirmationModal

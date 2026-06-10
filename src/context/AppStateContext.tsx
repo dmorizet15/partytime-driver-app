@@ -12,6 +12,7 @@ import { Route, Stop, StopStatus } from '@/types'
 import { useAuthContext } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { stopStateService } from '@/services/StopStateService'
+import { flushCheckoffQueue } from '@/lib/checkoff/service'
 
 // ─── State ────────────────────────────────────────────────────────────────────
 interface AppState {
@@ -175,6 +176,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
       // Flush any queued offline OTW writes now that we have connectivity
       if (user?.id) stopStateService.syncOnReconnect(user.id)
+
+      // Same trigger for queued item check-off writes (audit inserts +
+      // TapGoods write-backs) — fire-and-forget, the queue self-prunes.
+      if (user?.id) void flushCheckoffQueue()
 
       // Read OTW status from Supabase for this batch of stops
       const supabaseOtw = await stopStateService.readOtwStatus(stopIds)

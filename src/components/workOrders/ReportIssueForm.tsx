@@ -25,6 +25,7 @@ export interface ReportIssueFormStopContext {
 }
 
 export interface ReportIssueFormResult {
+  workOrderId:     string
   workOrderNumber: string
   assigneeName:    string
   stopId:          string | null
@@ -34,6 +35,9 @@ interface ReportIssueFormProps {
   // When `stop` is provided we render Screen 2A (locked context bar +
   // item picker). When undefined we render Screen 2B (asset-type toggle).
   stop?: ReportIssueFormStopContext
+  // Pre-select a stop.items line in the picker (stop mode only) — used by
+  // the item check-off damage flow so the damaged item arrives selected.
+  preSelectedItemIndex?: number
   onSuccess: (result: ReportIssueFormResult) => void
   onCancel?: () => void
 }
@@ -55,6 +59,7 @@ const C = {
 // ─── Component ─────────────────────────────────────────────────────────────
 export default function ReportIssueForm({
   stop,
+  preSelectedItemIndex,
   onSuccess,
   onCancel,
 }: ReportIssueFormProps) {
@@ -65,7 +70,14 @@ export default function ReportIssueForm({
   // Stop mode: pick from stop.items OR provide custom name+serial.
   // Standalone: choose asset_type, then search/select for truck/equipment
   // or free-text for field_item/other.
-  const [stopItemIdx, setStopItemIdx] = useState<number | null>(null)
+  const [stopItemIdx, setStopItemIdx] = useState<number | null>(() =>
+    stop
+    && typeof preSelectedItemIndex === 'number'
+    && preSelectedItemIndex >= 0
+    && preSelectedItemIndex < stop.items.length
+      ? preSelectedItemIndex
+      : null
+  )
   const [useStopCustom, setUseStopCustom] = useState(false)
   const [customName, setCustomName] = useState('')
   const [customSerial, setCustomSerial] = useState('')
@@ -324,6 +336,7 @@ export default function ReportIssueForm({
     try {
       const res = await createWorkOrder(payload)
       onSuccess({
+        workOrderId:     res.id,
         workOrderNumber: res.work_order_number,
         assigneeName,
         stopId: payload.stop_id ?? null,
