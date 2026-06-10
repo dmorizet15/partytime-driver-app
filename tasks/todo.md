@@ -1,5 +1,20 @@
 # Open Tasks — partytime-driver-app
 
+## June 10, 2026 — TapGoods Item Check-Off, driver UI (PUSHED: driver `ec2fe6e`; dashboard side pre-shipped `87c75f2` + mig 096 applied)
+
+Hard completion gate on delivery/pickup stops: every item line confirmed (Confirm-all / tap-accept / qty-corrected / damage-flagged) before Mark Complete; real quantities write back to TapGoods via the dashboard route; shorts email Melissa once per stop; damage pre-fills the Report-an-issue form. Build green + pushed. **Darren's live test is the completion gate — do NOT mark this feature done on build-green.**
+
+- [ ] **Darren live test (THE gate):** real delivery → confirm items (try one short + one damaged) → Mark Delivery Complete. Verify (1) TapGoods shows the real picked quantities with status `in_use`, (2) the discrepancy email lands at dispatch@ with item/short-qty/stop position, (3) the repair work order exists with the item pre-filled and the `stop_item_checkoffs` row carries its `work_order_id`. Repeat on a pickup (→ `checked_in`).
+- [ ] **Smoke — happy path:** delivery with all-good items → "Confirm all" → gate button enables → complete. `stop_item_checkoffs` rows land (full qty, no damage), `dispatch_stops.tapgoods_writeback_at` stamps, no email.
+- [ ] **Smoke — gate is hard:** tap Mark Stop Complete with unconfirmed items → check-off sheet opens (no confirm/cash modal). Back out → stop NOT completed; draft restores on reopen.
+- [ ] **Smoke — COD funnel order:** COD delivery → items first, then the cash modal, then complete. Cash gate behavior itself unchanged.
+- [ ] **Smoke — co-driver:** a co-driver (no transfer active) can check off + complete (existing completion rights preserved). After a Phase 2B handoff, the non-active driver cannot (canComplete blocks — unchanged).
+- [ ] **Smoke — offline/queue:** airplane mode at commit → sheet still commits (local), completion fails with the existing connection message; on reconnect + app-load the queue flushes (audit rows + write-back land). Also verify a `200 {synced:false}` (TapGoods down) re-queues and the discrepancy email does NOT duplicate on retry (server stamp).
+- [ ] **Smoke — warehouse_return untouched:** depot geofence auto-complete still fires with no check-off; manual depot Mark Complete shows the plain confirm modal.
+- [ ] **Types regen (cleanup):** `src/types/supabase.ts` was hand-patched from the dashboard's regen (no CLI token locally). Run `npx supabase gen types typescript --project-id fumprcyavpefyupurvsv` when logged in and diff — expect no functional drift.
+- [ ] **`.env.local` restore (Darren):** the file had been wiped to just `VERCEL_OIDC_TOKEN` (a dev-scope `vercel env pull`). Rebuilt this session from the production pull, but ALL sensitive vars (SUPABASE_SERVICE_KEY, TAPGOODS_API_KEY, ANTHROPIC_API_KEY, TOMORROW_IO_API_KEY, NEXT_PUBLIC_ELEVENLABS_API_KEY) pull EMPTY from Vercel — paste real values back for full local dev. Anon key + URLs were recovered (public values).
+- [ ] **Pending Joe @ TapGoods:** Option B short-pickup quantity shape (`pickedQuantity` stays at ordered). One-line swap server-side in `pickListLine()` — dashboard repo, not here.
+
 ## June 9, 2026 — Warehouse IN TRANSIT writer (PUSHED: driver `eaedfb2`, dashboard `ff5c8eb`; schema mig 095 applied to shared DB)
 
 `routes.actual_departure_at` is stamped on route start (`POST /api/routes/[routeId]/depart`), so the warehouse Overview 5-stage tracker + the warehouse board `'out'` column advance on departure. Both repos built green + pushed to `main`. DB-level smoke (rolled-back txn `pulled→in_transit`; dev-server `401`/`405`) done — device-level flow still to verify.

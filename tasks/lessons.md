@@ -6,6 +6,22 @@ Format: one lesson per block. Lead with the rule, then **Why** and **How to appl
 
 ---
 
+## An append-only RLS table forces "capture-before-insert" — any id produced by a side flow (work order, photo, payment) must exist BEFORE the row is written, because the driver can never UPDATE it in later.
+
+**Why:** 2026-06-10 the check-off spec said "write the resulting work_order_id back onto the checkoff row." But mig 096 gives drivers INSERT + SELECT only (append-only audit). A naive build order — insert checkoff rows at commit, then open the WO form, then UPDATE the row — fails RLS silently-by-design. The flow had to be re-sequenced: damage flag → Report-an-issue round trip FIRST (WO id stashed in sessionStorage, draft state survives the navigation), THEN the commit insert carries `work_order_id`. The sheet auto-reopens on return so the driver lands back mid-check-off.
+
+**How to apply:** before designing any flow that "writes X back onto" a row, read the table's RLS policies for the calling role. No UPDATE policy → all foreign ids must be in hand at INSERT time, which dictates UI sequencing (side flow before commit) and state persistence (draft must survive the side flow's navigation). If a late-arriving id is genuinely unavoidable, the update belongs to a server route with the service role — not the client.
+
+---
+
+## `vercel env pull` is destructive and scope-blind: it OVERWRITES `.env.local` with only the requested environment's vars, and SENSITIVE vars pull as empty strings — public values can be recovered from the deployed bundle; secrets only from Darren.
+
+**Why:** 2026-06-10 `npx next build` failed at page-data collection ("supabase URL and API key required") on a route untouched by the session. `.env.local` contained ONLY `VERCEL_OIDC_TOKEN` — a previous development-scope `vercel env pull` had replaced the whole file (dev scope holds 3 vars). Re-pulling production restored the KEYS but every sensitive var (`NEXT_PUBLIC_SUPABASE_URL`/`ANON_KEY`, `SUPABASE_SERVICE_KEY`, `TAPGOODS_API_KEY`, …) came back as `""` — Vercel never returns sensitive values. The build was unblocked by deriving the URL from the project ref and extracting the anon key from the deployed app's JS bundle (it ships to every browser — public by design). Server secrets could NOT be recovered that way and remain empty locally.
+
+**How to apply:** never run `vercel env pull` over a populated `.env.local` without a backup; pull to a temp file and merge. When a build fails on missing env in code you didn't touch, suspect the env file before the code (`awk -F= '{print $1, length($2)}'` exposes empty-string values that `grep <key>` hides). Public `NEXT_PUBLIC_*` supabase values are recoverable from the production bundle; service-role/API keys are not — flag Darren instead of inventing placeholders that make runtime failures look like code bugs.
+
+---
+
 ## When a prompt asserts a migration is "live," verify the columns exist in the DB before building on them — a migration NUMBER is not a guarantee.
 
 **Why:** 2026-06-09 the Phase 2B prompt stated "Migration 092 is live on the shared DB (active_driver_id + transfer_pending_to on routes table)." A live `information_schema.columns` check found neither column on `routes` — nor on any table. The locked Notion spec actually said 092 = the warehouse_return sentinel fix and that Phase 2B had been re-allocated to mig **093**, which was never written. Building the select/gates/endpoints against non-existent columns would have produced a green-compiling app that 500s at runtime (Postgres "column does not exist"). The 2-minute schema check turned a silent runtime failure into a clean STEP-1 blocker report + a one-line fix (apply 093).

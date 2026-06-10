@@ -4,6 +4,26 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-06-10 — TapGoods Item Check-Off, driver UI (`ec2fe6e`, pushed to `main`; build green)
+
+Driver-app side of the TapGoods item check-off (spec `37b0aa6451b881e39a1bcde70e6bd288`, design-locked June 10; dashboard side pre-shipped at `87c75f2` with mig 096 applied + live-verified). When a driver completes a delivery or pickup, every item line must be confirmed — one tap for "all good," per-line for exceptions — and the confirmation writes real quantities back to TapGoods, emails Melissa on shorts, and spins a repair work order on damage. **Confirmation is a HARD GATE on Mark Complete.**
+
+**Types (step 1):** `tapgoods_pick_list_item_id` declared on `RawItem` (`supabaseTransform.ts`) + `Stop['items']` (`types/index.ts`) — types-only; the value has flowed through `/api/routes` at runtime since dashboard sync Part A. `src/types/supabase.ts` gained `stop_item_checkoffs` + `dispatch_stops.tapgoods_discrepancy_emailed_at`, **hand-patched from the dashboard's post-096 regen** (supabase CLI had no access token this session — a real regen is queued in todo).
+
+**Check-off sheet (`src/components/checkoff/ItemCheckoffSheet.tsx`):** built to the approved June 10 clickable artifact. Confirm-all gold button (accepts pending lines at full qty); per-line tap-to-accept toggle (green check); inline Issue drawer with a 0..ordered quantity stepper (short → amber accept circle showing the corrected number) and an **independent** "Item damaged" toggle (never changes quantity; stop-type-aware copy; pre-filled WO chip previewing the Report-an-issue handoff); "WHAT HAPPENS ON COMPLETE" summary strip when exceptions exist; gate button disabled until every line resolves (live count in the disabled label); footer "Saved on your phone · TapGoods sync runs automatically"; success overlay summarizing TapGoods status / discrepancy note / work orders, whose Continue resumes the funnel.
+
+**Gate insertion (`StopDetailScreen`):** `handleMarkCompleteTap` gates BEFORE the COD branch — delivery/pickup with items and no committed check-off → sheet opens instead of any modal; **fails closed** while hydrating. One funnel: items → cash → complete (post-commit, non-COD completes directly — the sheet's gate button carried the intent; COD goes through the extracted `openCashModal()`). Committed state = localStorage flag OR an existing `stop_item_checkoffs` row (crew_read probe). **Untouched:** warehouse_return geofence auto-complete, service stops, COD gate behavior, ETA-SMS primary-only axis, co-driver completion rights (gate inherits `canComplete`), all required-pickup/pickup-stub/missed-pickup/inflatable logic.
+
+**Data layer (`src/lib/checkoff/`):** audit rows insert via the supabase client under RLS (crew insert own-route, `confirmed_by = auth.uid()`, append-only). Write-back POSTs `{stop_id, lines}` to the dashboard's `/api/tapgoods/dispatch/write-back` with the bearer token (work-orders pattern); 401/403 are treated as bugs — never retried. Offline queue (`ptd_checkoff_queue`) copies the OTW dedupe-by-stop last-write-wins pattern and **also enqueues on `200 {synced:false}`** (TapGoods down, network up); provably-permanent reasons are dropped; a failed audit insert rides the same queue. Flush wired into `loadDay` beside `stopStateService.syncOnReconnect`.
+
+**Damage → WO:** `ReportIssueForm` gained optional `preSelectedItemIndex` (+ `workOrderId` on its result); the stop report-issue page reads `?item=N&checkoff=1` (Suspense-wrapped `useSearchParams`). In checkoff mode the screen stashes `{itemIndex, workOrderId, workOrderNumber}` and bounces back; the sheet auto-reopens and the WO id **rides the commit INSERT** — required because drivers have no UPDATE on the append-only table.
+
+**Session note:** `.env.local` had been wiped to a lone `VERCEL_OIDC_TOKEN` (a dev-scope `vercel env pull`), breaking `npx next build` at page-data collection. Rebuilt from the production pull; sensitive vars come back empty by Vercel design — anon key recovered from the deployed bundle (public), server secrets left for Darren to restore. See `tasks/lessons.md`.
+
+**NOT smoke-tested.** Darren's live test (real delivery/pickup → TapGoods reflects quantities + discrepancy email lands + WO fires) is the completion gate.
+
+---
+
 ## 2026-06-09 — Warehouse IN TRANSIT writer: `routes.actual_departure_at` (driver app + schema mig 095)
 
 The warehouse Overview's 5-stage tracker (Dispatched → Pulled → Loaded → In Transit → Returned) never reached **IN TRANSIT**: `deriveStage` only got there via `dispatched_at && hasActivity`, where `hasActivity` is a *stop-level* arrival/completion — neither exists between the truck leaving the yard and reaching stop 1. There was no writer for "truck departed warehouse." `dispatch_stops.actual_departure_at` exists but is the per-stop leg ("left this stop"), the wrong grain, and was itself never written.
