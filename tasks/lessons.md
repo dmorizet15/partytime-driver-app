@@ -6,6 +6,14 @@ Format: one lesson per block. Lead with the rule, then **Why** and **How to appl
 
 ---
 
+## A live test that starts minutes after a push races the Vercel deploy AND the device's in-memory bundle — verify the device is on the new build before debugging the feature.
+
+**Why:** 2026-06-10 the check-off live test reported "the sheet never appears." The code was correct, the deploy was Ready, and the test stop's data was perfect (3 item lines, all with `tapgoods_pick_list_item_id`). The failure was timing: the feature deploy went Ready at 14:46 EDT, and the test device's app session predated it. This app has NO service worker, so nothing pins old JS on disk — but an already-open PWA/tab keeps the old bundle in memory indefinitely; only a force-quit + relaunch picks up the new build. The investigation cost an hour of code-tracing that a "relaunch the app first" step would have skipped. Useful verification moves discovered along the way: (1) prove the live bundle has the feature by grepping a served chunk for a feature-unique string (`curl` the page, walk its `_next/static` chunks, grep for e.g. `ptd_checkoff_queue`) — chunk hashes also change per deploy; (2) `npx vercel ls` / `vercel inspect <url>` shows which deploy the production alias points at; (3) with the repo NOT `supabase link`ed, ad-hoc read-only SQL works via the management API: `POST https://api.supabase.com/v1/projects/{ref}/database/query` with `SUPABASE_ACCESS_TOKEN` — no DB password, no link needed.
+
+**How to apply:** any "feature missing on device" report within ~an hour of a push: FIRST have the tester force-quit and relaunch (PWA: swipe away from the app switcher), and confirm deploy-Ready time vs test time. Only debug code after the bundle is proven current (marker-string grep is definitive). When triaging, also pull the DB facts early — zero new-table rows + no completion stamp told us the new code path had never executed at all, which fits stale-bundle and rules out a half-firing gate.
+
+---
+
 ## An append-only RLS table forces "capture-before-insert" — any id produced by a side flow (work order, photo, payment) must exist BEFORE the row is written, because the driver can never UPDATE it in later.
 
 **Why:** 2026-06-10 the check-off spec said "write the resulting work_order_id back onto the checkoff row." But mig 096 gives drivers INSERT + SELECT only (append-only audit). A naive build order — insert checkoff rows at commit, then open the WO form, then UPDATE the row — fails RLS silently-by-design. The flow had to be re-sequenced: damage flag → Report-an-issue round trip FIRST (WO id stashed in sessionStorage, draft state survives the navigation), THEN the commit insert carries `work_order_id`. The sheet auto-reopens on return so the driver lands back mid-check-off.

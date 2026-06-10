@@ -4,6 +4,16 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-06-10 (PM) — Check-off post-ship: type-regen verification + live-test triage (docs-only commit; no code changes)
+
+**Type-regen drift check (todo item closed):** with `SUPABASE_ACCESS_TOKEN` available, regenerated `src/types/supabase.ts` against the live schema (`--project-id fumprcyavpefyupurvsv` — this repo is NOT `supabase link`ed, so `--linked` fails) and diffed against the morning's hand-patch: **byte-for-byte identical, zero drift**. The committed file was already canonical generator output; nothing to commit. `npx next build` green.
+
+**Live-test failure triaged — NOT a code bug.** Report: driver saw no `ItemCheckoffSheet` on Mark Complete. Read-only investigation ruled everything in: production alias serves the `ec2fe6e` deploy (Ready 14:46 EDT; verified by finding the `ptd_checkoff_queue` marker string in a live served chunk), gate conditions correct and fail-closed, sheet imported + mounted, `/api/routes` SELECT carries `items`, and test stop `#0A819C5A` (Melissa Morizet delivery) has 3 item lines ALL with non-null `tapgoods_pick_list_item_id` — plus zero `stop_item_checkoffs` rows and no completion stamp, i.e. the new code path never executed on the device. **Root cause: the device's app session predated the 14:46 deploy** — no service worker exists, but an open PWA keeps the old bundle in memory until force-quit. Retest after relaunch is the pending gate (tasks/todo.md). Lesson recorded (deploy-race verification playbook + management-API SQL path).
+
+**Housekeeping:** `.env.local` now also holds `SUPABASE_ACCESS_TOKEN` (Darren to remove/rotate after CLI work); sensitive server keys still empty locally (Vercel returns sensitive vars as `""`).
+
+---
+
 ## 2026-06-10 — TapGoods Item Check-Off, driver UI (`ec2fe6e`, pushed to `main`; build green)
 
 Driver-app side of the TapGoods item check-off (spec `37b0aa6451b881e39a1bcde70e6bd288`, design-locked June 10; dashboard side pre-shipped at `87c75f2` with mig 096 applied + live-verified). When a driver completes a delivery or pickup, every item line must be confirmed — one tap for "all good," per-line for exceptions — and the confirmation writes real quantities back to TapGoods, emails Melissa on shorts, and spins a repair work order on damage. **Confirmation is a HARD GATE on Mark Complete.**
