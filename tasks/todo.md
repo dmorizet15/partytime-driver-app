@@ -1,5 +1,9 @@
 # Open Tasks — partytime-driver-app
 
+## June 10, 2026 PM3 — Check-off inline panel compaction (PUSHED: `beca737`; layout-only)
+
+- [ ] **Darren phone re-test (THE gate):** stop detail during check-off shows noticeably more than 4 item rows; gate CTA still pinned (never scrolls away) and compact; no dead band between the "Saved on your phone…" caption and the tab bar; all check-off interactions unchanged (confirm-all, tap-accept, qty stepper, damage toggle, WO round trip).
+
 ## June 10, 2026 PM — Check-off live-test revisions 1–3 (PUSHED: driver `8869246`, dashboard `8c8fbcf`; no migration, high-water stays 096)
 
 Rev 1 inline check-off + single gated CTA (sheet retired → `ItemCheckoffPanel`), Rev 2 co-driver permission fixes (`truck_is_own` inspection lock, ex-primary-only transfer lock, `canComplete` co-driver carve-out, handoff-state cleanup at warehouse_return, empty-crew loud guard), Rev 3 silent accessory/add-on full-qty sweep (dashboard). Both builds green + pushed. **Supersedes the "gate is hard" smoke item below (the sheet no longer opens — the gate is the CTA itself).**

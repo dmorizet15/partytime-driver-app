@@ -4,6 +4,14 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-06-10 (PM3) — Check-off inline panel compaction (`beca737`, pushed; layout-only, no migration)
+
+Live-test feedback: the Rev 1 inline panel's bottom zone ate too much screen — on iPhone only ~4 item rows were visible above the gated CTA + "Saved on your phone…" caption + tab bar. Spacing/container changes ONLY — zero logic changes (two-axis qty/damage, accept paths, gate behavior, commit/queue all verbatim).
+
+- **`ItemCheckoffPanel.tsx`:** section header padding `24px 22px 10px` → `12px 18px 8px`; "Confirm all" 52→44 tall, margin 14→10; item row padding `12px 14px` → `8px 12px` (≈8px reclaimed per row — the 34px accept circle is kept as the touch target); exception summary strip tightened. Header comment now states the constraint: every px of chrome comes out of visible manifest rows.
+- **`StopDetailScreen.tsx` gate block:** padding `12px 18px 14px` → `8px 14px 6px` (kills the dead band above BottomNav), CTA 58→48 (still pinned, never scrolls), caption condensed to 9.5px/3px margin.
+- Net: pinned bottom zone shrinks ~35px + ~8px/row, all flowing to the `flex-1` scroll body — roughly 5–6 rows visible where there were ~4. `npx next build` green. **Darren's phone re-test is the gate — not marked complete.**
+
 ## 2026-06-10 (PM2) — Check-off live-test revisions 1–3 (driver `8869246` + dashboard `8c8fbcf`, both pushed; no migration)
 
 Three locked revisions from the first live test on order `#0A819C5A`, built in one session across both repos. Spec section: Notion `37b0aa6451b881e39a1bcde70e6bd288` → "Live Test Revisions."
