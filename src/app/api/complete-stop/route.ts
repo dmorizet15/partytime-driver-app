@@ -20,6 +20,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies }                   from 'next/headers'
 import { createServerClient }        from '@supabase/ssr'
+import { createClient }              from '@supabase/supabase-js'
 
 function getSupabase() {
   const cookieStore = cookies()
@@ -78,7 +79,7 @@ export async function POST(request: NextRequest) {
         actual_departure_at: now,
       })
       .eq('id', stopId)
-      .select('id')
+      .select('id, route_id, stop_type')
 
     if (error) {
       console.error('[/api/complete-stop] update failed:', error.message)
@@ -96,6 +97,40 @@ export async function POST(request: NextRequest) {
         { success: false, error: 'Stop not found' },
         { status: 404 }
       )
+    }
+
+    // ── Phase 2B lifecycle hygiene (Rev 2, 2026-06-10) ─────────────────────
+    // Route handoff state was never cleared — active_driver_id set on a route
+    // stayed set forever, so every FUTURE read treated the handoff as still
+    // active (the stale-data root cause behind the co-driver lockout). The
+    // warehouse_return completion IS the end of the route (both the geofence
+    // auto-fire and the manual Mark Complete funnel through this endpoint), so
+    // clear active_driver_id + transfer_pending_to here. Best-effort + non-
+    // fatal: the stop completion above already committed; a missed clear only
+    // means the stale state survives until the next route end. Service-role
+    // client — routes has no authenticated UPDATE policy (by design).
+    const completedRow = data[0] as { id: string; route_id: string | null; stop_type: string | null }
+    if (completedRow.stop_type === 'warehouse_return' && completedRow.route_id) {
+      const adminUrl = process.env.SUPABASE_URL
+      const adminKey = process.env.SUPABASE_SERVICE_KEY
+      if (adminUrl && adminKey) {
+        try {
+          const admin = createClient(adminUrl, adminKey, {
+            auth: { autoRefreshToken: false, persistSession: false },
+          })
+          const { error: clearErr } = await admin
+            .from('routes')
+            .update({ active_driver_id: null, transfer_pending_to: null })
+            .eq('id', completedRow.route_id)
+          if (clearErr) {
+            console.warn('[/api/complete-stop] transfer-state clear failed (non-fatal):', clearErr.message)
+          }
+        } catch (clearErr) {
+          console.warn('[/api/complete-stop] transfer-state clear threw (non-fatal):', clearErr)
+        }
+      } else {
+        console.warn('[/api/complete-stop] admin env missing — transfer-state clear skipped')
+      }
     }
 
     return NextResponse.json({ success: true })

@@ -34,15 +34,24 @@ export function isActiveDriver(
 }
 
 /**
- * True when a transfer is active AND it handed the route to someone other than
- * `profileId` — i.e. the original primary who has just lost ownership. Drives
- * the "Transferred to [Name]" locked state.
+ * True when a transfer is active AND it stripped ownership from `profileId` —
+ * i.e. the EX-PRIMARY who handed the route off. Drives the "Transferred to
+ * [Name]" locked state.
+ *
+ * Rev 2 (2026-06-10, live-test fix): a handoff locks out the ex-primary ONLY.
+ * A co-driver (`is_primary === false`) is never "transferred away" — they keep
+ * stop access, check-off, completion, and navigation through a transfer. The
+ * old `active_driver_id !== profileId` check caught every non-active crew
+ * member identically, which grayed out innocent co-drivers. `is_primary`
+ * undefined (the /api/routes soft-fail) is treated as primary, consistent
+ * with isActiveDriver's owner-on-thin-data convention.
  */
 export function isTransferredAway(
   route: Route | null | undefined,
   profileId: string | null | undefined,
 ): boolean {
-  return !!route?.active_driver_id && route.active_driver_id !== profileId
+  if (!route?.active_driver_id || route.active_driver_id === profileId) return false
+  return route.is_primary !== false
 }
 
 /**

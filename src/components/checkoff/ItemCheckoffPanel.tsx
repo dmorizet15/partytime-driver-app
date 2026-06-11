@@ -1,8 +1,14 @@
 'use client'
 
-// ─── TapGoods Item Check-Off sheet ───────────────────────────────────────────
-// Full-screen sheet inside the stop-completion flow. Built to the APPROVED
-// June 10, 2026 clickable artifact (Notion spec 37b0aa6451b881e39a1bcde70e6bd288):
+// ─── TapGoods Item Check-Off panel (INLINE) ──────────────────────────────────
+// Rev 1 (2026-06-10 live-test revision, Notion spec 37b0aa6451b881e39a1bcde70e6bd288):
+// the check-off list renders INLINE at the bottom of StopDetailScreen — it is
+// no longer a full-screen sheet summoned by "Mark Stop Complete." The single
+// gated bottom CTA lives on the SCREEN (disabled "Confirm N items to
+// complete" → "Complete Stop → Next") and calls commit() through the ref
+// handle; it replaced both the old open-the-sheet button and the old in-sheet
+// complete button. ONLY the container changed — everything inside is the
+// sheet's interaction model, reused verbatim:
 //
 //   • Confirm all — one gold button accepts every pending line at full qty.
 //   • Per-line tap-to-accept — row tap accepts at full qty (green check);
@@ -13,12 +19,17 @@
 //     AND gains the red wrench/WO badge). Stop-type-aware damage copy.
 //   • Pre-commit summary strip — "WHAT HAPPENS ON COMPLETE" appears above the
 //     gate when any exception exists.
-//   • The gate — Mark Delivery/Pickup Complete is disabled until every line
-//     is resolved; disabled label carries the live count. Footer: the gate is
-//     LOCAL, TapGoods sync runs behind it.
-//   • Success overlay — items → TapGoods status, discrepancy note, work orders.
+//   • Offline behavior, sessionStorage draft, and the damage → Report-an-issue
+//     work-order round trip are unchanged (service.ts untouched).
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { useRouter } from 'next/navigation'
 import type { Stop } from '@/types'
 import type { CheckoffLineDraft } from '@/lib/checkoff/types'
@@ -47,16 +58,27 @@ const C = {
 const FONT_DISPLAY = "var(--font-archivo), 'Archivo', 'Inter', system-ui, -apple-system, sans-serif"
 const FONT_BODY    = "var(--font-inter), 'Inter', system-ui, -apple-system, sans-serif"
 
-interface ItemCheckoffSheetProps {
+// Live gate state reported to the parent screen — drives the single bottom
+// CTA's disabled state + "Confirm N items to complete" label.
+export interface CheckoffPanelProgress {
+  confirmed: number
+  total: number
+  allResolved: boolean
+}
+
+// Imperative handle for the screen's CTA. commit() resolves null when the
+// gate isn't satisfied (or a commit is already in flight); otherwise it runs
+// the unchanged commitCheckoff path (audit insert → local flag → TapGoods
+// write-back, queue-backed, never throws) and returns the summary.
+export interface CheckoffPanelHandle {
+  commit: () => Promise<CheckoffCommitSummary | null>
+}
+
+interface ItemCheckoffPanelProps {
   stop: Stop
   routeId: string
-  // Success-overlay Continue → parent resumes the completion funnel
-  // (COD cash modal → complete, or straight to complete).
-  onCommitted: (summary: CheckoffCommitSummary) => void
-  // Back arrow — close without committing; the draft persists in
-  // sessionStorage so re-opening restores every line.
-  onClose: () => void
   userId: string
+  onProgress: (progress: CheckoffPanelProgress) => void
 }
 
 function freshLines(stop: Stop): CheckoffLineDraft[] {
@@ -70,13 +92,8 @@ function freshLines(stop: Stop): CheckoffLineDraft[] {
   }))
 }
 
-export default function ItemCheckoffSheet({
-  stop,
-  routeId,
-  onCommitted,
-  onClose,
-  userId,
-}: ItemCheckoffSheetProps) {
+const ItemCheckoffPanel = forwardRef<CheckoffPanelHandle, ItemCheckoffPanelProps>(
+  function ItemCheckoffPanel({ stop, routeId, userId, onProgress }, ref) {
   const router = useRouter()
   const items = useMemo(() => stop.items ?? [], [stop.items])
   const isPickup = stop.stop_type === 'pickup'
@@ -95,9 +112,8 @@ export default function ItemCheckoffSheet({
       : l)
   })
   const [issueOpenIdx, setIssueOpenIdx] = useState<number | null>(null)
-  const [phase, setPhase] = useState<'list' | 'committing' | 'success'>('list')
-  const [summary, setSummary] = useState<CheckoffCommitSummary | null>(null)
-  const committedRef = useRef(false)
+  const committedRef  = useRef(false)
+  const committingRef = useRef(false)
 
   // Draft every change — survives the WO round trip and an accidental back-out.
   useEffect(() => {
@@ -106,6 +122,23 @@ export default function ItemCheckoffSheet({
 
   const confirmedCount = lines.filter((l) => l.accepted).length
   const allResolved    = lines.length > 0 && confirmedCount === lines.length
+
+  // Report gate state up — the screen's single CTA renders from this.
+  useEffect(() => {
+    onProgress({ confirmed: confirmedCount, total: lines.length, allResolved })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [confirmedCount, lines.length, allResolved])
+
+  useImperativeHandle(ref, () => ({
+    async commit() {
+      if (!allResolved || committingRef.current || committedRef.current) return null
+      committingRef.current = true
+      const s = await commitCheckoff(stop, lines, userId)
+      committedRef.current = true
+      committingRef.current = false
+      return s
+    },
+  }), [allResolved, lines, stop, userId])
 
   const shortUnits = lines.reduce((acc, l) => {
     const ordered = typeof items[l.index]?.qty === 'number' ? Math.floor(items[l.index]!.qty!) : 0
@@ -157,99 +190,34 @@ export default function ItemCheckoffSheet({
     )
   }
 
-  async function handleCommit() {
-    if (!allResolved || phase !== 'list') return
-    setPhase('committing')
-    const s = await commitCheckoff(stop, lines, userId)
-    committedRef.current = true
-    setSummary(s)
-    setPhase('success')
-  }
-
-  const typePill = isPickup
-    ? { bg: C.gold, color: C.ink, label: 'PICKUP' }
-    : { bg: C.blue, color: '#fff', label: 'DELIVERY' }
-
-  const heroAddress = [
-    stop.address_line_1,
-    [stop.city, stop.state].filter(Boolean).join(' '),
-  ].filter((p) => p && p.trim().length > 0).join(' · ')
-
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
+    <section
       aria-label={isPickup ? 'Check items back in' : 'Check items out'}
-      style={{
-        position: 'fixed', inset: 0, zIndex: 1200,
-        background: C.cream, fontFamily: FONT_BODY, color: C.ink,
-        display: 'flex', flexDirection: 'column',
-      }}
+      style={{ fontFamily: FONT_BODY, color: C.ink }}
     >
-      {/* ── Header — stop context + type pill + live counter ─────────────── */}
-      <div style={{ background: C.ink, color: '#fff', padding: '14px 18px 16px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button
-            onClick={onClose}
-            aria-label="Back to stop"
-            style={{
-              width: 36, height: 36, borderRadius: '50%',
-              background: 'rgba(255,255,255,0.12)', border: 0, cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              flexShrink: 0,
-            }}
-          >
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff"
-                 strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M19 12H5M12 19l-7-7 7-7"/>
-            </svg>
-          </button>
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{
-              fontFamily: FONT_DISPLAY, fontSize: 17, fontWeight: 900,
-              letterSpacing: '-0.01em', lineHeight: 1.15,
-              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-            }}>
-              {(stop.company_name?.trim() || stop.customer_name).trim()}
-            </div>
-            <div style={{
-              marginTop: 2, fontSize: 12, color: 'rgba(255,255,255,0.65)',
-              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-            }}>
-              {heroAddress}
-            </div>
-          </div>
-          <span style={{
-            background: typePill.bg, color: typePill.color,
-            fontSize: 10, fontWeight: 900, letterSpacing: '0.14em',
-            padding: '5px 10px', borderRadius: 999, flexShrink: 0,
-          }}>
-            {typePill.label}
-          </span>
-        </div>
-
+      {/* ── Section header — title + live counter ─────────────────────────── */}
+      <div style={{
+        padding: '24px 22px 10px',
+        display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12,
+      }}>
         <div style={{
-          marginTop: 14,
-          display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
+          fontFamily: FONT_DISPLAY,
+          fontSize: 12, fontWeight: 800, letterSpacing: '0.2em',
+          textTransform: 'uppercase', color: C.muted,
         }}>
-          <div style={{
-            fontFamily: FONT_DISPLAY, fontSize: 19, fontWeight: 900,
-            letterSpacing: '-0.02em',
-          }}>
-            {isPickup ? 'Check items back in' : 'Check items out'}
-          </div>
-          <div style={{
-            fontSize: 12.5, fontWeight: 800,
-            color: allResolved ? C.green : C.gold,
-            letterSpacing: '0.04em',
-          }}>
-            {confirmedCount} of {lines.length} confirmed
-          </div>
+          {isPickup ? 'Check items back in' : 'Check items out'}
+        </div>
+        <div style={{
+          fontSize: 12.5, fontWeight: 800,
+          color: allResolved ? C.green : C.amber,
+          letterSpacing: '0.04em',
+          flexShrink: 0,
+        }}>
+          {confirmedCount} of {lines.length} confirmed
         </div>
       </div>
 
-      {/* ── Scroll body ───────────────────────────────────────────────────── */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 18px 24px' }}>
+      <div style={{ padding: '0 18px' }}>
         {/* Confirm all — the happy path, one tap. */}
         {!allResolved && (
           <button
@@ -515,107 +483,11 @@ export default function ItemCheckoffSheet({
           </div>
         )}
       </div>
-
-      {/* ── The gate ──────────────────────────────────────────────────────── */}
-      <div style={{
-        padding: '12px 18px calc(14px + env(safe-area-inset-bottom))',
-        background: C.cream, borderTop: `1px solid rgba(10,11,20,0.08)`,
-      }}>
-        <button
-          onClick={handleCommit}
-          disabled={!allResolved || phase !== 'list'}
-          style={{
-            width: '100%', height: 58, borderRadius: 999, border: 0,
-            background: allResolved ? C.gold : C.off,
-            color: allResolved ? C.ink : C.muted,
-            cursor: allResolved && phase === 'list' ? 'pointer' : 'default',
-            fontSize: 15.5, fontWeight: 900, fontFamily: FONT_DISPLAY,
-            letterSpacing: '-0.01em',
-            boxShadow: allResolved ? '0 14px 30px -10px rgba(255,184,0,0.55)' : 'none',
-            transition: 'background 160ms ease',
-          }}
-        >
-          {phase === 'committing'
-            ? 'Saving…'
-            : allResolved
-              ? `Mark ${isPickup ? 'Pickup' : 'Delivery'} Complete`
-              : `Confirm all items first · ${confirmedCount} of ${lines.length}`}
-        </button>
-        <div style={{
-          marginTop: 8, textAlign: 'center',
-          fontSize: 11, fontWeight: 600, color: C.muted,
-        }}>
-          Saved on your phone · TapGoods sync runs automatically
-        </div>
-      </div>
-
-      {/* ── Success overlay ───────────────────────────────────────────────── */}
-      {phase === 'success' && summary && (
-        <div style={{
-          position: 'absolute', inset: 0, zIndex: 10,
-          background: C.cream,
-          display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center',
-          padding: '32px 26px',
-        }}>
-          <div style={{
-            width: 64, height: 64, borderRadius: '50%',
-            background: 'rgba(31,191,107,0.14)', border: `2px solid ${C.green}`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke={C.green}
-                 strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M4 12l5 5L20 6"/>
-            </svg>
-          </div>
-          <div style={{
-            marginTop: 16, fontFamily: FONT_DISPLAY, fontSize: 22, fontWeight: 900,
-            letterSpacing: '-0.02em', textAlign: 'center',
-          }}>
-            {isPickup ? 'Items checked back in' : 'Items checked out'}
-          </div>
-
-          <div style={{
-            marginTop: 18, width: '100%', maxWidth: 380,
-            background: C.paper, border: `1.5px solid ${C.ink}`, borderRadius: 16,
-            padding: '14px 16px', display: 'grid', gap: 9,
-          }}>
-            <OutcomeLine ok>
-              {summary.syncedLineCount > 0
-                ? `${lines.length} item${lines.length === 1 ? '' : 's'} → TapGoods as ${isPickup ? 'CHECKED IN' : 'IN USE'}`
-                : `${lines.length} item${lines.length === 1 ? '' : 's'} recorded on your phone`}
-            </OutcomeLine>
-            {summary.shortUnits > 0 && (
-              <OutcomeLine tone="amber">
-                Discrepancy note to Melissa — {summary.shortUnits} unit{summary.shortUnits === 1 ? '' : 's'} short
-              </OutcomeLine>
-            )}
-            {summary.damagedCount > 0 && (
-              <OutcomeLine tone="coral">
-                {summary.damagedCount} damaged item{summary.damagedCount === 1 ? '' : 's'} flagged
-                {summary.workOrderCount > 0
-                  ? ` · ${summary.workOrderCount} work order${summary.workOrderCount === 1 ? '' : 's'} opened`
-                  : ''}
-              </OutcomeLine>
-            )}
-          </div>
-
-          <button
-            onClick={() => onCommitted(summary)}
-            style={{
-              marginTop: 22, width: '100%', maxWidth: 380, height: 56,
-              borderRadius: 999, border: 0, background: C.ink, color: '#fff',
-              cursor: 'pointer', fontSize: 15, fontWeight: 900,
-              fontFamily: FONT_DISPLAY, letterSpacing: '-0.01em',
-            }}
-          >
-            Continue
-          </button>
-        </div>
-      )}
-    </div>
+    </section>
   )
-}
+})
+
+export default ItemCheckoffPanel
 
 // ─── Small pieces ────────────────────────────────────────────────────────────
 
@@ -645,26 +517,5 @@ function SummaryLine({ children }: { children: React.ReactNode }) {
       <span style={{ color: C.gold, flexShrink: 0 }}>•</span>
       <span>{children}</span>
     </li>
-  )
-}
-
-function OutcomeLine({
-  children,
-  ok,
-  tone,
-}: {
-  children: React.ReactNode
-  ok?: boolean
-  tone?: 'amber' | 'coral'
-}) {
-  const color = ok ? C.green : tone === 'amber' ? C.amber : tone === 'coral' ? C.coral : C.ink
-  return (
-    <div style={{ display: 'flex', gap: 9, alignItems: 'flex-start' }}>
-      <span style={{
-        width: 8, height: 8, borderRadius: '50%', background: color,
-        marginTop: 5, flexShrink: 0,
-      }}/>
-      <span style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.4 }}>{children}</span>
-    </div>
   )
 }

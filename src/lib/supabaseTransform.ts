@@ -359,9 +359,18 @@ export function transformSupabase({ routes: routeRows, crew, myCrew, stops: stop
     // Driver's truck = their OWN crew truck (null for no-truck crew). When no
     // crew row resolved — the /api/routes soft-fail unscoped fallback — drop
     // back to the route's primary truck so a transient crew-read failure never
-    // strips a real driver's truck.
+    // strips a real driver's truck DISPLAY (hero chip, inspection entry).
+    //
+    // Rev 2 (2026-06-10): the inherited truck is flagged `truck_is_own: false`
+    // so the inspection STOP LOCK never keys on it — a co-driver who fell
+    // through the soft-fail used to inherit the primary's truck, read
+    // hasTruck=true, and stay locked forever (the primary's inspection
+    // unlocks only the primary — driver_id-scoped). Lock gates key on
+    // `truck_is_own === true` (the user's own crew-row truck), never an
+    // inherited one.
+    const ownTruck = mine ? firstRel(mine.truck) : null
     const truck = mine
-      ? firstRel(mine.truck)
+      ? ownTruck
       : firstRel(r.truck)
     const truck_2 = firstRel(r.truck_2)
     const drivers = driversByRoute.get(r.id) ?? []
@@ -378,6 +387,7 @@ export function transformSupabase({ routes: routeRows, crew, myCrew, stops: stop
       stop_count:      stopCountByRoute.get(r.id) ?? 0,
       route_status:    'active',
       truck_id:                    truck?.id,
+      truck_is_own:                truck ? !!ownTruck : undefined,
       truck_name:                  truck?.name,
       truck_plate:                 truck?.plate ?? undefined,
       truck_dvir_requirement:      truck?.dvir_requirement      ?? undefined,

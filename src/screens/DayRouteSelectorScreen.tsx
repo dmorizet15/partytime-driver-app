@@ -370,10 +370,17 @@ export default function DayRouteSelectorScreen() {
   // Co-driver = explicitly not the primary. Undefined (soft-fail / no crew
   // row) is treated as NOT a co-driver so the badge never shows on bad data.
   const isCoDriver = primaryRoute?.is_primary === false
-  // Stops are locked only for truck-holders who haven't inspected yet. No-truck
-  // crew tap freely (the actual_departure_at read-only gate is a later
-  // dashboard session — deferred this phase).
-  const stopsLocked    = hasTruck && !inspected
+  // Stops are locked only for holders of their OWN crew-row truck who haven't
+  // inspected yet. Rev 2 (2026-06-10, locked DOT rule): the lock keys on the
+  // user's own truck assignment, NEVER an inherited one (`truck_is_own`), and
+  // a co-driver (is_primary === false) is excluded outright — a ride-along
+  // co-driver isn't required to inspect and must never be locked behind the
+  // primary's inspection (which is driver_id-scoped and would never unlock
+  // them). No-truck crew tap freely. Mirrored in RouteListScreen — fix both.
+  const stopsLocked    = hasTruck
+    && primaryRoute?.truck_is_own === true
+    && !inspected
+    && !isCoDriver
   const stopsTappable  = !stopsLocked
   function handleStopTap(stop: Stop) {
     if (stopsLocked) return

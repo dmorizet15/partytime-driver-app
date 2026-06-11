@@ -31,12 +31,13 @@ import { normalizeAddressKey } from '@/lib/ava/addressKey'
 import { fetchTodayNotesHitCount, listNotesForAddress } from '@/lib/ava/stopNotesClient'
 import AvaNoteSheet from '@/components/ava/AvaNoteSheet'
 import StopNotesPreSheet, { type StopNotesSections } from '@/components/ava/StopNotesPreSheet'
-import ItemCheckoffSheet from '@/components/checkoff/ItemCheckoffSheet'
+import ItemCheckoffPanel, {
+  type CheckoffPanelHandle,
+  type CheckoffPanelProgress,
+} from '@/components/checkoff/ItemCheckoffPanel'
 import {
   hasCheckoffRows,
-  hasCheckoffWoReturn,
   isCheckoffCommittedLocal,
-  type CheckoffCommitSummary,
 } from '@/lib/checkoff/service'
 
 // sessionStorage key — driver chose to proceed despite the pickup window
@@ -249,7 +250,14 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   // Completion was UNGATED in Phase 2A (any crew member could complete). We
   // preserve that: completion is restricted to the active driver ONLY while a
   // transfer is active (active_driver_id set). No transfer → anyone completes.
-  const canComplete = !route?.active_driver_id || isActiveDriver(route, authUser?.id)
+  // Rev 2 (2026-06-10): a transfer strips completion from the EX-PRIMARY only
+  // — a co-driver (is_primary === false) keeps completion straight through a
+  // handoff. The 2026-06-09 "transfer active → only the active driver
+  // completes" decision and Rev 2 only conflicted because this gate couldn't
+  // tell an ex-primary from a co-driver.
+  const canComplete = !route?.active_driver_id
+    || isActiveDriver(route, authUser?.id)
+    || route?.is_primary === false
   // Original primary who just lost the route — drives the "Transferred" note.
   const transferredAwayName = isTransferredAway(route, authUser?.id)
     ? crewMemberName(route, route?.active_driver_id)
@@ -283,14 +291,20 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   const [cashReasonVisible, setCashReasonVisible] = useState<boolean>(false)
   const [cashReasonError,   setCashReasonError]   = useState<string | null>(null)
 
-  // ── TapGoods item check-off (hard completion gate) ───────────────────────
+  // ── TapGoods item check-off (hard completion gate, INLINE — Rev 1) ───────
   // Delivery/pickup stops with items must have every line confirmed before
-  // Mark Complete proceeds (spec 37b0aa6451b881e39a1bcde70e6bd288). The gate
+  // the stop completes (spec 37b0aa6451b881e39a1bcde70e6bd288). The gate
   // FAILS CLOSED: null = hydrating, treated as unconfirmed. Committed state =
   // instant local flag (survives offline) OR any existing audit row in
   // stop_item_checkoffs (covers device loss / a co-driver having confirmed).
-  const [checkoffCommitted, setCheckoffCommitted] = useState<boolean | null>(null)
-  const [showCheckoff, setShowCheckoff] = useState(false)
+  // Rev 1 (2026-06-10): the check-off renders INLINE on this screen (panel in
+  // the manifest slot) and a single gated bottom CTA does the real completion
+  // — no sheet, no open-then-confirm double tap. The panel reports its gate
+  // state via onProgress; the CTA calls commit() through the ref.
+  const [checkoffCommitted, setCheckoffCommitted]   = useState<boolean | null>(null)
+  const [checkoffProgress, setCheckoffProgress]     = useState<CheckoffPanelProgress>({ confirmed: 0, total: 0, allResolved: false })
+  const [checkoffCommitting, setCheckoffCommitting] = useState(false)
+  const checkoffPanelRef = useRef<CheckoffPanelHandle>(null)
 
   // Dispatcher note (NEW-D) — read-only modal that pops on stop open when
   // the dashboard has saved a dispatcher_notes value. "Got it" dismisses
@@ -421,8 +435,8 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
 
   // Hydrate check-off state for delivery/pickup stops with items. Local flag
   // first (synchronous truth, works offline), then the DB probe under RLS.
-  // Also auto-reopen the sheet when returning from the damage → Report-an-
-  // issue round trip (the WO stash means the driver was mid-check-off).
+  // Returning from the damage → Report-an-issue round trip needs no reopen
+  // anymore — the panel is inline and consumes the WO stash on mount.
   useEffect(() => {
     if (!stop || (stop.stop_type !== 'delivery' && stop.stop_type !== 'pickup')
         || (stop.items?.length ?? 0) === 0) {
@@ -433,7 +447,6 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
       setCheckoffCommitted(true)
       return
     }
-    if (hasCheckoffWoReturn(stop.stop_id)) setShowCheckoff(true)
     let cancelled = false
     hasCheckoffRows(stop.stop_id).then((exists) => {
       if (!cancelled) setCheckoffCommitted(exists)
@@ -697,6 +710,21 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   ].filter((p) => p && p.trim().length > 0).join(' · ')
 
   const items = stop.items ?? []
+
+  // ── Inline check-off active? (Rev 1, 2026-06-10) ──────────────────────────
+  // When true: the check-off panel renders in the manifest slot, the action
+  // card's gold button is hidden, and the single gated bottom CTA does the
+  // real completion. checkoffCommitted null (hydrating) keeps the panel up —
+  // fails closed; the CTA is gated by the panel's live progress anyway. The
+  // CTA is available to ALL crew with completion rights (canComplete —
+  // co-driver included, never primary-only).
+  const checkoffActive =
+    (stop.stop_type === 'delivery' || stop.stop_type === 'pickup')
+    && items.length > 0
+    && !isCompleted
+    && checkoffCommitted !== true
+    && canComplete
+
   const etaSentTime     = stop.on_the_way_sent_at ? formatSentAt(stop.on_the_way_sent_at) : null
   const etaQuotedSnippet = etaRange ? `We're ${etaRange} out.` : null
 
@@ -841,26 +869,16 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     setShowCashModal(true)
   }
 
-  // Mark-Complete tap — ONE funnel: items → cash → complete.
+  // Mark-Complete tap — the NON-check-off paths only (Rev 1 moved the item
+  // gate onto the screen itself: when checkoffActive, the action-card button
+  // is hidden and the single gated bottom CTA owns completion). This handler
+  // still serves warehouse_return's manual fallback, service stops, no-item
+  // stops, and an already-committed re-entry.
   //
-  // 1. ITEM CHECK-OFF HARD GATE (delivery/pickup with items only): unconfirmed
-  //    items open the check-off sheet instead of any confirm/cash modal. The
-  //    warehouse_return geofence auto-complete bypasses by design (no items;
-  //    it never routes through this tap handler), and service/depot stops are
-  //    excluded. Permissions are the EXISTING completion rights (canComplete
-  //    in runStopComplete — co-driver included, never primary-only).
-  // 2. COD delivery with no cash record yet → cash modal (the confirmation).
-  // 3. Everything else → standard yes/no confirmation modal.
+  // 1. COD delivery with no cash record yet → cash modal (the confirmation).
+  // 2. Everything else → standard yes/no confirmation modal.
   function handleMarkCompleteTap() {
     if (!stop) return
-    const needsCheckoff =
-      (stop.stop_type === 'delivery' || stop.stop_type === 'pickup')
-      && (stop.items?.length ?? 0) > 0
-      && checkoffCommitted !== true // null (hydrating) fails closed
-    if (needsCheckoff) {
-      setShowCheckoff(true)
-      return
-    }
     const isCodDelivery = stop.payment_state === 'cod' && stop.stop_type === 'delivery'
     if (isCodDelivery && cashConfirmed === false) {
       openCashModal()
@@ -869,21 +887,29 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     setShowCompleteModal(true)
   }
 
-  // Check-off success-overlay Continue → resume the completion funnel. The
-  // check-off gate button ("Mark Delivery/Pickup Complete") already carried
-  // the completion intent, so non-COD stops complete directly — no second
-  // yes/no modal. COD deliveries still owe the cash step first.
-  function handleCheckoffCommitted(_summary: CheckoffCommitSummary) {
+  // The single gated bottom CTA (Rev 1) — "Complete Stop → Next" does the
+  // REAL completion in one tap: commit the check-off (audit insert → local
+  // flag → TapGoods write-back, queue-backed, never throws), then resume the
+  // ONE funnel: items → cash (COD only) → complete → navigate. The gate is
+  // LOCAL — a TapGoods outage never traps the driver here.
+  async function handleInlineCheckoffComplete() {
+    if (!stop || checkoffCommitting || !checkoffProgress.allResolved) return
+    const handle = checkoffPanelRef.current
+    if (!handle) return
+    setCheckoffCommitting(true)
+    const summary = await handle.commit()
+    if (!summary) {
+      setCheckoffCommitting(false)
+      return
+    }
     setCheckoffCommitted(true)
-    setShowCheckoff(false)
-    if (!stop) return
     const isCodDelivery = stop.payment_state === 'cod' && stop.stop_type === 'delivery'
     if (isCodDelivery && cashConfirmed === false) {
+      setCheckoffCommitting(false)
       openCashModal()
       return
     }
-    setCompleteLoading(true)
-    void runStopComplete(() => setShowCompleteModal(false), setCompleteLoading)
+    await runStopComplete(() => {}, setCheckoffCommitting)
   }
 
   async function handleConfirmComplete() {
@@ -2240,7 +2266,11 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
                   </div>
                 ) : (
                 <>
-                {/* Mark Arrived — gold (pending) or green (otw_sent) */}
+                {/* Mark Stop Complete — hidden while the inline check-off owns
+                    completion (Rev 1: ONE gated bottom CTA, no second button
+                    that lies about what it does). Still renders for service /
+                    no-item / already-committed stops. */}
+                {!checkoffActive && (
                 <button
                   onClick={handleMarkCompleteTap}
                   style={{
@@ -2268,6 +2298,7 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
                     <ArrowIcon size={18} color={isOtwSent ? C.green : C.gold}/>
                   </span>
                 </button>
+                )}
 
                 {/* 3-button grid */}
                 <div style={{
@@ -2378,8 +2409,19 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
           <StopWeatherModule lat={stop.latitude} lng={stop.longitude} />
         )}
 
-        {/* MANIFEST */}
-        {items.length > 0 && (
+        {/* MANIFEST — when the inline check-off is active (Rev 1), the
+            interactive panel IS the item list (confirm-all + per-line
+            controls in the manifest slot); otherwise the static list. */}
+        {items.length > 0 && checkoffActive && authUser?.id && (
+          <ItemCheckoffPanel
+            ref={checkoffPanelRef}
+            stop={stop}
+            routeId={routeId}
+            userId={authUser.id}
+            onProgress={setCheckoffProgress}
+          />
+        )}
+        {items.length > 0 && !(checkoffActive && authUser?.id) && (
           <>
             <div style={{
               padding: '24px 22px 10px',
@@ -2556,22 +2598,46 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
         )}
       </div>
 
-      <BottomNav/>
-
-      {/* TapGoods item check-off — the hard gate on Mark Complete for
-          delivery/pickup stops with items. Draft survives a back-out and the
-          damage → Report-an-issue round trip via sessionStorage. */}
-      {showCheckoff && stop
-        && (stop.stop_type === 'delivery' || stop.stop_type === 'pickup')
-        && !!authUser?.id && (
-        <ItemCheckoffSheet
-          stop={stop}
-          routeId={routeId}
-          userId={authUser.id}
-          onClose={() => setShowCheckoff(false)}
-          onCommitted={handleCheckoffCommitted}
-        />
+      {/* ── THE GATE (Rev 1) — single bottom CTA, pinned above BottomNav ────
+          Disabled with the live remaining count until every line is resolved
+          (accepted clean, quantity-corrected, or flagged), then it does the
+          REAL completion: commit → (COD cash) → complete → next stop. */}
+      {checkoffActive && authUser?.id && (
+        <div style={{
+          padding: '12px 18px 14px',
+          background: C.cream, borderTop: `1px solid rgba(10,11,20,0.08)`,
+          flexShrink: 0,
+        }}>
+          <button
+            onClick={handleInlineCheckoffComplete}
+            disabled={!checkoffProgress.allResolved || checkoffCommitting}
+            style={{
+              width: '100%', height: 58, borderRadius: 999, border: 0,
+              background: checkoffProgress.allResolved ? C.gold : C.off,
+              color: checkoffProgress.allResolved ? C.ink : C.muted,
+              cursor: checkoffProgress.allResolved && !checkoffCommitting ? 'pointer' : 'default',
+              fontSize: 15.5, fontWeight: 900, fontFamily: FONT_DISPLAY,
+              letterSpacing: '-0.01em',
+              boxShadow: checkoffProgress.allResolved ? '0 14px 30px -10px rgba(255,184,0,0.55)' : 'none',
+              transition: 'background 160ms ease',
+            }}
+          >
+            {checkoffCommitting
+              ? 'Saving…'
+              : checkoffProgress.allResolved
+                ? (nextStop ? 'Complete Stop → Next' : 'Complete Stop')
+                : `Confirm ${checkoffProgress.total - checkoffProgress.confirmed} item${checkoffProgress.total - checkoffProgress.confirmed === 1 ? '' : 's'} to complete`}
+          </button>
+          <div style={{
+            marginTop: 7, textAlign: 'center',
+            fontSize: 11, fontWeight: 600, color: C.muted,
+          }}>
+            Saved on your phone · TapGoods sync runs automatically
+          </div>
+        </div>
       )}
+
+      <BottomNav/>
 
       {showCompleteModal && (
         <ConfirmationModal

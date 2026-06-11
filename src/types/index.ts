@@ -13,6 +13,12 @@ export interface Route {
   stop_count: number
   route_status: 'active' | 'completed' | 'pending'
   truck_id?: string
+  // Rev 2 (2026-06-10): true when truck_* came from THIS user's own route_crew
+  // row; false when inherited from the route's primary truck (the /api/routes
+  // soft-fail display fallback). The pre-trip inspection STOP LOCK keys on
+  // `truck_is_own === true` only — an inherited truck must never lock a
+  // co-driver behind an inspection they can't perform. undefined = no truck.
+  truck_is_own?: boolean
   truck_name?: string
   truck_plate?: string
   // DVIR routing fields — primary truck only. Drives the pre-trip inspection

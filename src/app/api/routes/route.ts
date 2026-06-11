@@ -227,6 +227,23 @@ export async function GET(req: NextRequest) {
     // Crew names are non-fatal — drivers can still see the route, just without
     // name attribution / a resolved primary-driver name.
     console.warn('[/api/routes] crew names query failed (non-fatal):', crewNamesRes.error.message)
+  } else {
+    // Rev 2 (2026-06-10) defensive guard: a route with ZERO route_crew rows
+    // mid-operation is indistinguishable from "crew not loaded yet" on the
+    // client, which is exactly what made the co-driver lockout hard to read.
+    // Don't block — just make it loudly observable in the server logs.
+    const crewRouteIds = new Set(
+      ((crewNamesRes.data ?? []) as Array<{ route_id: string }>).map((c) => c.route_id)
+    )
+    const crewless = routeIds.filter((id) => !crewRouteIds.has(id))
+    if (crewless.length > 0) {
+      console.warn(
+        '[/api/routes] route_crew EMPTY for route(s) mid-operation — ownership/lock gates will run on thin data:',
+        crewless.join(', '),
+        '| date:', date,
+        '| caller:', user.id,
+      )
+    }
   }
 
   const { routes, stops } = transformSupabase({

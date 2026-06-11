@@ -150,7 +150,15 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
   // Phase 2A — pre-trip (and thus the stop lock) applies only to truck-holders.
   // truck_id is now THIS user's crew truck; no-truck crew tap stops freely
   // (the actual_departure_at read-only gate is a deferred dashboard session).
-  const stopsLocked   = !!route?.truck_id && !inspected
+  // Rev 2 (2026-06-10, locked DOT rule): the lock keys on the user's OWN
+  // crew-row truck (`truck_is_own === true`), never an inherited soft-fail
+  // truck, and co-drivers (is_primary === false) are excluded outright — a
+  // ride-along co-driver must never be locked behind the primary's
+  // driver_id-scoped inspection. Mirror of DayRouteSelectorScreen's gate.
+  const stopsLocked   = !!route?.truck_id
+    && route?.truck_is_own === true
+    && !inspected
+    && route?.is_primary !== false
   const stopsTappable = !stopsLocked
 
   // Week view is reachable regardless of route assignment — the toggle must
