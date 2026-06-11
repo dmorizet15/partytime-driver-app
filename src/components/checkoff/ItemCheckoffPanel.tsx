@@ -195,9 +195,12 @@ const ItemCheckoffPanel = forwardRef<CheckoffPanelHandle, ItemCheckoffPanelProps
       aria-label={isPickup ? 'Check items back in' : 'Check items out'}
       style={{ fontFamily: FONT_BODY, color: C.ink }}
     >
-      {/* ── Section header — title + live counter ─────────────────────────── */}
+      {/* ── Section header — title + live counter ───────────────────────────
+          Compact verticals throughout this panel: every px of chrome comes out
+          of visible manifest rows on a phone (the gate + tab bar already pin
+          ~160px of the viewport). */}
       <div style={{
-        padding: '24px 22px 10px',
+        padding: '12px 18px 8px',
         display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12,
       }}>
         <div style={{
@@ -223,12 +226,12 @@ const ItemCheckoffPanel = forwardRef<CheckoffPanelHandle, ItemCheckoffPanelProps
           <button
             onClick={confirmAllPending}
             style={{
-              width: '100%', height: 52, borderRadius: 14,
+              width: '100%', height: 44, borderRadius: 12,
               background: C.gold, color: C.ink, border: 0, cursor: 'pointer',
-              fontSize: 14.5, fontWeight: 900, fontFamily: FONT_DISPLAY,
+              fontSize: 14, fontWeight: 900, fontFamily: FONT_DISPLAY,
               letterSpacing: '-0.01em',
               boxShadow: '0 10px 22px -10px rgba(255,184,0,0.55)',
-              marginBottom: 14,
+              marginBottom: 10,
             }}
           >
             ✓ Confirm all — all good
@@ -247,7 +250,7 @@ const ItemCheckoffPanel = forwardRef<CheckoffPanelHandle, ItemCheckoffPanelProps
             const drawerOpen = issueOpenIdx === line.index
             return (
               <div key={line.index} style={{ borderTop: i === 0 ? 'none' : `1px solid ${C.off}` }}>
-                <div style={{ display: 'flex', alignItems: 'center', padding: '12px 14px', gap: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', padding: '8px 12px', gap: 10 }}>
                   {/* Accept circle — check (green full), corrected number
                       (amber short), or empty outline (pending). */}
                   <button
@@ -455,8 +458,8 @@ const ItemCheckoffPanel = forwardRef<CheckoffPanelHandle, ItemCheckoffPanelProps
         {/* ── Pre-commit summary strip — billing consequence made visible ── */}
         {hasExceptions && (
           <div style={{
-            marginTop: 14, background: C.ink, color: '#fff',
-            borderRadius: 14, padding: '13px 15px',
+            marginTop: 10, background: C.ink, color: '#fff',
+            borderRadius: 14, padding: '11px 13px',
           }}>
             <div style={{
               fontSize: 10, fontWeight: 900, letterSpacing: '0.18em',

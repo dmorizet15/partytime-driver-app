@@ -2604,7 +2604,9 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
           REAL completion: commit → (COD cash) → complete → next stop. */}
       {checkoffActive && authUser?.id && (
         <div style={{
-          padding: '12px 18px 14px',
+          // Compact: this block + BottomNav are both pinned — every px of
+          // padding here is a px the manifest list above can't use.
+          padding: '8px 14px 6px',
           background: C.cream, borderTop: `1px solid rgba(10,11,20,0.08)`,
           flexShrink: 0,
         }}>
@@ -2612,11 +2614,11 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
             onClick={handleInlineCheckoffComplete}
             disabled={!checkoffProgress.allResolved || checkoffCommitting}
             style={{
-              width: '100%', height: 58, borderRadius: 999, border: 0,
+              width: '100%', height: 48, borderRadius: 999, border: 0,
               background: checkoffProgress.allResolved ? C.gold : C.off,
               color: checkoffProgress.allResolved ? C.ink : C.muted,
               cursor: checkoffProgress.allResolved && !checkoffCommitting ? 'pointer' : 'default',
-              fontSize: 15.5, fontWeight: 900, fontFamily: FONT_DISPLAY,
+              fontSize: 14.5, fontWeight: 900, fontFamily: FONT_DISPLAY,
               letterSpacing: '-0.01em',
               boxShadow: checkoffProgress.allResolved ? '0 14px 30px -10px rgba(255,184,0,0.55)' : 'none',
               transition: 'background 160ms ease',
@@ -2629,8 +2631,9 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
                 : `Confirm ${checkoffProgress.total - checkoffProgress.confirmed} item${checkoffProgress.total - checkoffProgress.confirmed === 1 ? '' : 's'} to complete`}
           </button>
           <div style={{
-            marginTop: 7, textAlign: 'center',
-            fontSize: 11, fontWeight: 600, color: C.muted,
+            marginTop: 3, textAlign: 'center',
+            fontSize: 9.5, fontWeight: 600, color: C.muted, lineHeight: 1.3,
+            letterSpacing: '0.01em',
           }}>
             Saved on your phone · TapGoods sync runs automatically
           </div>
