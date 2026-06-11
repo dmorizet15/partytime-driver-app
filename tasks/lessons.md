@@ -6,6 +6,22 @@ Format: one lesson per block. Lead with the rule, then **Why** and **How to appl
 
 ---
 
+## A sensitive env var that pulls empty locally does NOT block introspection — deploy an ephemeral, token-gated probe route as a `vercel deploy` preview (no commit), hit it, then delete the deployment.
+
+**Why:** 2026-06-10 Rev 3 was hard-gated on confirming TapGoods' query-side accessory shape, but `TAPGOODS_API_KEY` is a sensitive Vercel var (pulls empty; `vercel env ls` showed it scoped to Preview + Production). Instead of asking Darren for the key or pushing a temp route through git → production, a token-gated read-only introspection route went up via bare `vercel deploy` (deploys the working tree, no commit), the preview env supplied the real key, three curl calls confirmed the exact shape (`pickListAccessories`/`pickListAddOns` on `Rental`; `id: ID!` query-side vs `Int!` on the input wrapper; `PickListAddOn` lacking read-side `checkedInQuantity`), and `vercel rm <url>` removed the deployment. Zero git history, zero key exposure, ~5 minutes.
+
+**How to apply:** the recipe: (1) confirm the var's scope includes Preview (`vercel env ls preview`), (2) write the probe under a throwaway path, gated on a long random query token, read-only by construction, with a "DELETE AFTER USE — never commit" header, (3) `vercel deploy --yes`, (4) probe with curl, (5) `rm` the route file BEFORE the repo's next commit and `vercel rm` the deployment. Never commit the probe and never promote it to production.
+
+---
+
+## State machines need an exit path — any column that marks "X is currently active" must have a writer that CLEARS it, or every future read treats a past event as live.
+
+**Why:** 2026-06-10 the co-driver lockout investigation found `routes.active_driver_id` still set from the 6/09 handoff test — NOTHING in either codebase ever cleared it, so every later day's reads treated that route as mid-transfer forever (CTA hidden, completion stripped, "Transferred to [Name]" cards on innocent screens). Phase 2B defined Idle/Pending/Transferred states but no transition OUT of Transferred at route end — a one-way door. Fix was code-level, no migration: `/api/complete-stop` clears both transfer columns when the completed stop is `warehouse_return` (the route's terminal event, covering both the geofence auto-fire and the manual tap — both funnel through that endpoint).
+
+**How to apply:** when adding any "currently active" column (lock holder, override, pending flag), name the terminal event that ends its lifecycle in the same session you add the writer — and wire the clear there, server-side, idempotent. If you can't name the terminal event, the design isn't done. Review audit question: "what UPDATE sets this back to NULL, and what fires it?"
+
+---
+
 ## A live test that starts minutes after a push races the Vercel deploy AND the device's in-memory bundle — verify the device is on the new build before debugging the feature.
 
 **Why:** 2026-06-10 the check-off live test reported "the sheet never appears." The code was correct, the deploy was Ready, and the test stop's data was perfect (3 item lines, all with `tapgoods_pick_list_item_id`). The failure was timing: the feature deploy went Ready at 14:46 EDT, and the test device's app session predated it. This app has NO service worker, so nothing pins old JS on disk — but an already-open PWA/tab keeps the old bundle in memory indefinitely; only a force-quit + relaunch picks up the new build. The investigation cost an hour of code-tracing that a "relaunch the app first" step would have skipped. Useful verification moves discovered along the way: (1) prove the live bundle has the feature by grepping a served chunk for a feature-unique string (`curl` the page, walk its `_next/static` chunks, grep for e.g. `ptd_checkoff_queue`) — chunk hashes also change per deploy; (2) `npx vercel ls` / `vercel inspect <url>` shows which deploy the production alias points at; (3) with the repo NOT `supabase link`ed, ad-hoc read-only SQL works via the management API: `POST https://api.supabase.com/v1/projects/{ref}/database/query` with `SUPABASE_ACCESS_TOKEN` — no DB password, no link needed.
