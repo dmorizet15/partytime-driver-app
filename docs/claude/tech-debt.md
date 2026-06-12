@@ -10,6 +10,9 @@ Last reviewed: 2026-05-16.
 - Easy RFID Pro does not launch on real Android device (out of v1.1 scope)
 - CoPilot destination import needs final validation on real device
 
+## Doc rot (2026-06-12, Will Call investigation)
+- **`src/services/PhotoUploadService.ts` header comment is stale** — says the API route "saves the file to public/uploads/" and the result-shape example shows a `/uploads/...` URL. The actual `/api/upload-photo` route uploads to the Supabase Storage `pod-photos` bucket (path `{stopId}/{timestamp}.jpg`, `x-upsert: true`) and writes `stops.pod_photo_url`. Comment-only fix; matters because the Will Call Phase 2 plate-photo work will use this file as its reuse reference.
+
 ## AVA — open items (2026-06-02, Session 3 `48d5487`)
 - **Elevated "all routes" in AVA not wired.** The AVA access rule grants `super_admin` all routes + all SOPs. SOPs are fully scoped now, but route context in `/api/ava/ask` is **client-seeded** and the only server-side route loader (`/api/routes`) restricts even `super_admin` to their `route_assignments` by design (admins use `/api/schedule/week` for the full board). So an admin asking AVA about "today's routes" sees only their own assigned route. Wiring elevated all-routes would mean adding a server-side route-load layer to the ask route; when built, it reuses `isElevatedRole`. Low priority — drivers (the actual users) are correctly scoped.
 - **`/api/routes` soft-fail to an unscoped query.** If the `route_assignments` lookup itself errors (transient Postgres/RLS hiccup), `/api/routes` falls through to an UNSCOPED query so a real driver isn't locked out — documented in that file's header as an availability tradeoff. Means a transient error could briefly expose all routes to the caller. Pre-existing; out of scope for the AVA work. Owner: whoever owns `/api/routes` route-scoping. Revisit if it ever fires in practice (it logs a warning).

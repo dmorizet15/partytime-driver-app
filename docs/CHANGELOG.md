@@ -16,6 +16,17 @@ Warehouse-counter Will Call workflow, approved build off the completed investiga
 - **Nav swap:** `will_call` holders get Will Call in Training's BottomNav slot; Training relocates to a Tools Hub card (`TrainingCard`, gated by new `useWillCallAccess`). Non-holders completely unchanged. `WillCallGate` allows will_call OR super_admin (URL access for admins); nav tab + card are strict will_call.
 - `npx next build` green both repos; both pushed to `main`. **Smoke test pending — see `tasks/todo.md` (incl. granting the `will_call` role to the counter profiles).**
 
+## 2026-06-12 (AM) — Will Call Phase 1 investigation (read-only; docs-only) + Phase 2B stale-line fix
+
+Five-point pre-build investigation that produced the corrected premises the Phase 1 build (above) was approved against. No implementation code written.
+
+- **Auth gate:** the four dashboard `/api/willcall/[id]/*` action routes were cookie-only (no bearer fallback) AND had no role check (any cookie-authed user could stage/return); writes go through the service client so RLS never gates them — the retrofit needed dual auth + a server-side role gate, dashboard-side, no migration. Reads: the live `will_call_orders` SELECT policy (post-mig-080: `super_admin/scheduler/warehouse/read_only/display`) excludes `will_call` and `driver` — direct RLS reads would silently return zero rows for a `driver`+`will_call`-only profile (Dylan), forcing the driver-app admin-client read route. Realtime ruled out for the same RLS reason.
+- **Data shape:** Will Call rentals (`deliveryType="customer_pick_up"`) create NO `dispatch_stops` rows; `upsertWillCallOrder` writes only `will_call_orders` (TapGoods-owned fields; status + audit columns untouched). Item list = `will_call_orders.items` JSONB (`{name, quantity, tapgoods_pick_list_item_id}`) — live-verified with non-null pick-list ids. No per-item checkoff table → Phase 1 check-off state is client-side; exceptions persist via `return_notes` + `has_discrepancy` only.
+- **Roles:** `will_call_board` doesn't exist — real role is `will_call` (enum mig 042, already in the driver `Role` union, 5 active holders, none X-only). Lesson recorded in `tasks/lessons.md`.
+- **Photo capture (Phase 2 reuse, untouched):** `StopDetailScreen.tsx` `compressImage` (canvas, JPEG 0.8) → `PhotoUploadService` → `/api/upload-photo` → Storage `pod-photos`/`{stopId}/{ts}.jpg` + `stops.pod_photo_url`. Found the `PhotoUploadService.ts` header comment is stale ("public/uploads") — logged in `docs/claude/tech-debt.md`.
+- **Mockups:** `DriverCheckoffMockup.jsx` + `WillCallMockup.jsx` located in `~/Downloads` (not the repo; `WillCallMockup_1.jsx` is a byte-identical dupe) — recommended committing to `docs/design-references/`, done by the build as `e856b9a`.
+- **CLAUDE.md fix:** Route Handoff Phase 2B section said "not yet pushed" — `git log` showed it on `origin/main` as `c4b2a07` since 2026-06-09; line corrected (the standing "trust the ref, not the prose" lesson).
+
 ## 2026-06-10 (PM3) — Check-off inline panel compaction (`beca737`, pushed; layout-only, no migration)
 
 Live-test feedback: the Rev 1 inline panel's bottom zone ate too much screen — on iPhone only ~4 item rows were visible above the gated CTA + "Saved on your phone…" caption + tab bar. Spacing/container changes ONLY — zero logic changes (two-axis qty/damage, accept paths, gate behavior, commit/queue all verbatim).
