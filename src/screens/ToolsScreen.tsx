@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import BottomNav from '@/components/BottomNav'
+import { useAuth } from '@/hooks/useAuth'
 import { useOpenWorkOrders } from '@/hooks/fleet/useOpenWorkOrders'
 import { useOpenWorkOrdersCount } from '@/hooks/workOrders/useOpenWorkOrdersCount'
 import { WrenchIcon } from '@/components/fleet/fleetIcons'
@@ -510,6 +511,62 @@ function WorkOrdersCard({ onTap }: { onTap: () => void }) {
   )
 }
 
+// ─── Training card — will_call holders only ─────────────────────────────────
+// The Will Call nav tab takes Training's BottomNav slot for will_call role
+// holders (2026-06-12), so Training relocates here for them — same gated-card
+// pattern as Fleet / Work Orders. Everyone else keeps Training in the nav and
+// never sees this card.
+function GradCapIcon({ size = 22, color = C.white }: IconProps) {
+  return (
+    <IconSvg size={size} color={color}>
+      <path d="M2 10l10 -5 10 5 -10 5z" />
+      <path d="M6 12v5c0 1.5 3 2.5 6 2.5s6 -1 6 -2.5v-5" />
+      <line x1="22" y1="10" x2="22" y2="15" />
+    </IconSvg>
+  )
+}
+
+function TrainingCard({ onTap }: { onTap: () => void }) {
+  const { roles, loading } = useAuth()
+  const hasWillCall = !!roles && roles.includes('will_call')
+  if (loading || !hasWillCall) return null
+
+  return (
+    <div style={{ padding: '12px 18px 0' }}>
+      <button
+        onClick={onTap}
+        aria-label="Training"
+        style={{
+          background: C.card,
+          border: `0.5px solid ${C.cardBorder}`,
+          borderRadius: 14,
+          padding: '16px 14px',
+          cursor: 'pointer', fontFamily: 'inherit',
+          textAlign: 'left',
+          display: 'flex', alignItems: 'center', gap: 14,
+          color: C.white,
+          width: '100%',
+        }}
+      >
+        <IconWrap bg="rgba(255,184,0,0.16)">
+          <GradCapIcon size={22} color={C.gold} />
+        </IconWrap>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontFamily: FONT_DISPLAY, fontSize: 16, fontWeight: 800,
+            color: C.white, letterSpacing: '-0.01em', lineHeight: 1.2,
+          }}>
+            Training
+          </div>
+          <div style={{ marginTop: 4, fontSize: 12, color: C.muted, lineHeight: 1.4 }}>
+            Training hub · SOP lookup
+          </div>
+        </div>
+      </button>
+    </div>
+  )
+}
+
 // ─── Screen ─────────────────────────────────────────────────────────────────
 export default function ToolsScreen() {
   const router = useRouter()
@@ -617,6 +674,9 @@ export default function ToolsScreen() {
 
         {/* Work Orders — technician-only; renders null without access */}
         <WorkOrdersCard onTap={() => router.push('/tools/work-orders')} />
+
+        {/* Training — will_call holders only (their nav slot went to Will Call) */}
+        <TrainingCard onTap={() => router.push('/training')} />
 
         {/* Full-width: Generators (above divider) */}
         <div style={{ padding: '12px 18px 0' }}>

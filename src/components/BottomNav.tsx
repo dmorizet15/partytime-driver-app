@@ -62,6 +62,18 @@ function TrainingIcon({ size = 22, color = C.ink }: IconProps) {
   )
 }
 
+function WillCallIcon({ size = 22, color = C.ink }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+         strokeWidth={STROKE} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/>
+      <path d="M12 12l8-4.5"/>
+      <path d="M12 12v9"/>
+      <path d="M12 12L4 7.5"/>
+    </svg>
+  )
+}
+
 function ProfileIcon({ size = 22, color = C.ink }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
@@ -94,12 +106,19 @@ type Tab = {
 // super_admin only — tools_only has no route assignments. Tools / Training
 // / Profile have no allow-list — every authenticated driver-app user can
 // see them.
+// Will Call swap (2026-06-12): users holding the `will_call` role get a Will
+// Call tab in Training's slot — Home · Routes · Tools · Will Call · Profile.
+// Training isn't lost for them: it becomes a card inside the Tools Hub (same
+// gated-card pattern as Fleet / Work Orders). Everyone else keeps Training in
+// the nav and never sees the Will Call tab. (`will_call` is the role name —
+// `will_call_board` is only a dashboard realtime channel.)
 const TABS: Tab[] = [
-  { id: 'home',     label: 'Home',     href: '/',         isActive: (p) => p === '/',                  Icon: HomeIcon, rolesAllowed: ['driver', 'super_admin', 'tools_only'] },
-  { id: 'routes',   label: 'Routes',   href: '/',         isActive: (p) => p.startsWith('/route') || p === '/schedule', Icon: RoutesIcon, rolesAllowed: ['driver', 'super_admin'] },
-  { id: 'tools',    label: 'Tools',    href: '/tools',    isActive: (p) => p.startsWith('/tools'),     Icon: ToolsIcon },
-  { id: 'training', label: 'Training', href: '/training', isActive: (p) => p.startsWith('/training'),  Icon: TrainingIcon },
-  { id: 'profile',  label: 'Profile',  href: '/profile',  isActive: (p) => p.startsWith('/profile'),   Icon: ProfileIcon },
+  { id: 'home',     label: 'Home',      href: '/',          isActive: (p) => p === '/',                  Icon: HomeIcon, rolesAllowed: ['driver', 'super_admin', 'tools_only'] },
+  { id: 'routes',   label: 'Routes',    href: '/',          isActive: (p) => p.startsWith('/route') || p === '/schedule', Icon: RoutesIcon, rolesAllowed: ['driver', 'super_admin'] },
+  { id: 'tools',    label: 'Tools',     href: '/tools',     isActive: (p) => p.startsWith('/tools'),     Icon: ToolsIcon },
+  { id: 'training', label: 'Training',  href: '/training',  isActive: (p) => p.startsWith('/training'),  Icon: TrainingIcon },
+  { id: 'willcall', label: 'Will Call', href: '/will-call', isActive: (p) => p.startsWith('/will-call'), Icon: WillCallIcon, rolesAllowed: ['will_call'] },
+  { id: 'profile',  label: 'Profile',   href: '/profile',   isActive: (p) => p.startsWith('/profile'),   Icon: ProfileIcon },
 ]
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -125,7 +144,12 @@ export default function BottomNav() {
   const primaryRouteId  = getRoutesForDate(today)[0]?.route_id
   const routesHref      = primaryRouteId ? `/route/${primaryRouteId}` : '/schedule'
 
+  // will_call holders trade Training (nav slot) for the Will Call tab —
+  // Training moves into the Tools Hub for them (ToolsScreen TrainingCard).
+  const hasWillCall = !!roles && roles.includes('will_call')
+
   const visibleTabs = TABS.filter((t) => {
+    if (t.id === 'training' && hasWillCall) return false
     if (!t.rolesAllowed) return true
     return !!roles && roles.some((r) => t.rolesAllowed!.includes(r))
   })
