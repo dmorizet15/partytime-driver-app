@@ -4,6 +4,18 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-06-12 — Will Call Phase 1 (driver `3f7d01a` + `e856b9a`, dashboard `cb9453f`; all pushed; no migration)
+
+Warehouse-counter Will Call workflow, approved build off the completed investigation. Three corrected premises baked in: the role is **`will_call`** (`will_call_board` is just a dashboard realtime channel name), the dashboard action routes had NO role check at all (any cookie-authed user could stage/return), and check-off state is client-only in Phase 1 (zero migrations).
+
+- **Step 0 (`e856b9a`):** locked mockups (`WillCallMockup.jsx` + `DriverCheckoffMockup.jsx`) committed to `docs/design-references/` before any feature code.
+- **Dashboard (`cb9453f`):** new `src/lib/requireWillCallAccess.ts` (mirrors `requireWarehouseAccess`) — cookie-then-bearer dual auth + server-side role gate (`will_call | warehouse | scheduler | super_admin`) on all four `/api/willcall/[id]/*` routes (stage / pickup / return / staged-location). CORS headers + OPTIONS preflight added for `work.partytime-rentals.com` — the plan's "copy resolveAuth" excerpt didn't mention CORS, but a browser cross-origin caller is dead without it (lesson recorded). Audit columns (`staged_by`/`picked_up_by`/`returned_by`) now come from the gate's `userId`; service-client writes + SMS/email side effects untouched. Build green, pushed.
+- **Driver reads:** `GET /api/will-call` — session cookie + the same four-role gate, admin-client SELECT of the plan's field list; non-returned + last-7-days-returned; no RLS change; no realtime (RLS would silently drop events for `will_call`-only subscribers) — `useWillCallOrders` refetches on focus/visibility + 30s interval.
+- **Driver writes:** `src/lib/willCall/api.ts` cross-app POSTs (bearer, work-orders pattern) — SMS/email stay dashboard-side; return exceptions ride `returnNotes` (freeform summary via `buildReturnNotes`; server derives `has_discrepancy` + fires the discrepancy email).
+- **Screens (`src/screens/willCall/`):** List (Today / This Week / All; ACTION NEEDED / STAGED / OUT / COMPLETE sections; red/blue state borders), Detail (4-step ProgressSteps + status-keyed CTA + overdue banner + returned completion block), Staging check-off (qty-exception only — damage toggle removed), Pickup confirm (identity verify card, items, plate-photo STUB with Skip, return date), Return check-off (short qty + damage flag), Return Done (recap + SMS note). Check-off screens pattern the production `ItemCheckoffPanel` interaction model (confirm-all, tap-accept circle, issue drawer + stepper, pinned gated CTA), exact mockup StatePill labels.
+- **Nav swap:** `will_call` holders get Will Call in Training's BottomNav slot; Training relocates to a Tools Hub card (`TrainingCard`, gated by new `useWillCallAccess`). Non-holders completely unchanged. `WillCallGate` allows will_call OR super_admin (URL access for admins); nav tab + card are strict will_call.
+- `npx next build` green both repos; both pushed to `main`. **Smoke test pending — see `tasks/todo.md` (incl. granting the `will_call` role to the counter profiles).**
+
 ## 2026-06-10 (PM3) — Check-off inline panel compaction (`beca737`, pushed; layout-only, no migration)
 
 Live-test feedback: the Rev 1 inline panel's bottom zone ate too much screen — on iPhone only ~4 item rows were visible above the gated CTA + "Saved on your phone…" caption + tab bar. Spacing/container changes ONLY — zero logic changes (two-axis qty/damage, accept paths, gate behavior, commit/queue all verbatim).

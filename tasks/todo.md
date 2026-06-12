@@ -1,5 +1,20 @@
 # Open Tasks — partytime-driver-app
 
+## June 12, 2026 — Will Call Phase 1 (PUSHED: driver `3f7d01a`, dashboard `cb9453f`; no migration)
+
+Six warehouse-counter screens + dashboard auth retrofit + driver read route + `will_call` nav swap. Both builds green + pushed. Spec: `docs/design-references/WillCallMockup.jsx` (committed `e856b9a`).
+
+- [ ] **Grant the `will_call` role** to the warehouse-counter profile(s) (dashboard User Management → roles array) — nothing shows driver-side without it. Darren (super_admin) can reach `/will-call` by URL but does NOT get the nav tab (strict `will_call` by design).
+- [ ] **Smoke — nav swap:** a `will_call` holder sees Home · Routes · Tools · **Will Call** · Profile (Training gone from nav, Training card appears in Tools Hub → opens `/training`). A non-holder sees the unchanged nav and NO Will Call tab; Tools Hub shows no Training card.
+- [ ] **Smoke — list:** `/will-call` defaults to Today (pickup today OR overdue); This Week = next 7 days; All shows everything incl. last-7-days returned under COMPLETE. Overdue card = red border + "Return Overdue" pill; staged = blue border + "Staged — Ready".
+- [ ] **Smoke — staging flow:** pending order → "Start Staging →" → check-off (NO damage toggle anywhere; qty stepper shorts → amber circle with corrected number) → "Confirm Staging Complete" → **staging SMS/email fires** (check `sms_sent_at`/`sms_error` on the row) → back on detail as Staged — Ready.
+- [ ] **Smoke — pickup flow:** staged order → "Customer Arrived — Confirm Handoff" → identity card + items + plate-photo stub (Skip dismisses, no camera) → "Mark as Picked Up" → detail shows Out w/ Customer, `picked_up_at`/`picked_up_by` stamped.
+- [ ] **Smoke — return flow (clean):** picked_up order → "Process Return" → "All items back — no issues" → "Complete Return" → Return Done recap → return-confirmation SMS fires, `has_discrepancy=false`, `return_notes` NULL.
+- [ ] **Smoke — return flow (exceptions):** short one item + damage-flag another → return notes land on the row (one line per exception), `has_discrepancy=true`, **discrepancy email reaches dispatch@**, recap shows both lines.
+- [ ] **Smoke — auth gates:** a plain-driver token POSTing a dashboard `/api/willcall/[id]/*` route gets 403 (was: any authed user accepted). The dashboard Will Call board itself still works for warehouse/scheduler/super_admin (cookie path through the same gate — regression check).
+- [ ] **Smoke — refresh model:** dashboard stages an order → driver list updates within ~30s or on app refocus (NO realtime — by design).
+- [ ] **Phase 2 candidates (deferred by plan):** per-item check-off DB rows, real camera/upload for the plate photo, staged-location capture driver-side (route already retrofitted), actual work-order creation from the damage flag (today it's a return-note line; dispatch opens the WO from the email).
+
 ## June 10, 2026 PM3 — Check-off inline panel compaction (PUSHED: `beca737`; layout-only)
 
 - [ ] **Darren phone re-test (THE gate):** stop detail during check-off shows noticeably more than 4 item rows; gate CTA still pinned (never scrolls away) and compact; no dead band between the "Saved on your phone…" caption and the tab bar; all check-off interactions unchanged (confirm-all, tap-accept, qty stepper, damage toggle, WO round trip).

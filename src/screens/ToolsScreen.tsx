@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import BottomNav from '@/components/BottomNav'
-import { useAuth } from '@/hooks/useAuth'
+import { useWillCallAccess } from '@/hooks/willCall/useWillCallAccess'
 import { useOpenWorkOrders } from '@/hooks/fleet/useOpenWorkOrders'
 import { useOpenWorkOrdersCount } from '@/hooks/workOrders/useOpenWorkOrdersCount'
 import { WrenchIcon } from '@/components/fleet/fleetIcons'
@@ -527,9 +527,8 @@ function GradCapIcon({ size = 22, color = C.white }: IconProps) {
 }
 
 function TrainingCard({ onTap }: { onTap: () => void }) {
-  const { roles, loading } = useAuth()
-  const hasWillCall = !!roles && roles.includes('will_call')
-  if (loading || !hasWillCall) return null
+  const { hasAccess, loading } = useWillCallAccess()
+  if (loading || !hasAccess) return null
 
   return (
     <div style={{ padding: '12px 18px 0' }}>

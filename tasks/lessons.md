@@ -6,6 +6,14 @@ Format: one lesson per block. Lead with the rule, then **Why** and **How to appl
 
 ---
 
+## A bearer-auth retrofit for a browser-based cross-origin caller is incomplete without CORS headers + an OPTIONS preflight handler on the SAME routes — copy the whole pattern from the existing cross-app route, not just its resolveAuth.
+
+**Why:** 2026-06-12 the Will Call plan said "retrofit the four `/api/willcall/[id]/*` routes — copy the resolveAuth helper from `/api/work-orders`." But the driver app calls these from the BROWSER on a different origin (`work.partytime-rentals.com` → dashboard), so a bearer token alone isn't enough: the preflight OPTIONS would 405 and the browser would block every POST before the auth code ever ran — a retrofit that compiles green and fails 100% at runtime, with the failure visible only in the device console. `/api/work-orders` already carried the full answer (CORS_HEADERS constant + `corsJson` wrapper on EVERY response incl. errors + an `export async function OPTIONS`); the plan's "lines 74-91" excerpt just didn't include it. The retrofit shipped as `requireWillCallAccess` + `willCallJson`/`willCallOptions` covering all four routes.
+
+**How to apply:** when adding bearer auth to a route so "the other app can call it," ask WHERE the caller runs. Server-to-server → bearer alone is fine. Browser cross-origin → the route also needs (1) an OPTIONS handler returning the CORS headers, (2) the CORS headers on every response INCLUDING 4xx/5xx (or the browser hides the error body too), (3) `Access-Control-Allow-Headers` listing `Authorization`. Don't cherry-pick the auth lines from the reference route — read it top to bottom and port the response plumbing with it.
+
+---
+
 ## A sensitive env var that pulls empty locally does NOT block introspection — deploy an ephemeral, token-gated probe route as a `vercel deploy` preview (no commit), hit it, then delete the deployment.
 
 **Why:** 2026-06-10 Rev 3 was hard-gated on confirming TapGoods' query-side accessory shape, but `TAPGOODS_API_KEY` is a sensitive Vercel var (pulls empty; `vercel env ls` showed it scoped to Preview + Production). Instead of asking Darren for the key or pushing a temp route through git → production, a token-gated read-only introspection route went up via bare `vercel deploy` (deploys the working tree, no commit), the preview env supplied the real key, three curl calls confirmed the exact shape (`pickListAccessories`/`pickListAddOns` on `Rental`; `id: ID!` query-side vs `Int!` on the input wrapper; `PickListAddOn` lacking read-side `checkedInQuantity`), and `vercel rm <url>` removed the deployment. Zero git history, zero key exposure, ~5 minutes.
