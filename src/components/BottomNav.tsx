@@ -158,8 +158,6 @@ export default function BottomNav() {
     <nav
       aria-label="Primary"
       style={{
-        // Positioned ancestor for the safe-area filler child below.
-        position: 'relative',
         flexShrink: 0,
         // Total height grows by the iOS safe-area inset; padding pushes the
         // 80px button row up clear of the home indicator. On non-iOS devices
@@ -173,28 +171,6 @@ export default function BottomNav() {
         fontFamily: FONT_BODY,
       }}
     >
-      {/*
-        Standalone-PWA safe-area filler. The shared `.screen` container ALSO
-        reserves padding-bottom: env(safe-area-inset-bottom) BELOW this nav,
-        painted in each screen's own (often dark/white) background — which would
-        show as a colored strip at the home indicator beneath the cream nav.
-        Rather than collapse that gap with fragile flex/negative-margin math,
-        this absolutely-positioned div simply PAINTS the nav's cream over it:
-        it sits one inset below the nav's bottom edge (reaching the physical
-        screen bottom) and is exactly one inset tall. env() = 0 in browser mode
-        → zero height, a no-op there.
-      */}
-      <div
-        aria-hidden="true"
-        style={{
-          position: 'absolute',
-          bottom: 'calc(-1 * env(safe-area-inset-bottom))',
-          left: 0,
-          right: 0,
-          height: 'env(safe-area-inset-bottom)',
-          backgroundColor: C.cream,
-        }}
-      />
       {visibleTabs.map((tab) => {
         const active = tab.isActive(pathname)
         const color  = active ? C.gold : 'rgba(10,11,20,0.40)'
