@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 import type { Session, User } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { getUserRole } from '../lib/auth'
-import { readCachedProfile, writeCachedProfile } from '../lib/authCache'
+import { readCachedProfile, writeCachedProfile, readCachedUser, writeCachedUser, clearCachedUser } from '../lib/authCache'
 import { flushPendingStopNotes } from '../lib/ava/stopNotesClient'
 import type { Role, UserProfile } from '../types/auth'
 
@@ -29,6 +29,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let cancelled = false
     let resolved  = false
+    let offlineRestored = false   // true once identity came from the offline cache
     let safetyTimer:   ReturnType<typeof setTimeout> | undefined
     let fallbackTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -41,6 +42,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (safetyTimer)   clearTimeout(safetyTimer)
       if (fallbackTimer) clearTimeout(fallbackTimer)
       setLoading(false)
+    }
+
+    // ── OFFLINE IDENTITY RESTORE (synchronous, no network) ───────────────────
+    // Restore `user` + `profile` from the offline cache. This is what FAILURE B
+    // needed: on a force-close→offline cold-start the access token has usually
+    // expired, and an expired token CANNOT be refreshed offline — so getSession
+    // can't help and the session-based localRestore fails. The cached identity
+    // sidesteps that entirely. Honors the day-change auto-logout invariant:
+    // if ptr_session_date isn't today, it restores NOTHING (the driver lands on
+    // the offline /login notice, exactly as the shared-device rule intends).
+    // Returns true only when it actually set a user. Caller calls finishLoading.
+    const cachedOfflineRestore = (): boolean => {
+      if (resolved || cancelled) return false
+      try {
+        const cu = readCachedUser()
+        if (!cu) return false
+        const storedDate = localStorage.getItem('ptr_session_date')
+        const today      = new Date().toISOString().split('T')[0]
+        if (storedDate !== today) return false      // day-change gate — skip stale day
+        const cp = readCachedProfile(cu.id)
+        if (!cp) return false                        // no roles offline → defer to /login
+        offlineRestored = true
+        setUser(cu)
+        setProfile(cp)
+        return true
+      } catch (err) {
+        console.error('[AuthContext] cachedOfflineRestore failed', err)
+        return false
+      }
     }
 
     // ── HARD SAFETY TIMEOUT (P0) ─────────────────────────────────────────────
@@ -138,6 +168,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const today  = new Date().toISOString().split('T')[0]
           if (stored !== today) {
             localStorage.removeItem('ptr_session_date')
+            // Drop the offline identity cache (direct supabase.auth.signOut()
+            // bypasses the lib/auth wrapper's central clear).
+            clearCachedUser()
             try { await supabase.auth.signOut() } catch (err) {
               console.error('[autoLogout] day-change signOut failed', err)
             }
@@ -146,7 +179,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         }
 
-        setUser(session?.user ?? null)
+        // A real session always wins (normal online boot, or a reconnect
+        // refresh) and is mirrored to the offline cache. A NULL session
+        // normally clears user/profile — but must NOT clobber an offline
+        // cache-restore with a TRANSIENT offline null (e.g. an expired-token
+        // INITIAL_SESSION that resolved null while still offline). Only honor a
+        // null session when we're back online (a genuine sign-out) or when we
+        // never restored from cache. On a normal online boot offlineRestored is
+        // false, so this is byte-for-byte the original behavior.
+        const offlineNow = typeof navigator !== 'undefined' && navigator.onLine === false
+        const keepOfflineIdentity = offlineRestored && offlineNow
+
+        if (session?.user) {
+          setUser(session.user)
+          writeCachedUser(session.user)   // mirror identity for offline cold-starts
+        } else if (!keepOfflineIdentity) {
+          setUser(null)
+        }
         try {
           if (session?.user) {
             const p = await resolveProfile(session.user.id, session.access_token)
@@ -156,12 +205,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
               void flushPendingStopNotes()
             }
-          } else {
+          } else if (!keepOfflineIdentity) {
             setProfile(null)
           }
         } catch (err) {
           console.error('[AuthContext] getUserRole error', err)
-          if (!cancelled) setProfile(null)
+          if (!cancelled && !keepOfflineIdentity) setProfile(null)
         } finally {
           finishLoading()
         }
@@ -169,18 +218,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     )
 
     // ── Offline cold-start restore (P0) ──────────────────────────────────────
-    // If we read as offline at mount, restore from local immediately. But
-    // navigator.onLine is unreliable on iOS standalone (can read `true` in
-    // airplane mode for a beat after launch), and a hanging token-refresh can
-    // delay or swallow INITIAL_SESSION — so ALSO run the same local restore as
-    // a short-delay fallback if auth hasn't resolved yet. localRestore is a
-    // no-op once resolved and never hits the network, so when the online path
-    // wins first (the normal case) this never runs.
+    // Runs AHEAD of the 3s safety timer so `loading` can never flip false with
+    // `user` null on a valid offline cold-start (that bounced FAILURE B to the
+    // offline /login screen).
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-      void localRestore()
+      // Booted OFFLINE: restore identity from cache SYNCHRONOUSLY, right here in
+      // the effect body — i.e. milliseconds after mount and ~3s before the
+      // safety timer could fire. The cached path works even with an EXPIRED
+      // access token (which can't be refreshed offline). If there's no cache
+      // yet (e.g. first boot after this deploy), fall back to the session-based
+      // local restore (valid non-expired session only).
+      if (cachedOfflineRestore()) finishLoading()
+      else void localRestore()
     } else {
+      // onLine read true at mount. On a real online boot INITIAL_SESSION
+      // resolves well before 1.2s, so this fallback no-ops (online path is
+      // untouched). It only fires when online resolution stalled — i.e.
+      // navigator.onLine LIED (iOS standalone airplane-mode) — restoring the
+      // cached identity ahead of the 3s safety timer; the session-based restore
+      // is the last resort.
       fallbackTimer = setTimeout(() => {
-        if (!resolved && !cancelled) void localRestore()
+        if (resolved || cancelled) return
+        if (cachedOfflineRestore()) { finishLoading(); return }
+        void localRestore()
       }, 1200)
     }
 

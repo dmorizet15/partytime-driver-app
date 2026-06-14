@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAppState } from '@/context/AppStateContext'
 import { useAuth } from '@/hooks/useAuth'
@@ -117,11 +117,36 @@ function BrandMark() {
   )
 }
 
+// Local-timezone YYYY-MM-DD — matches AppStateContext.todayStr so the
+// cold-boot loadDay reads the same cache key the day was written under.
+function localTodayStr(): string {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 // ─── Screen ───────────────────────────────────────────────────────────────────
 export default function RouteListScreen({ routeId }: RouteListScreenProps) {
   const router = useRouter()
-  const { getRoute, getStopsForRoute, getRoutesForDate } = useAppState()
+  const { getRoute, getStopsForRoute, getRoutesForDate, loadDay } = useAppState()
   const { user, roles } = useAuth()
+
+  // Cold-boot rehydrate. RouteListScreen normally relies on Home having driven
+  // the initial loadDay, but an OFFLINE hard-navigation served from the cached
+  // page shell boots this screen fresh with empty AppState. Pull today's route
+  // once; offline, loadDay falls through to the Session B route cache and
+  // dispatches LOAD_OFFLINE (route renders + offline banner). No-op when the
+  // route is already in memory (the normal in-session navigation), so a normal
+  // tap never triggers an extra fetch.
+  const rehydratedRef = useRef(false)
+  useEffect(() => {
+    if (rehydratedRef.current) return
+    if (getRoute(routeId)) return
+    rehydratedRef.current = true
+    void loadDay(localTodayStr())
+  }, [routeId, getRoute, loadDay])
 
   // Routes-tab Today/Week toggle. Default 'today'. sessionStorage persists
   // across in-session navigation but clears on cold app start per spec.

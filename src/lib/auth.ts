@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { clearCachedUser } from './authCache'
 import type { UserProfile } from '../types/auth'
 
 export async function getSession() {
@@ -42,5 +43,12 @@ export async function signIn(email: string, password: string) {
 }
 
 export async function signOut() {
+  // Drop the offline identity cache so a shared device can't restore a
+  // signed-out driver on the next offline cold-start. Central clear — covers
+  // every caller of this wrapper (StopDetailScreen warehouse_return,
+  // ProfileScreen manual logout, and any future caller). The two DIRECT
+  // supabase.auth.signOut() sites (AuthContext day-change, AppStateContext 401)
+  // clear explicitly at their call sites since they bypass this wrapper.
+  clearCachedUser()
   return supabase.auth.signOut()
 }

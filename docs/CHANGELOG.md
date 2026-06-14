@@ -4,6 +4,14 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-06-14 — Offline cold-start fixes: v2.0.1 (no migration)
+
+Two offline cold-start failures found in on-device iOS PWA smoke testing, fixed in one commit. Driver-app-only; no schema, no new endpoints.
+
+- **Fix: offline cold-start now restores identity from cached user — expired tokens no longer block offline auth.** FAILURE B: force-close while offline → reopen showed the offline `/login` screen. Root cause: the offline restore required a *non-expired* access token, but by reopen the token had usually expired, and an expired token can't be refreshed offline → `user` resolved null → every gated page redirected to `/login`. Fix: new fixed-key `ptd_auth_user` cache (`src/lib/authCache.ts`) mirrors the user identity on every online auth success; `AuthContext` restores it synchronously on an offline cold-start (ignoring access-token expiry, honoring the day-change gate) **before** the 3s safety timer, so `loading` never flips false with `user` null. Cleared on all 4 signOut sites.
+- **Fix: route and stop pages now served from a warmed shell cache when navigating offline.** FAILURE A: iOS home-button background → return reloaded a dynamic `/route/*` page offline → SW served the black `/offline` fallback ("no way back to Routes"). Fix (the nav work from the prior session, shipped together): `warmRouteShells` pre-caches the `/route/[routeId]` + stop page shells as HTML while online; the SW `text/html` runtime rule serves them on an offline navigation; `RouteListScreen` + `StopDetailScreen` cold-boot rehydrate from the Session B route cache.
+- **Build green** (`npx next build`, 38/38 static pages). In-app `VERSION` left at `2.0.0` (these are fixes; no new What's New sheet).
+
 ## 2026-06-14 — PWA update prompts: v2.0.0 (no migration)
 
 Three additive in-app prompts so drivers migrate off the old bookmark/icon and self-update going forward. Driver-app-only; no schema, no new endpoints, no shared/cross-repo files. Version lives in `src/lib/appVersion.ts` (`VERSION = '2.0.0'` + `CHANGELOG`). What's New copy (matches the sheet):

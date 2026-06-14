@@ -276,6 +276,14 @@ Built 2026-06-14. Three additive in-app prompts so drivers migrate off the old b
 - **Coordination (`PwaHomePrompts.tsx`, mounted at top of `DayRouteSelectorScreen`).** Single mount-time decision owns the Feature 1↔3 suppression: **if the re-install banner is showing, the What's New sheet is suppressed until next open** (don't stack). All localStorage reads happen once here (client-only effect, no hydration mismatch); each child persists its own ack on close.
 - **Build green** (`npx next build`, 38 pages). Generated `public/sw.js` config verified `skipWaiting:!1,clientsClaim:!0` (serwist's SKIP_WAITING message branch active).
 
+### Offline cold-start fixes — v2.0.1 (2026-06-14)
+
+Two on-device iOS smoke-test failures fixed together. See `docs/CHANGELOG.md` for the failure write-ups.
+
+- **Offline navigation (FAILURE A).** Dynamic `/route/*` pages are not precached; an offline reload/hard-nav served the black `/offline` fallback. Fix: `warmRouteShells` (`src/lib/routeCache.ts`) pre-fetches the `/route/[routeId]` + stop page shells as `text/html` while online; the SW runtime rule (`src/app/sw.ts`) now caches same-origin `text/html` GETs into the `pages` cache so an offline navigation is served the real shell; `RouteListScreen`/`StopDetailScreen` cold-boot rehydrate from the Session B route cache via `loadDay(today)`. **Warming runs on `loadDay` success online only** — if signal is lost before it completes, the shell isn't cached (minor edge).
+- **Auth cache (FAILURE B).** `ptd_auth_user` (FIXED key, `src/lib/authCache.ts`) mirrors the Supabase `user` identity. **Written on every online auth success** (the `onAuthStateChange` `setUser` path), **cleared on every signOut — 4 sites: `AuthContext` day-change, `StopDetailScreen` warehouse_return, the `lib/auth.ts signOut()` wrapper (central — covers ProfileScreen + StopDetailScreen + future callers), and `AppStateContext` 401.** The two direct `supabase.auth.signOut()` sites (day-change, 401) clear explicitly because they bypass the wrapper. **Do NOT add a signOut path without clearing `ptd_auth_user`.**
+- **Offline restore runs SYNCHRONOUSLY before the 3s safety timer** (`AuthContext` `cachedOfflineRestore`, called in the mount effect's `navigator.onLine === false` branch). It restores `user`+`profile` from cache ignoring access-token expiry (an expired token can't be refreshed offline) but **honors the day-change gate** (`ptr_session_date !== today` → restores nothing → offline `/login`). **Do NOT move it into a `setTimeout`** — the synchronous timing is what stops `loading` flipping false with `user` null, which is the `/login` redirect race. A transient offline `null` `INITIAL_SESSION` is guarded (`keepOfflineIdentity`) so it can't clobber the restored identity; online path is byte-for-byte unchanged (`offlineRestored` stays false).
+
 ## AVA (Driver App)
 
 ### Phase 1 — merged to `main` 2026-05-28 (merge `37f83a9`), branch deleted

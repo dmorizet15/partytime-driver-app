@@ -31,9 +31,19 @@ const serwist = new Serwist({
   navigationPreload: true,
   runtimeCaching: [
     {
-      // Page navigations only — same-origin, never an API route.
+      // Same-origin page documents (never an API route). Matches real page
+      // NAVIGATIONS *and* the plain text/html GETs issued by warmRouteShells
+      // (src/lib/routeCache.ts) to pre-cache the dynamic /route/* shells. Both
+      // land in the SAME 'pages' cache keyed by URL, so an OFFLINE hard-nav to
+      // a warmed dynamic route is served the real shell from cache instead of
+      // the /offline fallback. RSC fetches (Accept: text/x-component) do NOT
+      // match and still go straight to the network.
       matcher: ({ request, url, sameOrigin }) =>
-        sameOrigin && request.mode === 'navigate' && !url.pathname.startsWith('/api/'),
+        sameOrigin
+        && request.method === 'GET'
+        && !url.pathname.startsWith('/api/')
+        && (request.mode === 'navigate'
+          || (request.headers.get('accept') || '').includes('text/html')),
       handler: new NetworkFirst({
         cacheName: 'pages',
         networkTimeoutSeconds: 10,

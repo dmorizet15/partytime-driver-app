@@ -14,7 +14,8 @@ import { useAuthContext } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { stopStateService } from '@/services/StopStateService'
 import { flushCheckoffQueue } from '@/lib/checkoff/service'
-import { writeRouteCache, readRouteCache, pruneOldRouteCache } from '@/lib/routeCache'
+import { writeRouteCache, readRouteCache, pruneOldRouteCache, warmRouteShells } from '@/lib/routeCache'
+import { clearCachedUser } from '@/lib/authCache'
 
 // Local-timezone YYYY-MM-DD (matches DayRouteSelectorScreen.todayStr). Used by
 // the reconnect handler to refresh today's route.
@@ -199,6 +200,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       const res  = await fetch(`/api/routes?date=${date}`)
 
       if (res.status === 401) {
+        // Server rejected the token → real sign-out. Clear the offline identity
+        // cache (direct supabase.auth.signOut() bypasses the lib/auth wrapper).
+        clearCachedUser()
         await supabase.auth.signOut()
         router.replace('/login')
         return
@@ -251,6 +255,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       // a load that already succeeded. Prune any prior day's cache on success.
       writeRouteCache(date, json.routes, mergedStops)
       pruneOldRouteCache(date)
+
+      // ── Warm the dynamic /route/* page shells into the SW cache ────────────
+      // So an OFFLINE hard-navigation to the Routes tab / a stop page is served
+      // the real shell (which re-renders from the cache above) instead of the
+      // /offline screen. Online-only, session-deduped, best-effort.
+      warmRouteShells(json.routes, mergedStops)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       console.error('[AppState] loadDay error:', message)

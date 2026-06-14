@@ -11,6 +11,7 @@ import { logEvent } from '@/services/EventLogger'
 import { sendEtaSms, getStopSmsStatus, getDriverLocation } from '@/services/EtaSmsService'
 import type { StopSmsStatus } from '@/services/EtaSmsService'
 import { signOut } from '@/lib/auth'
+import { clearCachedUser } from '@/lib/authCache'
 import BottomNav from '@/components/BottomNav'
 import { OfflineBanner } from '@/components/OfflineBanner'
 import StopWeatherModule from '@/components/weather/StopWeatherModule'
@@ -230,6 +231,16 @@ function BanIcon({ size = 14, color = C.muted }: IconProps) {
   )
 }
 
+// Local-timezone YYYY-MM-DD — matches AppStateContext.todayStr so the
+// cold-boot loadDay reads the same cache key the day was written under.
+function stopTodayStr(): string {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 // ─── Screen ───────────────────────────────────────────────────────────────────
 export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenProps) {
   const router = useRouter()
@@ -238,6 +249,19 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   const route = getRoute(routeId)
   const stop = getStop(stopId)
   const allStops = getStopsForRoute(routeId)
+
+  // Cold-boot rehydrate. Like RouteListScreen, this normally relies on Home
+  // having driven the initial loadDay; an OFFLINE hard-navigation served from
+  // the cached page shell boots this screen with empty AppState. Pull today's
+  // route once when the stop is missing — offline, loadDay falls through to the
+  // Session B route cache. No-op when the stop is already in memory.
+  const rehydratedRef = useRef(false)
+  useEffect(() => {
+    if (rehydratedRef.current) return
+    if (getStop(stopId)) return
+    rehydratedRef.current = true
+    void loadDay(stopTodayStr())
+  }, [stopId, getStop, loadDay])
 
   // ── Phase 2A/2B — ETA/SMS ownership gate ─────────────────────────────────
   // Customer ETA texts belong to whoever currently OWNS the route. Hide the
@@ -527,6 +551,10 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
         if (typeof window !== 'undefined') {
           localStorage.removeItem('ptr_session_date')
         }
+        // Drop the offline identity cache so the next driver on this shared
+        // device can't be auto-restored offline. (signOut() also clears it
+        // centrally; explicit here per the auto-logout invariant.)
+        clearCachedUser()
         await signOut()
       } catch (err) {
         console.error('[autoLogout] signOut after warehouse_return failed', err)

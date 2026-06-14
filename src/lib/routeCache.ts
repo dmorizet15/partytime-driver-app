@@ -66,3 +66,41 @@ export function pruneOldRouteCache(keepDate: string): void {
     // Non-fatal — stale keys just linger until the next successful prune.
   }
 }
+
+// ─── Offline page-shell warming ─────────────────────────────────────────────
+// The route list (/route/[routeId]) and stop detail (/route/[routeId]/stop/
+// [stopId]) pages are DYNAMIC (ƒ) — NOT in the SW precache. Client-navigating
+// to one the driver hasn't already visited online makes Next's RSC fetch fail,
+// Next falls back to a hard navigation, and the SW serves the /offline screen
+// (the reported "black screen"). Fix: while ONLINE, fetch each of those page
+// shells as a plain HTML document so the SW caches it (see the text/html rule
+// in src/app/sw.ts). An offline hard-navigation is then served the real shell
+// from cache — it boots and re-renders from the offline route cache above
+// (the route/stop screens trigger loadDay → readRouteCache on cold mount).
+//
+// Best-effort + session-deduped: each URL is warmed at most once per session
+// (shells are identical within a deployment); every failure is swallowed.
+const warmedShells = new Set<string>()
+
+export function warmRouteShells(routes: Route[], stops: Stop[]): void {
+  try {
+    // Pointless offline (the fetch would just fail) — wait for connectivity.
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return
+    if (typeof fetch === 'undefined') return
+
+    const urls = [
+      ...routes.map((r) => `/route/${r.route_id}`),
+      ...stops.map((s) => `/route/${s.route_id}/stop/${s.stop_id}`),
+    ]
+    for (const url of urls) {
+      if (warmedShells.has(url)) continue
+      warmedShells.add(url)
+      // Accept text/html → the SW's document rule caches it. credentials →
+      // the auth middleware returns the page instead of redirecting to /login.
+      fetch(url, { credentials: 'same-origin', headers: { Accept: 'text/html' } })
+        .catch(() => { warmedShells.delete(url) }) // allow a later retry
+    }
+  } catch {
+    // Warming must never break a load that already succeeded.
+  }
+}
