@@ -4,6 +4,21 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-06-14 — PWA update prompts: v2.0.0 (no migration)
+
+Three additive in-app prompts so drivers migrate off the old bookmark/icon and self-update going forward. Driver-app-only; no schema, no new endpoints, no shared/cross-repo files. Version lives in `src/lib/appVersion.ts` (`VERSION = '2.0.0'` + `CHANGELOG`). What's New copy (matches the sheet):
+
+- Your route now loads even without signal
+- App installs to your home screen with the PartyTime Work icon
+- Offline indicator shows when you're working without connection
+- App updates automatically when a new version is available
+
+- **Feature 1 — Re-install banner** (`src/components/pwa/ReinstallBanner.tsx`): top of Home, only when NOT standalone + `ptr_install_prompted` unset. Platform-branched on `isIOS()` — iOS tap-to-expand 5-step Share-sheet flow; Android/other two static inline steps (⋮ menu → Add to Home Screen). Dismiss writes `ptr_install_prompted=true`. No `beforeinstallprompt` (deliberately out of scope).
+- **Feature 2 — SW update-waiting banner** (`src/components/pwa/PwaUpdater.tsx`, global in `layout.tsx`): listens for a new SW reaching `waiting`, non-dismissible blue banner + **Update now** → `{type:'SKIP_WAITING'}` + reload on `controllerchange`. Required flipping `src/app/sw.ts` to **`skipWaiting: false`** (engages serwist's SKIP_WAITING message handler — verified `skipWaiting:!1,clientsClaim:!0` in generated `public/sw.js`). First deploy auto-activates once (live SW still `skipWaiting:true`); banner flow live from next deploy.
+- **Feature 3 — What's New sheet** (`src/components/pwa/WhatsNewSheet.tsx`): dark slide-up sheet, `CHANGELOG` bullets + **Got it** → writes `ptr_last_seen_version=VERSION`. Shows when `VERSION !== ptr_last_seen_version`.
+- **Coordination** (`src/components/pwa/PwaHomePrompts.tsx`, top of `DayRouteSelectorScreen`): single mount-time decision — re-install banner showing ⇒ What's New suppressed until next open (no stacking). Helpers + key constants in `src/lib/pwa.ts` (`isStandalone`, `isIOS`, `INSTALL_PROMPTED_KEY`, `LAST_SEEN_VERSION_KEY`).
+- **Build green** (`npx next build`, 38/38 static pages).
+
 ## 2026-06-14 — PWA Session B: offline data layer (on `main`, `f23e314`+`27751f4`+`8af77e5`; no migration)
 
 Made the day view + every stop's detail/manifest + Navigate work offline, with offline auth so a cold-start in airplane mode reaches them. Driver-app-only; no new endpoints, no Supabase calls, no schema. Investigation-first: confirmed `/api/routes` is the single full-day payload (list + all stop detail/coords), so one cache covers everything; the three StopDetail mount-time calls (SMS status, cash-collections, checkoff probe) are status overlays that fail closed offline and were deliberately NOT cached; Navigate makes zero network calls (deep link built from in-memory `stop` fields).

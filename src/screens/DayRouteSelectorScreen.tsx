@@ -8,6 +8,7 @@ import { useInspectionStatus }          from '@/hooks/useInspectionStatus'
 import type { Stop }                    from '@/types'
 import BottomNav                        from '@/components/BottomNav'
 import { OfflineBanner }                from '@/components/OfflineBanner'
+import PwaHomePrompts                    from '@/components/pwa/PwaHomePrompts'
 import PostTripDefectCard               from '@/components/PostTripDefectCard'
 import StopWindowBadge                  from '@/components/StopWindowBadge'
 import FleetAlertCard                   from '@/components/fleet/FleetAlertCard'
@@ -484,6 +485,9 @@ export default function DayRouteSelectorScreen() {
 
   return (
     <div className="screen" style={{ background: C.cream, fontFamily: FONT_BODY, color: C.ink }}>
+      {/* PWA home prompts: re-install banner (Feature 1) + What's New sheet
+          (Feature 3). Coordinator suppresses the sheet while the banner shows. */}
+      <PwaHomePrompts />
       <OfflineBanner />
       {/* ── HERO ─────────────────────────────────────────────────────────── */}
       <div style={{

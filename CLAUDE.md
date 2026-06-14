@@ -261,6 +261,21 @@ The first cut deadlocked on iOS: force-close in airplane mode → relaunch → b
 - **Network-failure fallback in `resolveProfile`.** Online, if `getUserRole` throws or returns null, it now falls back to the cached profile (was: `null` → "Access denied"). Success path unchanged; this only activates on failure (per the spec's "trigger offline path on network failure" hint).
 - Every offline-path op is wrapped in try/catch with `finishLoading()` in `finally`. Timeline: non-expired token restores by ~1.2s; expired token → notice by ~2.4s; hard backstop at 3s. **Build green** (38 pages). **Not committed.**
 
+## PWA Update Prompts — v2.0.0 (Driver App)
+
+Built 2026-06-14. Three additive in-app prompts so drivers migrate off the old bookmark/icon and stay current without manual re-installs. Driver-app-only; no schema, no migrations, no shared/cross-repo files, no new endpoints. Versioning helpers in `src/lib/pwa.ts` + `src/lib/appVersion.ts`; components under `src/components/pwa/`.
+
+- **VERSION lives in `src/lib/appVersion.ts` — bump it on every deploy** that has driver-facing changes. The What's New sheet shows when `VERSION !== localStorage.ptr_last_seen_version`; ship without bumping VERSION and the sheet never re-shows.
+- **The `CHANGELOG` array (the What's New copy) is in the same file (`src/lib/appVersion.ts`) — add a new entry when you bump VERSION**, or the sheet shows stale copy. Keep bullets short and driver-facing (no engineering terms).
+- **`skipWaiting: false` in `src/app/sw.ts` is INTENTIONAL — do not revert to `true`.** It makes serwist register a `{type:'SKIP_WAITING'}` message handler on the worker so a new SW WAITS instead of auto-activating — which is what lets `PwaUpdater` surface the "new version available" banner and let the driver tap Update. Reverting to `skipWaiting:true` silently kills Feature 2 (banner never appears; updates auto-apply mid-session). `clientsClaim:true` stays.
+- **localStorage keys in use (collision-checked clean against `ptd_*`/`ava_*`/`ptr_session_date`):** `ptr_install_prompted` (Feature 1 — once `'true'`, the re-install banner never shows again) and `ptr_last_seen_version` (Feature 3 — last VERSION the driver acknowledged).
+
+- **Feature 1 — Re-install banner (`ReinstallBanner.tsx`, top of Home).** Shown only when NOT standalone (`isStandalone()` false ⇒ old bookmark/Safari/Chrome tab) and `ptr_install_prompted` unset. **Platform-branched on `isIOS()`:** iOS → tap-to-expand 5-step Safari Share-sheet flow; Android/other → two static inline steps (⋮ menu → Add to Home Screen, no expansion, since many drivers run Android Chrome as primary — the RFID platform). Dismiss writes `ptr_install_prompted=true`. Fully hidden in standalone. **No `beforeinstallprompt`** by decision (not worth the complexity this pass).
+- **Feature 2 — SW update-waiting banner (`PwaUpdater.tsx`, mounted globally in `layout.tsx`).** Detects a new SW reaching `waiting` (via `getRegistration()` + `updatefound`/`statechange`, gated on an existing `controller` so first installs never prompt). Non-dismissible blue banner, single **Update now** → posts `{type:'SKIP_WAITING'}` to the waiting worker, reloads once on `controllerchange`. **First deploy of this change auto-activates once** (the currently-live SW still has `skipWaiting:true`); the banner flow is live from the NEXT deploy onward.
+- **Feature 3 — What's New sheet (`WhatsNewSheet.tsx`).** Dark slide-up bottom sheet (mirrors `RouteStartWarehouseSheet`), version eyebrow + `CHANGELOG` bullets + single **Got it** CTA (writes `ptr_last_seen_version=VERSION`). No backdrop-dismiss.
+- **Coordination (`PwaHomePrompts.tsx`, mounted at top of `DayRouteSelectorScreen`).** Single mount-time decision owns the Feature 1↔3 suppression: **if the re-install banner is showing, the What's New sheet is suppressed until next open** (don't stack). All localStorage reads happen once here (client-only effect, no hydration mismatch); each child persists its own ack on close.
+- **Build green** (`npx next build`, 38 pages). Generated `public/sw.js` config verified `skipWaiting:!1,clientsClaim:!0` (serwist's SKIP_WAITING message branch active).
+
 ## AVA (Driver App)
 
 ### Phase 1 — merged to `main` 2026-05-28 (merge `37f83a9`), branch deleted

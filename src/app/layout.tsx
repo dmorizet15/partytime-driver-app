@@ -3,6 +3,7 @@ import { Archivo, Inter } from 'next/font/google'
 import './globals.css'
 import { AppStateProvider } from '@/context/AppStateContext'
 import { AuthProvider } from '@/context/AuthContext'
+import PwaUpdater from '@/components/pwa/PwaUpdater'
 
 const inter = Inter({
   subsets: ['latin'],
@@ -63,6 +64,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               className="max-w-md mx-auto min-h-screen"
               style={{ background: '#FFF9EE' }}
             >
+              {/* App-wide SW update banner (Feature 2) — fixed, shows only when a
+                  new service worker is waiting. Renders null otherwise. */}
+              <PwaUpdater />
               {children}
             </div>
           </AppStateProvider>

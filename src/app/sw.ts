@@ -19,7 +19,14 @@ declare const self: ServiceWorkerGlobalScope
 
 const serwist = new Serwist({
   precacheEntries: self.__SW_MANIFEST,
-  skipWaiting: true,
+  // skipWaiting:false — a new SW WAITS instead of auto-activating, so the
+  // client can surface a "new version available" banner (PwaUpdater) and let
+  // the driver tap Update. With skipWaiting:false, serwist registers a
+  // `{ type: 'SKIP_WAITING' }` message handler that PwaUpdater posts to.
+  // (First deploy of this change: the currently-live SW still has
+  // skipWaiting:true, so it auto-activates this build once — the banner flow
+  // takes effect from the NEXT deploy onward.)
+  skipWaiting: false,
   clientsClaim: true,
   navigationPreload: true,
   runtimeCaching: [
