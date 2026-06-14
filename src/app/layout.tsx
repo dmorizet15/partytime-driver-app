@@ -21,6 +21,16 @@ const archivo = Archivo({
 export const metadata: Metadata = {
   title: 'PartyTime Driver',
   description: 'PartyTime Rentals driver route management app — V1',
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'PTR Work',
+  },
+  icons: {
+    icon: '/icons/favicon.png',
+    apple: '/icons/apple-touch-icon.png',
+  },
 }
 
 export const viewport: Viewport = {
@@ -29,6 +39,7 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   viewportFit: 'cover',
+  themeColor: '#1F46FF',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
