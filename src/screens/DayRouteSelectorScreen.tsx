@@ -196,7 +196,7 @@ function CheckIcon({ size = 15, color = C.gold }: IconProps) {
 export default function DayRouteSelectorScreen() {
   const router = useRouter()
   const { profile } = useAuth()
-  const { getRoutesForDate, getStopsForRoute, isLoading, error, loadDay } = useAppState()
+  const { getRoutesForDate, getStopsForRoute, isLoading, error, loadDay, isOfflineMode } = useAppState()
 
   const today = todayStr()
   const [now, setNow]         = useState<Date>(() => new Date())
@@ -379,7 +379,14 @@ export default function DayRouteSelectorScreen() {
   // co-driver isn't required to inspect and must never be locked behind the
   // primary's inspection (which is driver_id-scoped and would never unlock
   // them). No-truck crew tap freely. Mirrored in RouteListScreen — fix both.
-  const stopsLocked    = hasTruck
+  // OFFLINE EXCEPTION (mirrors RouteListScreen): useInspectionStatus is a
+  // network fetch that fails closed to `inspected=false` offline, which would
+  // lock an ALREADY-inspected route's stops once signal drops. Offline we can't
+  // re-confirm the inspection and the route cache fully supports stop-detail
+  // navigation, so the gate is lifted while `isOfflineMode`. ONLINE gate
+  // unchanged. Feeds both card layouts via `stopsTappable`.
+  const stopsLocked    = !isOfflineMode
+    && hasTruck
     && primaryRoute?.truck_is_own === true
     && !inspected
     && !isCoDriver

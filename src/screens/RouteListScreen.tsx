@@ -130,7 +130,7 @@ function localTodayStr(): string {
 // ─── Screen ───────────────────────────────────────────────────────────────────
 export default function RouteListScreen({ routeId }: RouteListScreenProps) {
   const router = useRouter()
-  const { getRoute, getStopsForRoute, getRoutesForDate, loadDay } = useAppState()
+  const { getRoute, getStopsForRoute, getRoutesForDate, loadDay, isOfflineMode } = useAppState()
   const { user, roles } = useAuth()
 
   // Cold-boot rehydrate. RouteListScreen normally relies on Home having driven
@@ -181,7 +181,14 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
   // truck, and co-drivers (is_primary === false) are excluded outright — a
   // ride-along co-driver must never be locked behind the primary's
   // driver_id-scoped inspection. Mirror of DayRouteSelectorScreen's gate.
-  const stopsLocked   = !!route?.truck_id
+  //
+  // OFFLINE EXCEPTION: useInspectionStatus is a network fetch that fails closed
+  // to `inspected=false` offline, which would lock an ALREADY-inspected route's
+  // stops once signal drops. Offline we can't re-confirm the inspection and the
+  // route cache fully supports stop-detail navigation, so the gate is lifted
+  // while `isOfflineMode`. The regulatory ONLINE gate is unchanged.
+  const stopsLocked   = !isOfflineMode
+    && !!route?.truck_id
     && route?.truck_is_own === true
     && !inspected
     && route?.is_primary !== false
