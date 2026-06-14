@@ -4,6 +4,16 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-06-14 — PWA Session A (merged to `main`, PR #4 `4b1688e`; no migration)
+
+Turned the driver app into an installable PWA with an offline app-shell. Prior state: NOT a PWA at all (no SW, no manifest). Driver-app-only; no shared/cross-repo files, no schema. Five commits squashed onto the feature branch, merged + branch deleted.
+
+- **Foundations (`e9251d7`):** `public/manifest.json` (PartyTime Work / PTR Work, standalone, bg `#000000`, theme `#1F46FF`); 5 icons via re-runnable `scripts/gen_pwa_icons.py` (Pillow, from `ptr-mark.png` — mark on black + gold letter-spaced "WORK" in DIN Condensed Bold, the closest installed Barlow-Condensed-700 substitute; maskable padded to inner 60%); head tags via the Next 14 Metadata API (manifest, appleWebApp, icons, themeColor — not raw `<head>`); `@serwist/next@9.5.11` + `serwist@9.5.11` (verified compatible with Next 14.2.5), SW at `src/app/sw.ts` — precaches app shell (JS/CSS/HTML), NetworkFirst for same-origin navigations with `/offline` fallback, **`/api/*` and Supabase never cached**; `next.config.js`→`.mjs` (ESM `withSerwist`); tsconfig `webworker` lib + `public/sw.js` excluded (NOT a `types:[]` array — would clobber `@types/node`/react); `.gitignore` for generated SW.
+- **Offline page + auto-reload (`14cbf46`):** `/offline` static fallback (black/gold "You're offline") + `ReloadOnReconnect.tsx` (`'use client'`, `window.addEventListener('online', () => location.reload())`) kept as a child so the page stays a server component. Copy finalized (no "last loaded route is still available" — the SW doesn't cache `/api/routes`, deferred to a Session B offline-data layer).
+- **Status bar fix (`b36d0b8`):** `appleWebApp.statusBarStyle` `'black-translucent'` → `'black'` — the translucent value extended the web view under the status bar, causing Dynamic Island collision + an oversized bottom gap in standalone.
+- **BottomNav — zero net change.** Two safe-area attempts (negative margin `14cbf46`, then a paint-over filler div `017b124`) were both reverted byte-for-byte (`b36d0b8`, `git checkout dcf98ee`); the nav is identical to its May-4 state and absent from the merge diff. The residual dark-screen color strip below the nav (from globals.css `.screen` self-padding) is logged as a pre-existing condition for a future safe-area audit (see `tasks/todo.md` + `tasks/lessons.md`).
+- `npx next build` green at every step (38/38 static, Serwist bundled `/sw.js`). **Smoke test pending — on-device standalone install/offline (see `tasks/todo.md`).**
+
 ## 2026-06-12 — Will Call Phase 1 (driver `3f7d01a` + `e856b9a`, dashboard `cb9453f`; all pushed; no migration)
 
 Warehouse-counter Will Call workflow, approved build off the completed investigation. Three corrected premises baked in: the role is **`will_call`** (`will_call_board` is just a dashboard realtime channel name), the dashboard action routes had NO role check at all (any cookie-authed user could stage/return), and check-off state is client-only in Phase 1 (zero migrations).

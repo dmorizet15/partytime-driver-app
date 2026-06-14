@@ -1,5 +1,17 @@
 # Open Tasks — partytime-driver-app
 
+## June 14, 2026 — PWA Session A (MERGED to `main`: PR #4 `4b1688e`; no migration)
+
+App is now an installable PWA: manifest, branded icons (PTR Work), Serwist service worker (app-shell precache + NetworkFirst nav, `/api` & Supabase never cached), offline page with reconnect auto-reload, `statusBarStyle: 'black'`. BottomNav has **zero net change** from its pre-session state (two safe-area attempts made and both reverted). Build green. See CLAUDE.md "PWA / Offline Shell" + "Session A follow-up fixes".
+
+- [ ] **On-device standalone smoke (THE gate — iOS):** Add to Home Screen → confirm it installs with the PTR Work icon + name, launches in standalone chrome (no Safari UI), shows the `#1F46FF` theme color, and the status bar (`black`) does NOT collide with the Dynamic Island.
+- [ ] **Smoke — maskable icon:** on Android (or iOS shortcut), confirm the maskable icon's mark sits inside the safe zone (no clipping under a circle/squircle mask).
+- [ ] **Smoke — offline page + auto-reload:** airplane-mode a cold navigation → `/offline` shell renders (black/gold "You're offline"); turn network back on → the page reloads itself (the `online` listener in `ReloadOnReconnect.tsx`).
+- [ ] **Smoke — SW caching boundaries:** confirm app shell loads offline (precached JS/CSS) but `/api/*` and Supabase calls still go to network (never served stale) — DevTools → Application → Service Workers / Cache Storage.
+- [ ] **Smoke — dark-screen safe-area gap (KNOWN, deferred):** in standalone, eyeball Fleet / Reference / WillCall-detail at the home indicator — a small color strip below the nav is the documented pre-existing condition, NOT a Session A regression. Confirm it's only cosmetic; the real fix is a future safe-area audit (touches globals.css `.screen` + the 8 non-nav screens).
+- [ ] **Future — safe-area audit session:** resolve the dark-screen nav gap properly. Root cause: globals.css `.screen` reserves its own `padding-bottom: env(safe-area-inset-bottom)` below the cream nav, painted in each screen's own bg. Clean fix must also preserve the 8 `.screen` screens that render NO BottomNav (LoginScreen, InspectionScreen, ArcadeHub, LogServiceEntryScreen, the four WillCall flows) whose bottom CTAs rely on that inset. Verify on-device.
+- [ ] **Session B candidate — offline route data:** the offline copy was deliberately trimmed (no "your last loaded route is still available") because the SW does NOT cache `/api/routes`. A real offline-read layer (cache route/stop payloads) would restore that promise.
+
 ## June 12, 2026 — Will Call Phase 1 (PUSHED: driver `3f7d01a`, dashboard `cb9453f`; no migration)
 
 Six warehouse-counter screens + dashboard auth retrofit + driver read route + `will_call` nav swap. Both builds green + pushed. Spec: `docs/design-references/WillCallMockup.jsx` (committed `e856b9a`).
