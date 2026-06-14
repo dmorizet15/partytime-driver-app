@@ -164,6 +164,14 @@ export default function BottomNav() {
         // env() resolves to 0 — total height stays 80.
         height: 'calc(80px + env(safe-area-inset-bottom))',
         paddingBottom: 'env(safe-area-inset-bottom)',
+        // Standalone-PWA fix: the shared `.screen` container ALSO reserves
+        // padding-bottom: env(safe-area-inset-bottom), painted in each screen's
+        // own (often dark/white) background — which would show as a colored
+        // strip below this cream nav at the home indicator. The negative margin
+        // cancels that parent inset so the nav's cream border-box extends all
+        // the way to the physical bottom, covering it on every screen. env()
+        // is 0 in regular browser mode, so this is a no-op there.
+        marginBottom: 'calc(-1 * env(safe-area-inset-bottom))',
         background: C.cream,
         borderTop: '1px solid rgba(10,11,20,0.10)',
         display: 'flex',

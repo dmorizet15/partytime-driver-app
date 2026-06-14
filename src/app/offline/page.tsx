@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import ReloadOnReconnect from './ReloadOnReconnect'
 
 export const metadata: Metadata = {
   title: 'Offline · PTR Work',
@@ -24,12 +25,13 @@ export default function OfflinePage() {
         fontFamily: 'var(--font-inter), Inter, system-ui, -apple-system, sans-serif',
       }}
     >
+      <ReloadOnReconnect />
       <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: 1, color: '#FFB800' }}>
         You&rsquo;re offline
       </div>
       <p style={{ fontSize: 15, lineHeight: 1.5, maxWidth: 320, opacity: 0.85 }}>
-        No connection right now. Your route and stop data need the network — reconnect
-        and this screen will reload automatically.
+        No network connection. Reconnect to load your route and stops. This page will
+        reload automatically when you reconnect.
       </p>
       <p style={{ fontSize: 13, opacity: 0.5, marginTop: 8 }}>PTR Work</p>
     </div>
