@@ -1,5 +1,17 @@
 # Open Tasks — partytime-driver-app
 
+## June 14, 2026 — PWA Session B (ON `main`: `f23e314` + `27751f4` + `8af77e5`; no migration)
+
+Offline data layer over the existing `/api/routes` payload — the one response carries the whole day (route list + every stop's detail/manifest + coords), so caching it covers list + detail + Navigate. No new endpoints, no Supabase calls, no schema. Three commits: route cache + banner + connectivity (`f23e314`), offline auth (`27751f4`), iOS loading-hang fix (`8af77e5`). New localStorage keys: `ptd_route_<date>`, `ptd_route_cache_date`, `ptd_profile_<userId>`. Build green throughout. See CLAUDE.md "Offline Data Layer — PWA Session B".
+
+- [x] **Investigation-first** confirmed `/api/routes` is the single full-day payload; the three StopDetail mount-time calls (SMS status, cash-collections, checkoff probe) are status overlays that fail closed offline and were deliberately NOT cached; Navigate makes zero network calls.
+- [x] **Tests mostly passed (Darren, 2026-06-14).** iOS standalone still "a little glitchy" — **moved on; cleanup deferred to a later session** (below).
+- [ ] **Future — iOS offline cleanup session (deferred by Darren 2026-06-14):** the airplane-mode cold-start path is functional (3s hard timeout guarantees `loading` resolves; non-expired token restores ~1.2s, expired → offline notice ~2.4s) but iOS standalone remains slightly glitchy on-device. Worth a dedicated pass: instrument whether `getSession()` blocks before the race awaits; consider reading the supabase storage key directly to skip the refresh attempt entirely; revisit whether the 1.2s race / 3s backstop windows feel right on a real handset. iOS-WebKit timing — must be tested on the installed PWA, not in a desktop build.
+- [ ] **Smoke — happy path (on-device):** load route online (cache writes `ptd_route_<today>`), kill network, force-quit + relaunch → cached route renders, amber "Offline — showing last saved route" banner shows on Home/Route/Stop (NOT on Tools/Will Call/Profile), Navigate opens the maps deep link. Reconnect → banner clears, OTW + checkoff queues flush via the existing `loadDay` success path.
+- [ ] **Smoke — offline auth restore:** within the access-token lifetime, force-quit online-authed app → relaunch offline → app restores straight to the route (no login bounce), roles intact (Fleet/Will Call/etc. gates resolve from `ptd_profile_<userId>`).
+- [ ] **Smoke — offline no-session:** offline cold-start with an expired/absent token → LoginScreen shows the "You're offline — open the app while connected first" notice (NOT the form); reconnect → form returns automatically.
+- [ ] **Known limitation (by design):** expired access token offline → offline notice (can't refresh offline); a driver whose last login predates this deploy has no `ptd_profile_*` yet → first offline cold-start could show "Access denied" until one online session re-caches. Self-heals.
+
 ## June 14, 2026 — PWA Session A (MERGED to `main`: PR #4 `4b1688e`; no migration)
 
 App is now an installable PWA: manifest, branded icons (PTR Work), Serwist service worker (app-shell precache + NetworkFirst nav, `/api` & Supabase never cached), offline page with reconnect auto-reload, `statusBarStyle: 'black'`. BottomNav has **zero net change** from its pre-session state (two safe-area attempts made and both reverted). Build green. See CLAUDE.md "PWA / Offline Shell" + "Session A follow-up fixes".
@@ -10,7 +22,7 @@ App is now an installable PWA: manifest, branded icons (PTR Work), Serwist servi
 - [ ] **Smoke — SW caching boundaries:** confirm app shell loads offline (precached JS/CSS) but `/api/*` and Supabase calls still go to network (never served stale) — DevTools → Application → Service Workers / Cache Storage.
 - [ ] **Smoke — dark-screen safe-area gap (KNOWN, deferred):** in standalone, eyeball Fleet / Reference / WillCall-detail at the home indicator — a small color strip below the nav is the documented pre-existing condition, NOT a Session A regression. Confirm it's only cosmetic; the real fix is a future safe-area audit (touches globals.css `.screen` + the 8 non-nav screens).
 - [ ] **Future — safe-area audit session:** resolve the dark-screen nav gap properly. Root cause: globals.css `.screen` reserves its own `padding-bottom: env(safe-area-inset-bottom)` below the cream nav, painted in each screen's own bg. Clean fix must also preserve the 8 `.screen` screens that render NO BottomNav (LoginScreen, InspectionScreen, ArcadeHub, LogServiceEntryScreen, the four WillCall flows) whose bottom CTAs rely on that inset. Verify on-device.
-- [ ] **Session B candidate — offline route data:** the offline copy was deliberately trimmed (no "your last loaded route is still available") because the SW does NOT cache `/api/routes`. A real offline-read layer (cache route/stop payloads) would restore that promise.
+- [x] **Session B candidate — offline route data:** DONE (PWA Session B, 2026-06-14, `f23e314`+). Route-payload cache via `loadDay`/`localStorage` (the SW still never caches `/api/routes` — this is an app-layer cache, not an SW cache). The `/offline` copy promise can now be revisited if desired.
 
 ## June 12, 2026 — Will Call Phase 1 (PUSHED: driver `3f7d01a`, dashboard `cb9453f`; no migration)
 

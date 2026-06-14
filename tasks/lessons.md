@@ -6,6 +6,30 @@ Format: one lesson per block. Lead with the rule, then **Why** and **How to appl
 
 ---
 
+## Any loading/auth gate that awaits a network-touching call MUST have a hard, unconditional timeout that resolves the gate — and `setLoading(false)` must sit on a path that runs even if the await never settles.
+
+**Why:** 2026-06-14 (PWA Session B) the offline-auth fix deadlocked iOS standalone: force-close in airplane mode → relaunch → black "Loading…" forever. `AuthContext` resolved `loading` only inside `onAuthStateChange`'s `finally` (runs only if an event fires) and inside an offline branch's `try`/`catch` (NOT a `finally`). Supabase's init token-refresh hangs with **no network timeout** on iOS in airplane mode, which *delays/swallows* `INITIAL_SESSION` → the handler never runs → `loading` never flips. There was no timeout anywhere, so the spinner was eternal. Fix: a single `finishLoading()` funnel + an **unconditional `setTimeout(() => setLoading(false), 3000)`** backstop, plus racing `getSession()` against a 1.2s timeout so the local-restore read itself can't hang. Worst case now resolves to `user=null` → `/login` (recoverable); an infinite spinner is not.
+
+**How to apply:** whenever a `loading`/gate flag is cleared by an async path, ask "what if this promise NEVER settles?" — a hung fetch, a suspended tab, an OS-throttled background. If the only `setLoading(false)` is downstream of that await, add an independent timer that forces resolution regardless. Put the real clear in a `finally`, and the backstop in a `setTimeout` that the success path cancels. Prefer resolving to a recoverable state (login / error / cached) over a spinner. Race any auth/storage call that *might* touch the network (`getSession()` refreshes expired tokens) against a short timeout.
+
+---
+
+## `navigator.onLine` is unreliable on iOS standalone PWAs — never use it as the SOLE gate for an offline code path; pair it with a timeout-driven fallback and/or trigger the offline path on actual network failure.
+
+**Why:** 2026-06-14 the first offline-auth cut gated the entire offline-restore safety net on `navigator.onLine === false`. On iOS standalone in airplane mode, `navigator.onLine` can read **`true`** for a beat after launch — so the gate was false, the offline net never ran, and the app walked straight into the hanging online path. `onLine === true` does not mean "reachable," and on iOS it can be affirmatively wrong right when you check it at mount. (It's also `true` in every desktop build, so a green local test tells you nothing about the standalone symptom.)
+
+**How to apply:** treat `navigator.onLine` as a hint, not a fact. For an offline path: run it immediately when `onLine === false` (cheap, correct when it's right), but ALSO arm a short fallback timer that runs the same offline path if auth/data hasn't resolved yet — covering the "onLine lied" case — and make that path a no-op once the normal path wins. Where possible, key recovery off an actual failed/timed-out request rather than a pre-check. Anything onLine-gated that matters on iOS must be device-tested in the installed PWA, not just the browser.
+
+---
+
+## When caching for offline, cache the ONE payload that carries the whole need — and do NOT cache mutable status overlays whose stale values would mislead.
+
+**Why:** 2026-06-14 (PWA Session B) investigation-first showed `/api/routes` returns the entire day in a single response (route list AND every stop's detail/manifest/coords) — there is no summary-vs-detail split and no per-stop detail endpoint. So caching that one merged payload covered the route list, stop detail, the manifest, AND Navigate (which builds its deep link purely from in-memory `stop` fields, zero network). The three calls StopDetail *does* make on mount (SMS status, cash-collections, checkoff probe) are **workflow-status overlays** that each already fail closed offline — caching them would have persisted stale "SMS sent / cash collected / checked off" state and produced wrong UI. The proposed `ptd_stop_detail_*` key was dropped: no endpoint backed it. Cache the MERGED stops (post-OTW/overlay), not the raw server payload, so the offline view matches what the driver last saw.
+
+**How to apply:** before building a cache, trace the actual network graph (which endpoints, what each carries, what renders from already-loaded state). Cache the smallest set that satisfies the need — often one fat payload — and explicitly exclude mutable status reads whose stale answer is worse than their absence. State the scope decision out loud (what's cached, what's deliberately not, and why) so the omission doesn't later read as a bug.
+
+---
+
 ## A prescribed fix may ALREADY exist — read the target file before implementing, and confirm the reported symptom matches the actual code rather than the description.
 
 **Why:** 2026-06-14 (PWA Session A) a follow-up ticket described the bottom-nav safe-area handling as missing and prescribed the exact fix to add (`padding-bottom: env(safe-area-inset-bottom)` on the nav + a background that fills through). Reading `BottomNav.tsx` first showed that fix had been in place since 2026-05-04 (`599fae2f`) — `height: calc(80px + env(...))` + `paddingBottom: env(...)` + cream bg. Implementing the prescription verbatim would have been a no-op dressed up as a fix. The REAL cause was elsewhere entirely: globals.css `.screen` (the shared container every nav screen wraps in) reserves its OWN `padding-bottom: env(...)` BELOW the nav, painted in each screen's per-screen background — invisible on cream screens, a dark/white strip on dark/white ones. The nav could never "fill through" that gap because it lives outside the nav element. Two contained nav-only attempts followed (negative margin, then an absolute paint-over div); both were ultimately reverted byte-for-byte and the gap was logged as a pre-existing condition for a dedicated safe-area audit. Net BottomNav change for the whole session: zero (it's not even in the merge diff).
