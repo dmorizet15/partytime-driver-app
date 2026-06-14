@@ -12,6 +12,7 @@ import { sendEtaSms, getStopSmsStatus, getDriverLocation } from '@/services/EtaS
 import type { StopSmsStatus } from '@/services/EtaSmsService'
 import { signOut } from '@/lib/auth'
 import BottomNav from '@/components/BottomNav'
+import { OfflineBanner } from '@/components/OfflineBanner'
 import StopWeatherModule from '@/components/weather/StopWeatherModule'
 import AvaChip from '@/components/AvaChip'
 import { HAS_STOP_LEVEL_BADGES } from '@/lib/weather/thresholds'
@@ -1323,6 +1324,7 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
 
   return (
     <div className="screen" style={{ background: C.cream, fontFamily: FONT_BODY, color: C.ink }}>
+      <OfflineBanner />
       {/* hidden file input — opened by the POD Photo quick-action tile */}
       <input
         ref={photoInputRef}

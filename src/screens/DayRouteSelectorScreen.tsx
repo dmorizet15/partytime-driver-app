@@ -7,6 +7,7 @@ import { useAuth }                      from '@/hooks/useAuth'
 import { useInspectionStatus }          from '@/hooks/useInspectionStatus'
 import type { Stop }                    from '@/types'
 import BottomNav                        from '@/components/BottomNav'
+import { OfflineBanner }                from '@/components/OfflineBanner'
 import PostTripDefectCard               from '@/components/PostTripDefectCard'
 import StopWindowBadge                  from '@/components/StopWindowBadge'
 import FleetAlertCard                   from '@/components/fleet/FleetAlertCard'
@@ -483,6 +484,7 @@ export default function DayRouteSelectorScreen() {
 
   return (
     <div className="screen" style={{ background: C.cream, fontFamily: FONT_BODY, color: C.ink }}>
+      <OfflineBanner />
       {/* ── HERO ─────────────────────────────────────────────────────────── */}
       <div style={{
         background: C.blue, color: '#fff',

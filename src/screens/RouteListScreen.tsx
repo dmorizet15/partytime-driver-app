@@ -8,6 +8,7 @@ import { useInspectionStatus } from '@/hooks/useInspectionStatus'
 import { Stop, PaymentState } from '@/types'
 import Image from 'next/image'
 import BottomNav from '@/components/BottomNav'
+import { OfflineBanner } from '@/components/OfflineBanner'
 import WeekScheduleView from '@/components/WeekScheduleView'
 import StopWindowBadge from '@/components/StopWindowBadge'
 import AvaChip from '@/components/AvaChip'
@@ -255,6 +256,7 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
 
   return (
     <div className="screen" style={{ background: C.cream, fontFamily: FONT_BODY, color: C.ink }}>
+      <OfflineBanner />
       <ViewToggle view={view} onChange={setViewPersisted} />
       {/* ── HERO ─────────────────────────────────────────────────────────── */}
       <div style={{

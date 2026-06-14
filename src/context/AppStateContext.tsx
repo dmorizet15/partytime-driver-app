@@ -5,6 +5,7 @@ import React, {
   useContext,
   useReducer,
   useCallback,
+  useEffect,
   ReactNode,
 } from 'react'
 import { useRouter } from 'next/navigation'
@@ -13,29 +14,44 @@ import { useAuthContext } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { stopStateService } from '@/services/StopStateService'
 import { flushCheckoffQueue } from '@/lib/checkoff/service'
+import { writeRouteCache, readRouteCache, pruneOldRouteCache } from '@/lib/routeCache'
+
+// Local-timezone YYYY-MM-DD (matches DayRouteSelectorScreen.todayStr). Used by
+// the reconnect handler to refresh today's route.
+function todayStr(): string {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
 
 // ─── State ────────────────────────────────────────────────────────────────────
 interface AppState {
-  routes:     Route[]
-  stops:      Stop[]
-  isLoading:  boolean
-  error:      string | null
-  loadedDate: string | null   // YYYY-MM-DD of the last successful load
+  routes:        Route[]
+  stops:         Stop[]
+  isLoading:     boolean
+  error:         string | null
+  loadedDate:    string | null   // YYYY-MM-DD of the last successful load
+  isOfflineMode: boolean         // true ⇒ data served from the last-saved cache
 }
 
 const INITIAL_STATE: AppState = {
-  routes:     [],
-  stops:      [],
-  isLoading:  false,
-  error:      null,
-  loadedDate: null,
+  routes:        [],
+  stops:         [],
+  isLoading:     false,
+  error:         null,
+  loadedDate:    null,
+  isOfflineMode: false,
 }
 
 // ─── Actions ──────────────────────────────────────────────────────────────────
 type Action =
   | { type: 'LOAD_START' }
   | { type: 'LOAD_SUCCESS'; payload: { routes: Route[]; stops: Stop[]; date: string } }
+  | { type: 'LOAD_OFFLINE'; payload: { routes: Route[]; stops: Stop[]; date: string } }
   | { type: 'LOAD_ERROR';   payload: { error: string } }
+  | { type: 'SET_OFFLINE';  payload: { value: boolean } }
   | { type: 'MARK_OTW';     payload: { stop_id: string; sent_at: string } }
   | { type: 'MARK_COMPLETE'; payload: { stop_id: string; completed_at: string } }
   | { type: 'MARK_ARRIVED'; payload: { stop_id: string; arrived_at: string } }
@@ -50,11 +66,25 @@ function appReducer(state: AppState, action: Action): AppState {
     case 'LOAD_SUCCESS':
       return {
         ...state,
-        isLoading:  false,
-        error:      null,
-        routes:     action.payload.routes,
-        stops:      action.payload.stops,
-        loadedDate: action.payload.date,
+        isLoading:     false,
+        error:         null,
+        routes:        action.payload.routes,
+        stops:         action.payload.stops,
+        loadedDate:    action.payload.date,
+        isOfflineMode: false,   // fresh data — clear any offline banner
+      }
+
+    case 'LOAD_OFFLINE':
+      // Served from the last-saved cache after a failed network load. Same
+      // data shape as LOAD_SUCCESS but flags the offline banner on.
+      return {
+        ...state,
+        isLoading:     false,
+        error:         null,
+        routes:        action.payload.routes,
+        stops:         action.payload.stops,
+        loadedDate:    action.payload.date,
+        isOfflineMode: true,
       }
 
     case 'LOAD_ERROR':
@@ -65,6 +95,12 @@ function appReducer(state: AppState, action: Action): AppState {
         routes:    [],
         stops:     [],
       }
+
+    case 'SET_OFFLINE':
+      // Connectivity-event flag flip. Does NOT touch route/stop data — the
+      // window 'offline' event sets this immediately; a later cache-served
+      // load (LOAD_OFFLINE) or fresh load (LOAD_SUCCESS) reconciles it.
+      return { ...state, isOfflineMode: action.payload.value }
 
     case 'MARK_OTW':
       return {
@@ -127,11 +163,12 @@ function appReducer(state: AppState, action: Action): AppState {
 
 // ─── Context value shape ──────────────────────────────────────────────────────
 interface AppStateContextValue {
-  routes:     Route[]
-  stops:      Stop[]
-  isLoading:  boolean
-  error:      string | null
-  loadedDate: string | null
+  routes:        Route[]
+  stops:         Stop[]
+  isLoading:     boolean
+  error:         string | null
+  loadedDate:    string | null
+  isOfflineMode: boolean
   getRoutesForDate: (date: string) => Route[]
   getStopsForRoute: (routeId: string) => Stop[]
   getStop:          (stopId: string)  => Stop | undefined
@@ -206,9 +243,32 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         type:    'LOAD_SUCCESS',
         payload: { routes: json.routes, stops: mergedStops, date },
       })
+
+      // ── Step 2: cache the MERGED payload for offline fallback ──────────────
+      // Cache mergedStops (OTW + ptd_stop_* overlays already applied), never
+      // the raw server stops, so the offline view matches what was on screen.
+      // try/catch lives inside the helper — a cache-write failure can't break
+      // a load that already succeeded. Prune any prior day's cache on success.
+      writeRouteCache(date, json.routes, mergedStops)
+      pruneOldRouteCache(date)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       console.error('[AppState] loadDay error:', message)
+
+      // ── Step 3: offline fallback — serve the last-saved route for this day ─
+      // If we have a cached payload for the exact date requested, surface it
+      // with the offline banner instead of an error screen. A corrupt/missing
+      // cache returns null and falls through to LOAD_ERROR (unchanged).
+      const cached = readRouteCache(date)
+      if (cached) {
+        console.warn('[AppState] loadDay failed — serving cached route for', date)
+        dispatch({
+          type:    'LOAD_OFFLINE',
+          payload: { routes: cached.routes, stops: cached.stops, date },
+        })
+        return
+      }
+
       dispatch({ type: 'LOAD_ERROR', payload: { error: message } })
     }
   }, [state.loadedDate, state.error, user, router])
@@ -255,14 +315,38 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'CLEAR_CACHE' })
   }, [])
 
+  // ── Step 5: connectivity events ────────────────────────────────────────────
+  // On mount, seed the offline flag from navigator.onLine. Then:
+  //   • 'offline' → flip the banner on immediately (no wait for a failed load).
+  //   • 'online'  → refresh today's route. The loadDay SUCCESS path already
+  //                 fires syncOnReconnect (queued OTW writes) + flushCheckoffQueue,
+  //                 so no separate flush wiring is needed here, and a successful
+  //                 load clears isOfflineMode via LOAD_SUCCESS.
+  useEffect(() => {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      dispatch({ type: 'SET_OFFLINE', payload: { value: true } })
+    }
+
+    const handleOnline = () => { void loadDay(todayStr(), true) }
+    const handleOffline = () => { dispatch({ type: 'SET_OFFLINE', payload: { value: true } }) }
+
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  }, [loadDay])
+
   return (
     <AppStateContext.Provider
       value={{
-        routes:     state.routes,
-        stops:      state.stops,
-        isLoading:  state.isLoading,
-        error:      state.error,
-        loadedDate: state.loadedDate,
+        routes:        state.routes,
+        stops:         state.stops,
+        isLoading:     state.isLoading,
+        error:         state.error,
+        loadedDate:    state.loadedDate,
+        isOfflineMode: state.isOfflineMode,
         getRoutesForDate,
         getStopsForRoute,
         getStop,
