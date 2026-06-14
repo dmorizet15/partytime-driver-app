@@ -34,6 +34,18 @@ export function useInspectionStatus(
 
     if (!routeId || !truckId) return
 
+    // Offline: the status fetch fails closed to null ("not inspected"), which
+    // offline would flip the Home CTA to "Inspect & Start Route" and (absent the
+    // isOfflineMode scoping on the gate) re-lock stops. Offline we can't
+    // re-confirm and the driver loaded their day online, so treat the route as
+    // inspected — a non-null sentinel (only `inspection !== null` is ever read;
+    // no consumer reads the fields). Skips the doomed fetch entirely. NOTE: this
+    // does NOT drive the Home loading spinner — that's AppState isLoading.
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      setInspection({ id: 'offline', signed_at: '', has_oos: false })
+      return
+    }
+
     let cancelled = false
     fetch(`/api/inspection/status?route_id=${routeId}&truck_id=${truckId}`)
       .then((r) => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))

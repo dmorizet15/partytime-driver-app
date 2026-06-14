@@ -196,8 +196,30 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
     dispatch({ type: 'LOAD_START' })
 
+    // ── Offline fast-path ─────────────────────────────────────────────────────
+    // A doomed /api/routes fetch can HANG with no rejection on iOS standalone
+    // (no network timeout — same class as the documented supabase refresh hang).
+    // That strands isLoading=true, and Home force-reloads on every mount AND
+    // gates its body on isLoading, so it spins forever. When we already know
+    // we're offline, skip the fetch and serve the last-saved cache immediately.
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      const cachedOffline = readRouteCache(date)
+      if (cachedOffline) {
+        dispatch({ type: 'LOAD_OFFLINE', payload: { routes: cachedOffline.routes, stops: cachedOffline.stops, date } })
+      } else {
+        dispatch({ type: 'LOAD_ERROR', payload: { error: 'offline' } })
+      }
+      return
+    }
+
     try {
-      const res  = await fetch(`/api/routes?date=${date}`)
+      // Bound the fetch so an iOS standalone network hang (navigator.onLine can
+      // read `true` in airplane mode for a beat) can't strand isLoading. On
+      // timeout we abort → the catch below serves the cache, same as any failure.
+      const controller = new AbortController()
+      const timeoutId  = setTimeout(() => controller.abort(), 10_000)
+      const res = await fetch(`/api/routes?date=${date}`, { signal: controller.signal })
+        .finally(() => clearTimeout(timeoutId))
 
       if (res.status === 401) {
         // Server rejected the token → real sign-out. Clear the offline identity
