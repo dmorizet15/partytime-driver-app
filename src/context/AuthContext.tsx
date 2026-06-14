@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 import type { User } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { getUserRole } from '../lib/auth'
+import { readCachedProfile, writeCachedProfile } from '../lib/authCache'
 import { flushPendingStopNotes } from '../lib/ava/stopNotesClient'
 import type { Role, UserProfile } from '../types/auth'
 
@@ -27,6 +28,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let cancelled = false
+
+    // Resolve the profile, preferring the network ONLINE and the cached copy
+    // OFFLINE. Online behavior is unchanged: getUserRole runs exactly as before
+    // and still returns p / null — we just additionally persist a successful
+    // result for the next offline cold-start. Offline we never touch the
+    // network (it would fail and blank the driver's roles → "Access denied").
+    async function resolveProfile(userId: string, accessToken: string): Promise<UserProfile | null> {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        return readCachedProfile(userId)
+      }
+      const p = await getUserRole(userId, accessToken)
+      if (p) writeCachedProfile(userId, p)
+      return p
+    }
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
@@ -55,7 +70,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(session?.user ?? null)
         try {
           if (session?.user) {
-            const p = await getUserRole(session.user.id, session.access_token)
+            const p = await resolveProfile(session.user.id, session.access_token)
             if (!cancelled) setProfile(p)
             // AVA Remembers — drain any notes queued while offline. Fire-and-
             // forget; failures stay in the queue for the next pass.
@@ -73,6 +88,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
     )
+
+    // ── Offline cold-start safety net (P0) ───────────────────────────────────
+    // When the app is force-closed and relaunched OFFLINE, the supabase client
+    // tries to refresh an expired access token on init — that network call
+    // fails, and onAuthStateChange may emit a null session (or never fire
+    // INITIAL_SESSION at all), leaving the app hung on "Loading…" or bounced to
+    // /login. So, only when offline at mount, independently restore from a
+    // LOCAL session: getSession() reads localStorage (no network for a valid
+    // token). We trust ONLY a non-expired session — an expired one can't be
+    // refreshed offline, so it correctly falls through to the LoginScreen's
+    // offline notice. Roles come from the profile cache (no network). This runs
+    // ONLY offline; the online path above is untouched.
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      void (async () => {
+        try {
+          const { data: { session } } = await supabase.auth.getSession()
+          const valid =
+            !!session?.user &&
+            typeof session.expires_at === 'number' &&
+            session.expires_at * 1000 > Date.now()
+          if (cancelled) return
+          if (valid && session) {
+            setUser(session.user)
+            setProfile(readCachedProfile(session.user.id))
+          }
+          setLoading(false)
+        } catch (err) {
+          console.error('[AuthContext] offline restore failed', err)
+          if (!cancelled) setLoading(false)
+        }
+      })()
+    }
 
     return () => {
       cancelled = true
