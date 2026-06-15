@@ -1,5 +1,15 @@
 # Open Tasks — partytime-driver-app
 
+## June 15, 2026 — Will Call return queue undercount fix (ON `main`: `30bc068`; no migration)
+
+Return/due-back queue was status-driven (`awaiting_return` only) → `picked_up` orders due back today were silently dropped vs. the date-driven dashboard board. Fixed client-side in `WillCallListScreen.tsx` by wiring `returnByIso` (already in `format.ts`) into `matchesFilter` + the section split. Build green. See CLAUDE.md → "TapGoods Item Check-Off" sibling note in the Will Call Phase 1 block, and `docs/CHANGELOG.md`.
+
+- [x] Fix 1 — `matchesFilter`: `picked_up` orders filter on due-back date (`returnByIso`), not pickup date.
+- [x] Fix 2 — section split: `picked_up` + due-back-today → ACTION NEEDED (with `awaiting_return`); future-return → OUT WITH CUSTOMERS.
+- [x] `npx next build` green (38 pages).
+- [ ] **On-device smoke (the gate):** load `/will-call` as a `will_call` holder → default Today filter's return queue shows ALL `picked_up` orders due back today PLUS all `awaiting_return`, count matching the dashboard board. (Needs ≥1 `picked_up` order whose `checkin_window_end` is today — verify live data has one before testing; per the 2026-06-14 verification pass there were 8 `picked_up` rows.)
+- [ ] **Optional follow-up (cosmetic):** a `picked_up`-due-today card renders in ACTION NEEDED with its normal `picked_up` chrome (muted "Returns: Today", default border, not the red overdue border). Flag visually only if Darren wants it after seeing it on device.
+
 ## June 14, 2026 — PWA v2.0.0 + v2.0.1 offline fixes (ON `main`; no migration)
 
 PWA update prompts shipped, then a run of on-device iOS offline smoke-test fixes. Commits: `9cad572` (reinstall/update-waiting/what's-new prompts, v2.0.0), `473879f` (offline auth restore from cached user + warm route shells, v2.0.1 — FAILURE A/B), `68ff739` (inspection gate offline-scoped so stop cards stay tappable), `f168c96` (Home offline loading-hang — `loadDay` offline fast-path + 10s timeout), `3744848` (strip HTML from staff note in Before You Go sheet). In-app `VERSION` stays `2.0.0` (fixes, no new What's New sheet). See CLAUDE.md → "PWA Update Prompts" + its v2.0.1 follow-up block, and `docs/CHANGELOG.md`.

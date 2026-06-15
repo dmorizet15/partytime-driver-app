@@ -4,6 +4,17 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-06-15 — Will Call return queue undercount fix (ON `main`: `30bc068`; no migration)
+
+One surgical client-side fix in `src/screens/willCall/WillCallListScreen.tsx`. The driver-app return/due-back queue was **status-driven** (only `awaiting_return` counted as "due back"), so orders still `picked_up` but due back today were silently excluded — the dashboard board, which is **date-driven** (`checkin_window_end`), showed significantly more. Driver reported "only 2 orders due back today" vs. the dashboard's larger count.
+
+- **Root cause (investigation-first, no dashboard repo on hand — driver side confirmed, dashboard inferred):** the queue keyed entirely on `status === 'awaiting_return'`. A `picked_up` order due back today was filtered by `expected_pickup_date` (in the past) in `matchesFilter` → excluded under the default Today filter, and grouped into "Out with Customers" by the section split, never the return queue. `returnByIso(order)` (= `checkin_window_end ?? return_reminder_date`) already existed in `format.ts` but was only wired to *display* (`fmtReturnBy`), never to filter/section logic.
+- **Fix 1 — `matchesFilter`:** added a `picked_up` branch that keys filtering on `returnByIso(order)` (the due-back date), not `expected_pickup_date`. Today → `due === today`; Week → due-back within the next 6 days. A customer who picked up June 10 due back June 15 now appears on June 15.
+- **Fix 2 — section split:** new `dueBackToday(o)` = `picked_up && dateKey(returnByIso(o)) === today`. Such orders land in **ACTION NEEDED** alongside `awaiting_return`; `picked_up` orders with a future return date stay in **OUT WITH CUSTOMERS**. The hero "needs action" count picks them up too.
+- **Untouched by design:** `route.ts` query (the undercount is 100% client-side; the API already returns the full board), all other screens/routes, OrderCard styling (a `picked_up`-due-today card shows in ACTION NEEDED with its normal `picked_up` chrome — muted "Returns: Today", default border; a quick follow-up if Darren wants it visually flagged).
+- **Build green** (`npx next build`, 38 pages, ✓ Compiled successfully). **Pending: Darren on-device smoke test** — confirm the return queue now matches the dashboard board's due-back-today count.
+
+
 ## 2026-06-14 — Will Call Phase 1 verification pass + SMS Phase 2 tech-debt logging (no code change)
 
 Verification-only session. No driver-app code changed. Goal: smoke-test Will Call Phase 1 (`3f7d01a`/`cb9453f`, shipped 2026-06-12) on production.
