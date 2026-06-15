@@ -11,7 +11,9 @@ import { logEvent } from '@/services/EventLogger'
 import { sendEtaSms, getStopSmsStatus, getDriverLocation } from '@/services/EtaSmsService'
 import type { StopSmsStatus } from '@/services/EtaSmsService'
 import { signOut } from '@/lib/auth'
-import { clearCachedUser } from '@/lib/authCache'
+import { clearCachedUser, readCachedProfile } from '@/lib/authCache'
+import { enqueueCompletion, COMPLETE_TOAST_KEY } from '@/lib/completeQueue'
+import type { Stop } from '@/types'
 import BottomNav from '@/components/BottomNav'
 import { OfflineBanner } from '@/components/OfflineBanner'
 import StopWeatherModule from '@/components/weather/StopWeatherModule'
@@ -439,6 +441,20 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     return () => clearTimeout(t)
   }, [navMessage])
 
+  // One-shot "Stop saved — will sync when back online" confirmation handed
+  // forward from an optimistic-but-unsynced completion on the previous stop
+  // (Part 1). The source screen unmounts on navigate, so the pill surfaces here
+  // on mount. Read + clear so it shows exactly once.
+  useEffect(() => {
+    try {
+      const msg = sessionStorage.getItem(COMPLETE_TOAST_KEY)
+      if (msg) {
+        sessionStorage.removeItem(COMPLETE_TOAST_KEY)
+        setNavMessage(msg)
+      }
+    } catch {}
+  }, [stopId])
+
   useEffect(() => {
     if (!etaCooldownMsg) return
     const t = setTimeout(() => setEtaCooldownMsg(null), 4000)
@@ -830,6 +846,89 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     } finally { setNavLoading(false) }
   }
 
+  // ── Auto-ETA (Part 3) ─────────────────────────────────────────────────────
+  // When this driver has auto_send_eta set, fire the OTW/ETA SMS to the next
+  // CUSTOMER stop the instant they complete a stop — on top of the always-
+  // available manual Send ETA button (which is never removed/hidden). The flag
+  // is read from the ptd_profile_<userId> cache (refreshed each online loadDay)
+  // so an admin's mid-day toggle takes effect without an app restart — the
+  // in-memory auth profile only updates on auth events. Fire-and-forget; self-
+  // gates on online + GPS + a customer phone; completely invisible to the driver
+  // (no toast, banner, or indicator).
+
+  // Walk forward from `start` (inclusive) through the route's sequence to the
+  // first non-depot, not-yet-completed stop that has a textable phone. Skips
+  // warehouse / warehouse_return depot legs and completed stops. Null if none.
+  function getNextCustomerStop(start: Stop | null): Stop | null {
+    if (!start) return null
+    const startIdx = allStops.findIndex((s) => s.stop_id === start.stop_id)
+    if (startIdx === -1) return null
+    for (let i = startIdx; i < allStops.length; i++) {
+      const s = allStops[i]
+      if (s.stop_type === 'warehouse' || s.stop_type === 'warehouse_return') continue
+      if (s.current_status === 'completed') continue
+      const phone = s.customer_cell?.trim() || s.customer_phone?.trim()
+      if (phone) return s
+    }
+    return null
+  }
+
+  function maybeFireAutoEta(): void {
+    if (!authUser?.id) return
+    const cached = readCachedProfile(authUser.id)
+    if (!cached?.auto_send_eta) return
+    const target = getNextCustomerStop(nextStop)
+    if (!target) return
+    void fireAutoEta(target)
+  }
+
+  async function fireAutoEta(targetStop: Stop): Promise<void> {
+    // Offline → skip silently. The ETA endpoint hard-requires live driver GPS
+    // and rejects without it, so there's nothing useful to queue.
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return
+    let loc: { lat: number; lng: number } | null = null
+    try {
+      loc = await getDriverLocation()
+    } catch {
+      return
+    }
+    if (!loc) return   // location services off / denied → skip silently
+    const phone = targetStop.customer_cell?.trim() || targetStop.customer_phone?.trim()
+    if (!phone) return
+    // Same destination + stopType shape as the manual runEtaSend.
+    const destination = targetStop.latitude != null && targetStop.longitude != null
+      ? `${targetStop.latitude},${targetStop.longitude}`
+      : [targetStop.address_line_1, targetStop.city, [targetStop.state, targetStop.postal_code].filter(Boolean).join(' ')]
+          .filter((p) => p && p.trim().length > 0)
+          .join(', ')
+    const smsStopType: 'delivery' | 'pickup' = targetStop.stop_type === 'pickup' ? 'pickup' : 'delivery'
+    try {
+      const result = await sendEtaSms({
+        stopId:        targetStop.stop_id,
+        routeId:       targetStop.route_id,
+        stopType:      smsStopType,
+        customerPhone: phone,
+        customerName:  targetStop.customer_name,
+        orderId:       targetStop.order_id,
+        driverLat:     loc.lat,
+        driverLng:     loc.lng,
+        destination,
+      })
+      if (result.success) {
+        // Mirror the manual path: flip the next stop's OTW flag (optimistic
+        // dispatch + stops.otw_status write + offline queue) so it reads as
+        // "on the way" exactly like a manual send.
+        markOtw(targetStop.stop_id, new Date().toISOString())
+        logEvent('ETA_SMS_SENT', targetStop.route_id, targetStop.stop_id, targetStop.order_id, { etaRange: result.etaRange, auto: true })
+      } else {
+        logEvent('ETA_SMS_FAILED', targetStop.route_id, targetStop.stop_id, targetStop.order_id, { error: result.error, auto: true })
+      }
+    } catch (err) {
+      // Network failure — silent skip; Vercel logs the throw. Never surfaced.
+      console.error('[auto-eta] send failed', err)
+    }
+  }
+
   // Shared completion path — POST /api/complete-stop, update local state,
   // log + refetch, navigate to next stop. Returns true on success.
   // Used by handleConfirmComplete (non-COD modal) and by both cash-modal
@@ -846,6 +945,22 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
       return false
     }
     const completedAt = new Date().toISOString()
+
+    // ── Optimistic completion (Part 1) ──────────────────────────────────────
+    // Flip local state to completed BEFORE the network call so the per-stop
+    // progression gate opens and the driver advances even offline. markComplete
+    // is idempotent (reducer maps by stop_id + mirrors ptd_stop_*), so a later
+    // server confirm or a queue replay can't double-apply. This also fixes the
+    // pre-existing offline bug where a thrown fetch meant markComplete never ran
+    // and the stop stayed incomplete forever.
+    markComplete(stop.stop_id, completedAt)
+    logEvent('STOP_COMPLETED', routeId, stopId, stop.order_id, { completed_at: completedAt })
+
+    // Auto-ETA (Part 3): fire-and-forget OTW/ETA to the next customer when this
+    // driver has the flag. Self-gates on online + GPS + a phone; invisible.
+    maybeFireAutoEta()
+
+    let synced = true
     try {
       const r = await fetch('/api/complete-stop', {
         method:  'POST',
@@ -853,28 +968,26 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
         body:    JSON.stringify({ stop_id: stop.stop_id }),
       })
       const j = await r.json().catch(() => null)
-      if (!r.ok || !j?.success) {
-        setNavMessage(j?.error ?? 'Could not mark stop complete — try again')
-        closeModal()
-        setLoading(false)
-        return false
-      }
+      if (!r.ok || !j?.success) synced = false
     } catch (err) {
-      console.error('[runStopComplete] network error:', err)
-      setNavMessage('Could not mark stop complete — check your connection')
-      closeModal()
-      setLoading(false)
-      return false
+      console.warn('[runStopComplete] completion POST failed — queued for sync:', err)
+      synced = false
     }
 
-    markComplete(stop.stop_id, completedAt)
-    logEvent('STOP_COMPLETED', routeId, stopId, stop.order_id, { completed_at: completedAt })
-
-    // 5-second delay: dashboard cascade (realtime → recalculate →
-    // writeCalculatedETAs → Supabase write) takes ~3–5s. Refetching sooner
-    // reads stale calculated_eta values. Fire-and-forget — navigation
-    // happens immediately; LOAD_SUCCESS lands later with the new ETAs.
-    setTimeout(() => loadDay(route.operating_date, true), 5000)
+    if (synced) {
+      // 5-second delay: dashboard cascade (realtime → recalculate →
+      // writeCalculatedETAs → Supabase write) takes ~3–5s. Refetching sooner
+      // reads stale calculated_eta values. Fire-and-forget — navigation
+      // happens immediately; LOAD_SUCCESS lands later with the new ETAs.
+      setTimeout(() => loadDay(route.operating_date, true), 5000)
+    } else {
+      // Offline or a transient server failure. The optimistic completion stands;
+      // queue the POST for replay on reconnect (flushed in loadDay). Never trap
+      // the driver with a connection error — hand a soft confirmation forward to
+      // the next screen (this one unmounts on navigate).
+      enqueueCompletion({ stopId: stop.stop_id, routeId, completedAt, enqueuedAt: new Date().toISOString() })
+      try { sessionStorage.setItem(COMPLETE_TOAST_KEY, 'Stop saved — will sync when back online') } catch {}
+    }
 
     closeModal()
     setLoading(false)

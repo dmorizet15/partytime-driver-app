@@ -29,4 +29,10 @@ export interface UserProfile {
   checklist_enabled: boolean
   personality_preference: 'direct' | 'personality'
   stats_enabled: boolean
+  /** Per-driver auto-ETA (Migration 097). When true, the driver app auto-fires
+   *  the OTW/ETA SMS to the next customer the moment this driver marks a stop
+   *  complete — in addition to the always-available manual Send ETA button.
+   *  Admin-set only (super_admin via the dashboard driver-detail page); there
+   *  is no driver-side toggle. Defaults false. */
+  auto_send_eta: boolean
 }

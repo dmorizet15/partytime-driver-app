@@ -1291,6 +1291,7 @@ export type Database = {
         Row: {
           archived_at: string | null
           archived_by_user_id: string | null
+          auto_send_eta: boolean
           checklist_enabled: boolean
           created_at: string
           display_name: string | null
@@ -1310,6 +1311,7 @@ export type Database = {
         Insert: {
           archived_at?: string | null
           archived_by_user_id?: string | null
+          auto_send_eta?: boolean
           checklist_enabled?: boolean
           created_at?: string
           display_name?: string | null
@@ -1329,6 +1331,7 @@ export type Database = {
         Update: {
           archived_at?: string | null
           archived_by_user_id?: string | null
+          auto_send_eta?: boolean
           checklist_enabled?: boolean
           created_at?: string
           display_name?: string | null

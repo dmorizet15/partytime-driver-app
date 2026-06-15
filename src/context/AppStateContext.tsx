@@ -14,8 +14,10 @@ import { useAuthContext } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { stopStateService } from '@/services/StopStateService'
 import { flushCheckoffQueue } from '@/lib/checkoff/service'
+import { flushCompleteQueue } from '@/lib/completeQueue'
 import { writeRouteCache, readRouteCache, pruneOldRouteCache, warmRouteShells } from '@/lib/routeCache'
-import { clearCachedUser } from '@/lib/authCache'
+import { clearCachedUser, writeCachedProfile } from '@/lib/authCache'
+import { getUserRole } from '@/lib/auth'
 
 // Local-timezone YYYY-MM-DD (matches DayRouteSelectorScreen.todayStr). Used by
 // the reconnect handler to refresh today's route.
@@ -244,6 +246,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       // TapGoods write-backs) — fire-and-forget, the queue self-prunes.
       if (user?.id) void flushCheckoffQueue()
 
+      // And queued offline stop completions (Part 1) — replays each
+      // /api/complete-stop POST, drops on 2xx/4xx, retries 5xx/network.
+      // Fire-and-forget; never throws.
+      if (user?.id) void flushCompleteQueue()
+
       // Read OTW status from Supabase for this batch of stops
       const supabaseOtw = await stopStateService.readOtwStatus(stopIds)
 
@@ -283,6 +290,28 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       // the real shell (which re-renders from the cache above) instead of the
       // /offline screen. Online-only, session-deduped, best-effort.
       warmRouteShells(json.routes, mergedStops)
+
+      // ── Refresh the cached profile (Part 3 — auto-ETA) ─────────────────────
+      // Admin-set flags (auto_send_eta) can change mid-day; refresh the
+      // ptd_profile_<userId> cache on each online load so StopDetailScreen's
+      // fireAutoEta reads the current value next completion — no app restart.
+      // The in-memory AuthContext profile only updates on auth events, so the
+      // cache is the live source here. Best-effort, fire-and-forget — never
+      // blocks or fails the route load. No /api/profile route exists;
+      // getUserRole is the canonical profile loader and writeCachedProfile
+      // mirrors the same cache the offline-auth layer already uses.
+      if (user?.id) {
+        const uid = user.id
+        void (async () => {
+          try {
+            const { data: { session } } = await supabase.auth.getSession()
+            const token = session?.access_token
+            if (!token) return
+            const fresh = await getUserRole(uid, token)
+            if (fresh) writeCachedProfile(uid, fresh)
+          } catch { /* best-effort */ }
+        })()
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       console.error('[AppState] loadDay error:', message)

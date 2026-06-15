@@ -194,6 +194,43 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
     && route?.is_primary !== false
   const stopsTappable = !stopsLocked
 
+  // ── Per-stop progression gate (Part 2) ───────────────────────────────────
+  // Mirror of DayRouteSelectorScreen — fix both. A customer stop is tappable
+  // only when it's the current ACTIVE stop (the first not-yet-completed customer
+  // stop by sequence); future stops stay locked until the ones before them are
+  // completed; completed stops remain tappable read-only; depot legs (warehouse
+  // / warehouse_return) are never locked. Layers ON TOP of the inspection gate
+  // (stopsLocked) — that fires first. `stops` is this single route's list,
+  // already sequence-sorted by getStopsForRoute.
+  function isProgressionLocked(stop: Stop): boolean {
+    if (stop.stop_type === 'warehouse_return' || stop.stop_type === 'warehouse') return false
+    if (stop.current_status === 'completed') return false
+    const active = stops.find(
+      (s) => s.current_status !== 'completed'
+        && s.stop_type !== 'warehouse_return'
+        && s.stop_type !== 'warehouse'
+    )
+    return active?.stop_id !== stop.stop_id
+  }
+
+  // Combined per-card interaction style. Inspection lock (whole list) → 0.4 as
+  // before. Otherwise: completed → 0.6, a locked future stop → 0.4, the active
+  // stop → 1. No lock icon by spec — dimming is the only cue.
+  function cardLockStyle(stop: Stop): {
+    tappable: boolean; cursor: 'pointer' | 'not-allowed'; opacity: number; pointerEvents: 'auto' | 'none'
+  } {
+    const progressionLocked = isProgressionLocked(stop)
+    const tappable = stopsTappable && !progressionLocked
+    const isCompleted = stop.current_status === 'completed'
+    const opacity = !stopsTappable ? 0.4 : isCompleted ? 0.6 : progressionLocked ? 0.4 : 1
+    return {
+      tappable,
+      cursor: tappable ? 'pointer' : 'not-allowed',
+      opacity,
+      pointerEvents: tappable ? 'auto' : 'none',
+    }
+  }
+
   // Week view is reachable regardless of route assignment — the toggle must
   // never short-circuit just because this driver has no route on the URL.
   // Same surface chrome (toggle + BottomNav) but the body is WeekScheduleView.
@@ -281,8 +318,8 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
 
   function handleStopTap(stop: Stop) {
     // Belt-and-braces guard against keyboard/SR bypass — the visual treatment
-    // below (40% opacity + pointer-events: none) handles affordance.
-    if (stopsLocked) return
+    // below (dimming + pointer-events: none) handles affordance.
+    if (stopsLocked || isProgressionLocked(stop)) return
     router.push(`/route/${routeId}/stop/${stop.stop_id}`)
   }
 
@@ -444,19 +481,20 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
               const hasChips    = isOtw || isCompleted || !!payLabel || isWarehouse
               const hasDispatchNote = !!stop.dispatcher_notes && stop.dispatcher_notes.trim().length > 0
 
+              const lock = cardLockStyle(stop)
               return (
                 <button
                   key={stop.stop_id}
                   onClick={() => handleStopTap(stop)}
-                  aria-disabled={!stopsTappable || undefined}
+                  aria-disabled={!lock.tappable || undefined}
                   style={{
                     width: '100%', textAlign: 'left',
                     background: 'transparent', border: 0,
-                    cursor: stopsTappable ? 'pointer' : 'default',
+                    cursor: lock.cursor,
                     padding: '12px 0', display: 'flex', gap: 16,
                     alignItems: 'flex-start', fontFamily: 'inherit',
-                    opacity:       stopsTappable ? 1 : 0.4,
-                    pointerEvents: stopsTappable ? 'auto' : 'none',
+                    opacity:       lock.opacity,
+                    pointerEvents: lock.pointerEvents,
                   }}
                 >
                   {/* Numbered circle (with optional gold-dot OTW indicator) */}

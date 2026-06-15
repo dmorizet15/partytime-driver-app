@@ -391,8 +391,50 @@ export default function DayRouteSelectorScreen() {
     && !inspected
     && !isCoDriver
   const stopsTappable  = !stopsLocked
+
+  // ── Per-stop progression gate (Part 2) ───────────────────────────────────
+  // A customer stop is tappable only when it's the current ACTIVE stop on its
+  // route — the first not-yet-completed customer stop (by sequence) for that
+  // route_id. Future stops stay locked until the ones before them are completed;
+  // completed stops remain tappable read-only; depot legs (warehouse /
+  // warehouse_return) are never locked. This layers ON TOP of the inspection
+  // gate (stopsLocked) — that fires first and locks everything pre-inspection.
+  // Route-scoped because dayStops flat-maps every route of the day; each route's
+  // slice is already sequence-sorted by getStopsForRoute, so `.find()` returns
+  // the earliest incomplete stop on that route.
+  function isProgressionLocked(stop: Stop): boolean {
+    if (stop.stop_type === 'warehouse_return' || stop.stop_type === 'warehouse') return false
+    if (stop.current_status === 'completed') return false
+    const active = dayStops.find(
+      (s) => s.route_id === stop.route_id
+        && s.current_status !== 'completed'
+        && s.stop_type !== 'warehouse_return'
+        && s.stop_type !== 'warehouse'
+    )
+    return active?.stop_id !== stop.stop_id
+  }
+
+  // Combined per-card interaction style. Inspection lock (whole list) → 0.4 as
+  // before. Otherwise: completed → 0.6 (readable but visually done), a locked
+  // future stop → 0.4, the active stop → 1. No lock icon by spec — the dimming
+  // is the only cue.
+  function cardLockStyle(stop: Stop): {
+    tappable: boolean; cursor: 'pointer' | 'not-allowed'; opacity: number; pointerEvents: 'auto' | 'none'
+  } {
+    const progressionLocked = isProgressionLocked(stop)
+    const tappable = stopsTappable && !progressionLocked
+    const isCompleted = stop.current_status === 'completed'
+    const opacity = !stopsTappable ? 0.4 : isCompleted ? 0.6 : progressionLocked ? 0.4 : 1
+    return {
+      tappable,
+      cursor: tappable ? 'pointer' : 'not-allowed',
+      opacity,
+      pointerEvents: tappable ? 'auto' : 'none',
+    }
+  }
+
   function handleStopTap(stop: Stop) {
-    if (stopsLocked) return
+    if (stopsLocked || isProgressionLocked(stop)) return
     router.push(`/route/${stop.route_id}/stop/${stop.stop_id}`)
   }
 
@@ -796,11 +838,12 @@ export default function DayRouteSelectorScreen() {
               const showSubName = !!contactName && contactName !== headline
               const amt = stop.balance_due_amount
               const amountText  = (typeof amt === 'number' && amt > 0) ? `${formatUSD(amt)} ` : ''
+              const lock = cardLockStyle(stop)
               return (
                 <div key={`cod-${stop.stop_id}`} style={{ padding: '12px 18px 0' }}>
                   <button
                     onClick={() => handleStopTap(stop)}
-                    aria-disabled={!stopsTappable || undefined}
+                    aria-disabled={!lock.tappable || undefined}
                     style={{
                       width: '100%',
                       background: C.goldSoft,
@@ -808,12 +851,12 @@ export default function DayRouteSelectorScreen() {
                       borderRadius: 18,
                       padding: '14px 16px',
                       display: 'flex', alignItems: 'center', gap: 14,
-                      cursor: stopsTappable ? 'pointer' : 'default',
+                      cursor: lock.cursor,
                       fontFamily: 'inherit',
                       textAlign: 'left',
                       boxShadow: '0 14px 28px -16px rgba(176,127,0,0.45)',
-                      opacity:       stopsTappable ? 1 : 0.4,
-                      pointerEvents: stopsTappable ? 'auto' : 'none',
+                      opacity:       lock.opacity,
+                      pointerEvents: lock.pointerEvents,
                     }}
                   >
                     <div style={{
@@ -1030,20 +1073,21 @@ export default function DayRouteSelectorScreen() {
                   </span>
                 ) : null
 
+                const lock = cardLockStyle(stop)
                 return (
                   <button
                     key={stop.stop_id}
                     onClick={() => handleStopTap(stop)}
-                    aria-disabled={!stopsTappable || undefined}
+                    aria-disabled={!lock.tappable || undefined}
                     style={{
                       width: '100%', textAlign: 'left',
                       background: 'transparent', border: 0,
-                      cursor: stopsTappable ? 'pointer' : 'default',
+                      cursor: lock.cursor,
                       padding: '8px 0', display: 'flex', gap: 16,
                       alignItems: 'flex-start', fontFamily: 'inherit',
                       position: 'relative', zIndex: 1,
-                      opacity:       stopsTappable ? 1 : 0.4,
-                      pointerEvents: stopsTappable ? 'auto' : 'none',
+                      opacity:       lock.opacity,
+                      pointerEvents: lock.pointerEvents,
                     }}
                   >
                     {/* Numbered circle (32px) — completed: ink fill + gold check;
