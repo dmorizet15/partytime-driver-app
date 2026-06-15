@@ -4,6 +4,19 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-06-14 — Will Call Phase 1 verification pass + SMS Phase 2 tech-debt logging (no code change)
+
+Verification-only session. No driver-app code changed. Goal: smoke-test Will Call Phase 1 (`3f7d01a`/`cb9453f`, shipped 2026-06-12) on production.
+
+- **Reality of the "live" smoke test:** the staging / pickup / return steps fire **real customer SMS** (staging notice, return-confirmation) and a **real dispatch@ discrepancy email**. Those are irreversible outward-facing side effects and require a logged-in `will_call` session on a device — not something to drive autonomously on production. So this session did the **fully verifiable portion** (code paths, deploy, DB prerequisites, dashboard auth gate) and hands Darren a targeted on-device checklist for the side-effecting tap-through. **The smoke test is NOT marked complete** — the live SMS/email verification is still the gate.
+- **✅ Production live.** `https://work.partytime-rentals.com/will-call` → HTTP 200 (route resolves, not 404). On `main` (`25dcf03`, past the `3f7d01a` ship).
+- **✅ `will_call` role.** 5 active holders (Darren, Dylan, Jon Bartolomeo, Joey Paradise, Melissa). Darren is active with the role — no provisioning needed.
+- **✅ Test data present** in every state the flows need: 13 pending, 1 staged (Joseph Tresca), 8 picked_up, 16 returned. **Gap: 0 `awaiting_return` rows** — the "Return Overdue" red-border / overdue-banner path can't be exercised until the dashboard flips an order to `awaiting_return`.
+- **✅ Code-path verification (Explore agent, all 6 screens, 20 items PASS, `next build` green, zero concerns).** List (3 tabs, default Today; 4 sections; red/blue borders; exact STATE_PILL labels; string-based date parse; due-back = `checkin_window_end` ?? `return_reminder_date`), Detail (4-step progress, status-keyed CTAs, returned green block), Staging checkoff (qty exception only, NO damage toggle), Pickup confirm (identity card + full-qty items + photo stub w/ Skip), Return checkoff (qty short + damage flag → `buildReturnNotes`), Return Done recap. Gates: `WillCallGate` = will_call|super_admin; nav tab + Tools `TrainingCard` strict will_call; Training relocates out of nav for will_call holders. `GET /api/will-call` four-role gate + 7-day returned filter + 30s/focus refetch (no realtime). Writes cross-app bearer POST only, never direct supabase. Damage = return-note line only (no `field_work_orders` in Phase 1).
+- **✅ Dashboard auth retrofit (`requireWillCallAccess.ts`).** All four `/api/willcall/[id]/{stage,pickup,return,staged-location}` routes carry the gate + an `OPTIONS` (CORS preflight) handler + `willCallJson` (CORS headers on every response incl. 4xx/5xx). Role set `will_call|warehouse|scheduler|super_admin`; a plain-driver token → 403 "Forbidden — Will Call access only". CORS origin `work.partytime-rentals.com`, `Authorization` allowed.
+- **Tech debt logged (dashboard repo `tasks/todo.md`):** SMS Reply Routing Phase 2 (migration 097) — `sms_outbound_messages` table to replace the phone-number heuristic in `inboundSms.ts`; prerequisite = Phase 1 (`fabdbce`/`68a1074`) verified stable on a live delivery day. Logged only, not built.
+
+
 ## 2026-06-14 — Offline cold-start fixes: v2.0.1 (no migration)
 
 Two offline cold-start failures found in on-device iOS PWA smoke testing, fixed in one commit. Driver-app-only; no schema, no new endpoints.
