@@ -25,6 +25,15 @@ Return/due-back queue was status-driven (`awaiting_return` only) → `picked_up`
 - [ ] **On-device smoke (the gate):** load `/will-call` as a `will_call` holder → default Today filter's return queue shows ALL `picked_up` orders due back today PLUS all `awaiting_return`, count matching the dashboard board. (Needs ≥1 `picked_up` order whose `checkin_window_end` is today — verify live data has one before testing; per the 2026-06-14 verification pass there were 8 `picked_up` rows.)
 - [ ] **Optional follow-up (cosmetic):** a `picked_up`-due-today card renders in ACTION NEEDED with its normal `picked_up` chrome (muted "Returns: Today", default border, not the red overdue border). Flag visually only if Darren wants it after seeing it on device.
 
+## June 15, 2026 — Will Call `awaiting_return` overdue-treatment fix (ON `main`: `9e02159`; no migration)
+
+`awaiting_return` cards were always painted red/overdue, but that status only means the return-reminder SMS fired today — not that the order is late. Split into red (due-back date passed) vs. amber "Due Back" (due today/future) in `OrderCard`, switching all three overdue cues (border + pill + line label) together. One file, styling/label only. See CLAUDE.md → Will Call block, and `docs/CHANGELOG.md`.
+
+- [x] `OrderCard` splits `awaiting_return` on `dateKey(returnByIso(order)) < today`; null due-back date fails safe to amber.
+- [x] Custom inline amber pill for the not-late case (the `StatePill` atom is status-keyed → would stay red); shared `STATE_PILL` map + `ProgressSteps` untouched.
+- [x] `npx next build` green (38 pages).
+- [ ] **On-device smoke (the gate):** needs ≥1 `awaiting_return` row — the dashboard must flip an order to `awaiting_return` first (per 2026-06-14 verification, prod had 0). Then confirm: due-back date today/future → amber border + "Due Back" pill + amber "↩ Due back:" line; due-back date passed → red border + "Return Overdue" pill + red "↩ Return due:" line.
+
 ## June 14, 2026 — PWA v2.0.0 + v2.0.1 offline fixes (ON `main`; no migration)
 
 PWA update prompts shipped, then a run of on-device iOS offline smoke-test fixes. Commits: `9cad572` (reinstall/update-waiting/what's-new prompts, v2.0.0), `473879f` (offline auth restore from cached user + warm route shells, v2.0.1 — FAILURE A/B), `68ff739` (inspection gate offline-scoped so stop cards stay tappable), `f168c96` (Home offline loading-hang — `loadDay` offline fast-path + 10s timeout), `3744848` (strip HTML from staff note in Before You Go sheet). In-app `VERSION` stays `2.0.0` (fixes, no new What's New sheet). See CLAUDE.md → "PWA Update Prompts" + its v2.0.1 follow-up block, and `docs/CHANGELOG.md`.

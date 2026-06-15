@@ -4,6 +4,16 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-06-15 — Will Call `awaiting_return` overdue-treatment fix (ON `main`: `9e02159`; no migration)
+
+One-file follow-on to the morning's return-queue undercount fix. `OrderCard` (`src/screens/willCall/WillCallListScreen.tsx`) was painting EVERY `awaiting_return` card with red/overdue styling — but `awaiting_return` only means the return-reminder SMS fired today, not that the order is actually late.
+
+- **Fix (styling/label logic only):** split `awaiting_return` into two visual states off the actual due-back date — `isOverdue = dateKey(returnByIso(order)) < today` (date-grain compare, consistent with `matchesFilter`/`dueBackToday` and avoiding the bare-date day-shift `format.ts` warns about). Genuinely overdue (date passed) → unchanged red treatment. Reminded-but-not-yet-late (due today/future, or a null due-back date which fails safe to amber) → **amber border + inline amber "Due Back" pill + amber "↩ Due back:" label**, reading like a `picked_up`-due-today card.
+- **All three overdue cues switch together.** The card reads "overdue" in three spots: border, the `StatePill`, and the line-3 label. The `StatePill` atom is keyed strictly on `status` (always red "Return Overdue" for `awaiting_return`), so leaving it would produce a half-red/half-amber card — the not-late branch renders a custom inline amber pill instead. The shared `STATE_PILL` map and the detail screen's `ProgressSteps` are untouched.
+- **Untouched by design:** section split (`awaiting_return` still in ACTION NEEDED), the `/api/will-call` query, all other screens/routes, and `picked_up` card rendering.
+- **Build green** (`npx next build`, 38 pages). **Pending: on-device smoke** — an `awaiting_return` order whose `checkin_window_end` is today/future shows amber "Due Back", and one whose date has passed shows red "Return Overdue". (Per the 2026-06-14 verification pass there were 0 `awaiting_return` rows in prod — the dashboard must flip an order to `awaiting_return` to exercise either path.)
+
+
 ## 2026-06-15 — Stop-progression gate + optimistic completion + per-driver auto-ETA (driver `7bdd39c`; dashboard `31d6f66`/`88f25b5`/`3437e44`; Migration 097)
 
 Three features shipped together from a locked spec (investigation-first across driver app + partytime-sms), plus a pre-existing dashboard crash surfaced and fixed during the live test. Driver app + dashboard both built green; auto-ETA on-the-road + Part 1/2 on-device smoke tests pending.
