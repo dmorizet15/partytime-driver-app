@@ -1,5 +1,14 @@
 # Open Tasks — partytime-driver-app
 
+## June 15, 2026 — Co-driver realtime completion propagation (ON `main`: `13ef281`; no migration)
+
+`dispatch_stops` had NO realtime subscription anywhere — the only channel watched `routes` (transfer state). A co-driver's stop completion wrote `dispatch_stops` correctly but never triggered a refetch on the primary's screen, so completions surfaced only by accident (mount / foreground / the driver's own completion). Fixed by adding a `dispatch_stops` UPDATE subscription in `AppStateProvider` (root layout, always mounted) — NOT a screen, because the App Router unmounts screens on navigation and a screen-scoped channel would drop the moment the driver opens a stop. See CLAUDE.md → "Co-driver realtime completion propagation", `docs/CHANGELOG.md`, and `tasks/lessons.md`.
+
+- [x] Gate check — `dispatch_stops` IS in the `supabase_realtime` publication AND has `dispatch_stops_authenticated_read` (SELECT, `auth.role()='authenticated'`); RLS enabled. Both required (publication alone is a false green). No migration needed.
+- [x] Subscription added in `AppStateProvider` (`src/context/AppStateContext.tsx`), keyed on the joined today's-route-IDs string; client-side route-id filter mirrors the proven `routes` channel; cleanup via `removeChannel`.
+- [x] `npx next build` green (38 pages).
+- [ ] **Two-driver on-device smoke (THE gate — realtime is false-green-prone, see lessons):** put Lucas (primary) and Dylan (co-driver) on the SAME route on two devices. Dylan marks a stop complete on his device → within a few seconds Lucas's screen must reflect the completion (the stop flips to completed and the per-stop progression gate advances) **while Lucas is sitting on StopDetailScreen / RouteListScreen — not just Home**. Test from each surface (Home, Route list, Stop detail) since the fix is provider-level and must survive navigation. Confirm the reverse direction too (Lucas completes → Dylan sees it).
+
 ## June 15, 2026 — Stop gate + optimistic completion + per-driver auto-ETA (driver `7bdd39c`; dashboard `31d6f66`/`88f25b5`/`3437e44`; Migration 097)
 
 Three features from a locked spec + a pre-existing dashboard crash fixed. Both repos build green; the toggle is verified persisting (Cameron Keesler → DB `auto_send_eta = true`) and the crashed admin page renders again. Remaining gates are on-device/on-road.

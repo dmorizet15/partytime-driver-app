@@ -4,6 +4,16 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-06-15 — Co-driver realtime completion propagation (ON `main`: `13ef281`; no migration)
+
+A primary driver (Lucas) was not seeing a co-driver's (Dylan) stop completions reflected in real time while both worked the same route. Investigation (read-only, corroborated by a parallel Explore agent) confirmed the write path and permissions were fine — the failure was purely a **realtime subscription gap**.
+
+- **Root cause.** The driver app had **zero** realtime subscription on `dispatch_stops`. The only route-data channel (`DayRouteSelectorScreen.tsx:476`) watches the `routes` table for transfer state (`active_driver_id`/`transfer_pending_to`). A co-driver completion writes `dispatch_stops` (`stop_status`/`completed_at`/`actual_departure_at` via `POST /api/complete-stop`) and touches `routes` **only** on a `warehouse_return` route-end clear — so a mid-route completion fired no event the primary's client was listening for. His screen refetched only by accident: mount, `window 'online'`, the transfer channel, or the 5s timer after his OWN completion. The optimistic `markComplete` is local-only but is always followed by the POST, so the DB write was never the problem; and `isProgressionLocked`/`canComplete` permit co-drivers (Rev 2) — neither blocks the write.
+- **Gate verified (no migration).** `dispatch_stops` IS in the `supabase_realtime` publication AND has the `dispatch_stops_authenticated_read` SELECT policy (`auth.role() = 'authenticated'`), RLS enabled. Both are required — per lessons, the publication alone is a false green.
+- **Fix.** Added a `dispatch_stops` `UPDATE` subscription in **`AppStateProvider`** (`src/context/AppStateContext.tsx`), NOT in a screen. Placement matters: `AppStateProvider` lives in the root layout (`layout.tsx:57`) and stays mounted across all navigation, whereas `DayRouteSelectorScreen` is rendered by `src/app/page.tsx` and **unmounts the moment the driver opens `/route/.../stop/...`** — exactly the bug scenario. So a screen-scoped channel would silently drop right when it's needed; the provider-level one covers Home, Route list, and Stop detail with a single subscription. Keyed on the joined today's-route-IDs string (only changes when the day's route SET changes, never on a stop UPDATE, so a refetch can't re-trigger the effect); client-side route-id filter mirrors the proven `routes` channel; cleanup via `removeChannel`. On any matching stop UPDATE → `loadDay(today, true)`.
+- **Build green** (`npx next build`, 38 pages). **Pending: two-driver on-device smoke** — realtime is false-green-prone, so confirm a live co-driver completion refreshes the primary's screen from each surface (Home / Route list / Stop detail), both directions. See `tasks/todo.md`.
+
+
 ## 2026-06-15 — Will Call `awaiting_return` overdue-treatment fix (ON `main`: `9e02159`; no migration)
 
 One-file follow-on to the morning's return-queue undercount fix. `OrderCard` (`src/screens/willCall/WillCallListScreen.tsx`) was painting EVERY `awaiting_return` card with red/overdue styling — but `awaiting_return` only means the return-reminder SMS fired today, not that the order is actually late.
