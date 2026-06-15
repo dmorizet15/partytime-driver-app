@@ -1,5 +1,15 @@
 # Open Tasks — partytime-driver-app
 
+## June 14, 2026 — PWA v2.0.0 + v2.0.1 offline fixes (ON `main`; no migration)
+
+PWA update prompts shipped, then a run of on-device iOS offline smoke-test fixes. Commits: `9cad572` (reinstall/update-waiting/what's-new prompts, v2.0.0), `473879f` (offline auth restore from cached user + warm route shells, v2.0.1 — FAILURE A/B), `68ff739` (inspection gate offline-scoped so stop cards stay tappable), `f168c96` (Home offline loading-hang — `loadDay` offline fast-path + 10s timeout), `3744848` (strip HTML from staff note in Before You Go sheet). In-app `VERSION` stays `2.0.0` (fixes, no new What's New sheet). See CLAUDE.md → "PWA Update Prompts" + its v2.0.1 follow-up block, and `docs/CHANGELOG.md`.
+
+- [x] Reinstall banner (iOS Share-sheet / Android Chrome ⋮ branched), SW update-waiting banner (`skipWaiting:false`), What's New sheet, all coordinated so they don't stack.
+- [x] Offline auth: `ptd_auth_user` cache + synchronous offline restore before the 3s safety timer; cleared on all 4 signOut sites.
+- [x] Offline nav: warmed `/route/*` shells + SW `text/html` rule + cold-boot rehydrate.
+- [x] Offline gate/loading fixes: `!isOfflineMode` on `stopsLocked` (both screens); `loadDay` offline fast-path + fetch timeout; `useInspectionStatus` offline sentinel.
+- [ ] **On-device re-test (the merge gate).** Darren reported "90% there" then the loading-hang + tappability fixes landed. Re-run the full offline matrix on iOS standalone AFTER a fresh deploy + one online load (warming + SW activation are prerequisites): (1) load online → airplane mode → tap Routes → route list renders, cards tappable; (2) iOS home-button background → return → no black `/offline`, no stuck spinner; (3) force-close → reopen offline → restores (not `/login`) within access-token lifetime; (4) reconnect → banner clears, queues flush. Known by-design limits: expired-token-offline → offline `/login`; pre-deploy logins have no `ptd_auth_user`/cache until one online session.
+
 ## June 14, 2026 — PWA Session B (ON `main`: `f23e314` + `27751f4` + `8af77e5`; no migration)
 
 Offline data layer over the existing `/api/routes` payload — the one response carries the whole day (route list + every stop's detail/manifest + coords), so caching it covers list + detail + Navigate. No new endpoints, no Supabase calls, no schema. Three commits: route cache + banner + connectivity (`f23e314`), offline auth (`27751f4`), iOS loading-hang fix (`8af77e5`). New localStorage keys: `ptd_route_<date>`, `ptd_route_cache_date`, `ptd_profile_<userId>`. Build green throughout. See CLAUDE.md "Offline Data Layer — PWA Session B".
