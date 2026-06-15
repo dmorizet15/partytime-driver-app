@@ -4,8 +4,9 @@
 // Built to the locked WillCallMockup.jsx (docs/design-references/). Filter
 // strip Today / This Week / All (default Today), then four sections within
 // the filtered set: Action Needed (pending + awaiting_return), Staged —
-// Ready, Out with Customers (picked_up), Complete (returned). Overdue cards
-// get a red border; staged cards a blue border.
+// Ready, Out with Customers (picked_up), Complete (returned). Genuinely
+// overdue cards (due-back date passed) get a red border; reminded-but-not-yet-
+// late returns get an amber border; staged cards a blue border.
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -154,7 +155,16 @@ function Section({ label, orders, onSelect }: {
 
 function OrderCard({ order, onSelect }: { order: WillCallOrder; onSelect: (id: string) => void }) {
   const st        = order.status
-  const isOverdue = st === 'awaiting_return'
+  const today     = localToday()
+  // awaiting_return only means the return-reminder SMS fired today — it does
+  // NOT mean the order is late. It's genuinely overdue (red treatment) only
+  // once the due-back date (checkin_window_end ?? return_reminder_date) has
+  // actually passed; otherwise it's reminded-but-not-yet-late (amber "Due
+  // back"), reading like a picked_up-due-today card. A null due-back date
+  // fails safe to amber, never red.
+  const dueKey    = dateKey(returnByIso(order))
+  const isOverdue = st === 'awaiting_return' && !!dueKey && dueKey < today
+  const isDueBack = st === 'awaiting_return' && !isOverdue
   const isStaged  = st === 'staged'
   const name      = order.customer_name?.trim() || order.company_name?.trim() || 'Will Call customer'
 
@@ -164,7 +174,7 @@ function OrderCard({ order, onSelect }: { order: WillCallOrder; onSelect: (id: s
       style={{
         width: '100%', textAlign: 'left', fontFamily: 'inherit',
         background: WL.paper, borderRadius: 14, marginBottom: 10, cursor: 'pointer',
-        border: `1.5px solid ${isOverdue ? WL.red : isStaged ? WL.blue : WL.line}`,
+        border: `1.5px solid ${isOverdue ? WL.red : isDueBack ? WL.amber : isStaged ? WL.blue : WL.line}`,
         display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px',
         color: WL.ink,
       }}
@@ -174,13 +184,25 @@ function OrderCard({ order, onSelect }: { order: WillCallOrder; onSelect: (id: s
           <span style={{ fontSize: 15, fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {name}
           </span>
-          <StatePill status={st}/>
+          {/* Reminded-but-not-late returns get an amber pill, not the red
+              "Return Overdue" StatePill (which is keyed strictly on status). */}
+          {isDueBack ? (
+            <span style={{
+              padding: '3px 9px', borderRadius: 999, whiteSpace: 'nowrap',
+              background: WL.amberTint, color: WL.amber, fontSize: 11, fontWeight: 700,
+            }}>
+              Due Back
+            </span>
+          ) : (
+            <StatePill status={st}/>
+          )}
         </div>
         <div style={{ fontSize: 12, color: WL.muted }}>
           {order.items.length} item{order.items.length === 1 ? '' : 's'}
         </div>
         <div style={{ fontSize: 12, marginTop: 3 }}>
           {isOverdue && <span style={{ color: WL.red, fontWeight: 700 }}>↩ Return due: {fmtReturnBy(order)}</span>}
+          {isDueBack && <span style={{ color: WL.amber, fontWeight: 700 }}>↩ Due back: {fmtReturnBy(order)}</span>}
           {isStaged && <span style={{ color: WL.blue, fontWeight: 700 }}>Pickup: {fmtPickup(order)}</span>}
           {st === 'pending' && <span style={{ color: WL.muted }}>Pickup: {fmtPickup(order)}</span>}
           {st === 'picked_up' && <span style={{ color: WL.muted }}>Returns: {fmtReturnBy(order)}</span>}
