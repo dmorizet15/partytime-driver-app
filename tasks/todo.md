@@ -1,5 +1,20 @@
 # Open Tasks — partytime-driver-app
 
+## June 15, 2026 — Stop gate + optimistic completion + per-driver auto-ETA (driver `7bdd39c`; dashboard `31d6f66`/`88f25b5`/`3437e44`; Migration 097)
+
+Three features from a locked spec + a pre-existing dashboard crash fixed. Both repos build green; the toggle is verified persisting (Cameron Keesler → DB `auto_send_eta = true`) and the crashed admin page renders again. Remaining gates are on-device/on-road.
+
+- [x] Migration 097 (`profiles.auto_send_eta`) applied to shared DB + `migration repair` + both repos' `supabase.ts` patched.
+- [x] Part 1 — optimistic completion + `ptd_complete_queue` (flush in `loadDay`); soft toast handed forward via `ptd_complete_toast`.
+- [x] Part 2 — per-stop progression gate in `DayRouteSelectorScreen` + `RouteListScreen` (route-scoped, layered on inspection gate).
+- [x] Part 3 — driver `fireAutoEta` + profile-cache refresh in `loadDay`; dashboard `PATCH /api/admin/drivers/[id]/preferences` + "Driver app settings" toggle. **Toggle write verified persisting.**
+- [x] Bug fix — `/admin/drivers/[driverId]` Next-14 `use(params)` crash (React #438) fixed; `error.tsx` + `SectionBoundary` safety nets kept.
+- [x] `npx next build` green both repos (driver 38, dashboard 56).
+- [ ] **Auto-ETA live road test (THE gate for Part 3):** with Cameron Keesler (flag on) — he must open the app online once first so it caches the flag — complete a customer stop with **location services ON** → the NEXT customer should receive the OTW/ETA text automatically (and his manual Send ETA still works). With **location OFF**, completing a stop must silently send nothing. Confirm no toast/banner/indicator ever appears for the auto path.
+- [ ] **Part 1 on-device smoke:** offline, mark a stop complete → it flips to completed locally, the gate opens, you advance to the next stop, and the "Stop saved — will sync when back online" pill shows on the next stop. Reconnect → `ptd_complete_queue` replays (the stop is `completed` server-side) and the banner clears.
+- [ ] **Part 2 on-device smoke:** on a multi-stop route, only the current (first incomplete) stop is tappable; future stops are dimmed/untappable; completed stops are tappable (read-only) and dimmed to 0.6; the warehouse_return depot is always reachable. Pre-inspection, the inspection gate still locks everything first.
+- [ ] **Known by-design:** a driver who hasn't opened the app online since this deploy won't have a refreshed `ptd_profile_*` → `auto_send_eta` takes effect on their next online Home load, not necessarily mid-session.
+
 ## June 15, 2026 — Will Call return queue undercount fix (ON `main`: `30bc068`; no migration)
 
 Return/due-back queue was status-driven (`awaiting_return` only) → `picked_up` orders due back today were silently dropped vs. the date-driven dashboard board. Fixed client-side in `WillCallListScreen.tsx` by wiring `returnByIso` (already in `format.ts`) into `matchesFilter` + the section split. Build green. See CLAUDE.md → "TapGoods Item Check-Off" sibling note in the Will Call Phase 1 block, and `docs/CHANGELOG.md`.
