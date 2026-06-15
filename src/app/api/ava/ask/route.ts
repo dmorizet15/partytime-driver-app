@@ -48,6 +48,7 @@ interface AskBody {
   history?:   unknown
   context?:   AskContext
   routeId?:   string | null
+  stopId?:    string | null
 }
 
 interface ChatTurn { role: 'user' | 'ava'; text: string }
@@ -87,6 +88,25 @@ interface SopRow {
   department: string | null
 }
 
+// Ava Studio knowledge layers — global published rows (same for every driver),
+// injected into the stable Block 0 alongside SOPs.
+interface VocabRow {
+  term:       string
+  definition: string
+  aliases:    string[] | null
+  category:   string
+}
+interface KnowledgeRow {
+  question:   string
+  answer:     string
+  category:   string
+}
+
+// Locked copy: shown to the driver in place of the model's UNKNOWN: signal.
+const GAP_SILENT_COPY =
+  "I'm not sure about that one, but I'm logging your question to help us " +
+  "build out our knowledge base. You'll see the answer show up here soon."
+
 // ─── System prompt: two blocks, split for caching ────────────────────────────
 // Render order is system[0] → system[1]. Block 0 (persona + style + the SOP
 // knowledge base) is STABLE per role — identical across every driver and every
@@ -97,8 +117,14 @@ interface SopRow {
 // Keeping driverName + route data out of block 0 is what lets the cache prefix
 // be shared rather than per-driver.
 
-// Block 0 — persona, voice rules, and the role-scoped SOP knowledge base.
-function buildKnowledgeBlock(sops: SopRow[]): string {
+// Block 0 — persona, voice rules, role-scoped SOPs, plus the global Ava Studio
+// terminology + operational knowledge base. All of this is stable per role and
+// identical across drivers, so it carries the cache breakpoint.
+function buildKnowledgeBlock(
+  sops:      SopRow[],
+  vocab:     VocabRow[],
+  knowledge: KnowledgeRow[],
+): string {
   const lines: string[] = [
     "You are AVA, the in-cab assistant for a PartyTime Rentals delivery driver.",
     "You help with TODAY'S route while the driver is on the road — their stops,",
@@ -132,6 +158,49 @@ function buildKnowledgeBlock(sops: SopRow[]): string {
       lines.push("", `${s.sop_number} · ${s.title}${dept}`, s.content.trim())
     }
   }
+
+  // PTR terminology — definitions + aliases for jargon in the question.
+  if (vocab.length > 0) {
+    lines.push(
+      "",
+      "---",
+      "PTR TERMINOLOGY",
+      "These terms are specific to PartyTime Rentals. Apply these definitions",
+      "when interpreting any question that uses them or their aliases.",
+    )
+    for (const v of vocab) {
+      const aliases = v.aliases ?? []
+      const alias = aliases.length > 0 ? ` (also: ${aliases.join(', ')})` : ''
+      lines.push(`**${v.term}**${alias}: ${v.definition}`)
+    }
+    lines.push("---")
+  }
+
+  // Operational knowledge base — verified Q&A.
+  if (knowledge.length > 0) {
+    lines.push(
+      "",
+      "---",
+      "OPERATIONAL KNOWLEDGE BASE",
+      "Verified answers about how PartyTime Rentals operates.",
+      "Use these answers directly when they match the question asked.",
+    )
+    for (const k of knowledge) {
+      lines.push(`Q: ${k.question}`, `A: ${k.answer}`)
+    }
+    lines.push("---")
+  }
+
+  // Gap signal — must be the very end of the system prompt. When Ava can't
+  // answer from the knowledge above, it prefixes UNKNOWN: so the route can log
+  // the gap and swap in a friendly message (never shown to the driver).
+  lines.push(
+    "",
+    "If you cannot answer confidently from the PTR Terminology, SOPs, or " +
+    "Knowledge Base above, begin your response with exactly 'UNKNOWN:' and " +
+    "nothing else before that prefix. This is a system signal only — never " +
+    "explain it to the user.",
+  )
 
   return lines.join('\n')
 }
@@ -258,10 +327,27 @@ export async function POST(request: NextRequest) {
   const ctx     = (body.context && typeof body.context === 'object') ? body.context : {}
   const history = sanitizeHistory(body.history)
   const routeId = typeof body.routeId === 'string' && body.routeId ? body.routeId : null
+  const stopId  = typeof body.stopId  === 'string' && body.stopId  ? body.stopId  : null
 
-  // ── Role-scoped knowledge load (SOPs) ───────────────────────────────────────
+  // ── Knowledge load: SOPs (role-scoped) + global terminology + Q&A base ──────
   const admin = getAdminClient()
-  const sops  = await loadScopedSops(admin, user.id)
+
+  // Global published terminology — best-effort (a failure just omits the block).
+  const { data: vocabularyEntries } = await admin
+    .from('ava_vocabulary')
+    .select('term, definition, aliases, category')
+    .eq('status', 'published')
+    .order('term', { ascending: true })
+
+  // Global published operational knowledge — best-effort.
+  const { data: knowledgeEntries } = await admin
+    .from('ava_knowledge')
+    .select('question, answer, category')
+    .eq('status', 'published')
+    .order('created_at', { ascending: false })
+    .limit(100)
+
+  const sops = await loadScopedSops(admin, user.id)
 
   // ── Build messages: prior turns + the new question ──────────────────────────
   const messages: Anthropic.MessageParam[] = [
@@ -285,7 +371,11 @@ export async function POST(request: NextRequest) {
       system: [
         {
           type: 'text',
-          text: buildKnowledgeBlock(sops),
+          text: buildKnowledgeBlock(
+            sops,
+            (vocabularyEntries ?? []) as VocabRow[],
+            (knowledgeEntries ?? []) as KnowledgeRow[],
+          ),
           cache_control: { type: 'ephemeral' },
         },
         {
@@ -310,14 +400,49 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'AVA unavailable' }, { status: 503 })
   }
 
+  // ── Gap detection ───────────────────────────────────────────────────────────
+  // UNKNOWN: prefix = the model couldn't answer from the knowledge base. Log the
+  // gap (deduped) for the answer-queue and swap in the friendly copy so the
+  // driver never sees the raw signal. Detection is case-sensitive, leading-edge.
+  const isUnknown = answer.trimStart().startsWith('UNKNOWN:')
+
+  if (isUnknown) {
+    // Gap insert is fully best-effort — a failure here must never reach the client.
+    try {
+      const { data: existing } = await admin
+        .from('ava_knowledge_gaps')
+        .select('id')
+        .eq('is_answered', false)
+        .ilike('question', question)
+        .limit(1)
+
+      if (!existing || existing.length === 0) {
+        await admin.from('ava_knowledge_gaps').insert({
+          question,
+          asked_by: user.id,
+          surface:  'driver_home',
+          context:  { route_id: routeId, stop_id: stopId },
+        })
+      }
+    } catch (gapErr) {
+      console.error('[/api/ava/ask] Gap log silent failure:', gapErr)
+      // Never surfaces to client.
+    }
+  }
+
+  // What the driver actually sees: the friendly copy on a gap, else the answer.
+  const clientAnswer = isUnknown ? GAP_SILENT_COPY : answer
+
   // ── Log the exchange (audit trail; never blocks the response) ───────────────
+  // Preserved in both paths. Gap turns log the friendly copy + review flags.
   try {
     const { error: logErr } = await admin.from('ava_conversations').insert({
-      driver_id:  user.id,
-      surface:    'driver_home',
-      context_id: routeId,
+      driver_id:    user.id,
+      surface:      'driver_home',
+      context_id:   routeId,
       question,
-      answer,
+      answer:       clientAnswer,
+      ...(isUnknown ? { confidence: 'unanswered', needs_review: true } : {}),
     })
     if (logErr) console.warn('[/api/ava/ask] conversation log failed:', logErr.message)
   } catch (e) {
@@ -326,7 +451,7 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json(
-    { answer },
+    { answer: clientAnswer },
     { status: 200, headers: { 'Cache-Control': 'no-store' } }
   )
 }
