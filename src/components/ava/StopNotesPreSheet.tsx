@@ -1,5 +1,7 @@
 'use client'
 
+import { stripHtml } from '@/lib/utils'
+
 const BLUE = '#0000FF'
 
 export interface StopNotesSections {
@@ -91,7 +93,10 @@ export default function StopNotesPreSheet({ customerName, sections, ctaLabel, on
               fontSize: 14.5, lineHeight: 1.5, color: '#E2E8F0',
               whiteSpace: 'pre-wrap', wordBreak: 'break-word',
             }}>
-              {sections[key]}
+              {/* Staff note arrives from TapGoods as rich text — strip tags at
+                  render so markup doesn't show as literal text. Raw value is
+                  left untouched in the DB / other consumers. */}
+              {key === 'staffNote' ? stripHtml(sections[key]) : sections[key]}
             </div>
           </div>
         ))}
