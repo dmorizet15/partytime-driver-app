@@ -13,7 +13,7 @@ import BottomNav from '@/components/BottomNav'
 import { useWillCallOrders } from '@/hooks/willCall/useWillCallOrders'
 import { StatePill } from '@/components/willCall/atoms'
 import { WL, FONT_BODY, FONT_DISPLAY } from '@/lib/willCall/theme'
-import { dateKey, fmtPickup, fmtReturnBy, localToday } from '@/lib/willCall/format'
+import { dateKey, fmtPickup, fmtReturnBy, returnByIso, localToday } from '@/lib/willCall/format'
 import type { WillCallOrder } from '@/lib/willCall/types'
 
 type Filter = 'today' | 'week' | 'all'
@@ -30,6 +30,15 @@ function addDays(ymd: string, days: number): string {
 function matchesFilter(order: WillCallOrder, filter: Filter, today: string): boolean {
   if (filter === 'all') return true
   if (order.status === 'awaiting_return') return true
+  // picked_up orders are already out — their relevant date is the due-back
+  // date (checkin_window_end ?? return_reminder_date), NOT the pickup date,
+  // which is in the past. A customer who picked up June 10 and is due back
+  // June 15 belongs on June 15.
+  if (order.status === 'picked_up') {
+    const due = dateKey(returnByIso(order))
+    if (filter === 'today') return due === today
+    return !!due && due >= today && due <= addDays(today, 6)
+  }
   const pickup = dateKey(order.expected_pickup_date)
   if (filter === 'today') return pickup === today
   return !!pickup && pickup >= today && pickup <= addDays(today, 6)
@@ -46,9 +55,15 @@ export default function WillCallListScreen() {
     [orders, filter, today]
   )
 
-  const action = filtered.filter((o) => o.status === 'pending' || o.status === 'awaiting_return')
+  // A picked_up order whose due-back date is today belongs in the return
+  // queue (Action Needed) alongside awaiting_return — matching the dashboard
+  // board. Still-out orders with a future return date stay in "Out".
+  const dueBackToday = (o: WillCallOrder) =>
+    o.status === 'picked_up' && dateKey(returnByIso(o)) === today
+
+  const action = filtered.filter((o) => o.status === 'pending' || o.status === 'awaiting_return' || dueBackToday(o))
   const staged = filtered.filter((o) => o.status === 'staged')
-  const out    = filtered.filter((o) => o.status === 'picked_up')
+  const out    = filtered.filter((o) => o.status === 'picked_up' && !dueBackToday(o))
   const done   = filtered.filter((o) => o.status === 'returned')
 
   return (
