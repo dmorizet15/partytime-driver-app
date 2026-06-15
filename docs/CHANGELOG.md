@@ -4,6 +4,16 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-06-15 — Ava Studio Foundation A1 (ON `main`: `da3a352`; migrations 022–025)
+
+First slice of the Ava Studio: a knowledge/terminology layer Ava reads at request time + a gap-capture loop. Built from a locked walk-away spec (4 migrations + 1 route change). A2 (editing UI / answer-queue) deliberately NOT started.
+
+- **Migrations 022–025 (driver-app-owned).** `ava_knowledge` (verified Q&A, RLS authenticated-read-published + super_admin-all, 2 seed rows), `ava_knowledge_gaps` (unanswered-question queue, drivers insert/read own + super_admin-all), `ava_vocabulary` (PTR terminology + aliases, 25 seed terms), and a `sop_entries` extension adding `status`/`last_edited_by`/`last_edited_at` (`version` already existed as TEXT from mig 019 — the guarded DO-block correctly skips it). Applied to the shared DB via `supabase db query --linked --file` + `migration repair --status applied`, NOT `db push` (two-repo history block). Verified counts: 2 / 0 / 25 / 4 studio cols.
+- **Spec correction — RLS role column.** The locked spec's policies used `profiles.role = 'super_admin'`. Verified against the LIVE DB first: there is no `role` column (this dashboard-owned DB migrated to `roles text[]` long ago; the driver-app's stale local `20260426001` still shows the legacy enum). All four migrations corrected to the codebase-proven `'super_admin' = ANY(p.roles)` (matches migs 014/016). Flagged in the session summary; lesson recorded.
+- **`/api/ava/ask` — 4 additions, request/response shape unchanged.** (1) Fetch published `ava_vocabulary` + (2) `ava_knowledge` via the admin client (best-effort). (3) Inject `PTR TERMINOLOGY` + `OPERATIONAL KNOWLEDGE BASE` sections + the `UNKNOWN:` instruction into the **cached Block 0** (global rows, identical per driver → preserves the cache breakpoint; route context stays in volatile Block 1). (4) Gap detection: `answer.trimStart().startsWith('UNKNOWN:')` → deduped insert into `ava_knowledge_gaps` (fully best-effort, never reaches the client) + `ava_conversations` log with `confidence:'unanswered'`/`needs_review:true` + the friendly copy swapped in for the driver. `AskBody` gained optional `stopId` for gap context.
+- **Build green** (`npx next build`, 38 pages), `tsc --noEmit` clean, committed `da3a352` (5 files exactly), pushed; **Vercel READY** (`work.partytime-rentals.com`). On-device smoke pending (jargon → terminology applied; unknowable → friendly reply + a gap row). See `tasks/todo.md`.
+
+
 ## 2026-06-15 — Co-driver realtime completion propagation (ON `main`: `13ef281`; no migration)
 
 A primary driver (Lucas) was not seeing a co-driver's (Dylan) stop completions reflected in real time while both worked the same route. Investigation (read-only, corroborated by a parallel Explore agent) confirmed the write path and permissions were fine — the failure was purely a **realtime subscription gap**.

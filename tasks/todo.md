@@ -1,5 +1,18 @@
 # Open Tasks — partytime-driver-app
 
+## June 15, 2026 — Ava Studio Foundation A1 (ON `main`: `da3a352`; migrations 022–025)
+
+Three new tables (`ava_knowledge`, `ava_knowledge_gaps`, `ava_vocabulary`) + `sop_entries` studio columns, plus knowledge injection & `UNKNOWN:` gap detection in `/api/ava/ask`. See CLAUDE.md → "Ava Studio Foundation — Session A1", `docs/CHANGELOG.md`, `tasks/lessons.md`.
+
+- [x] Step 0 — read CLAUDE.md + route.ts; confirmed zero existing `ava_knowledge`/`ava_vocabulary`/`ava_knowledge_gaps` refs; recorded highest migrations (020/021 → new files start 022).
+- [x] Migrations 022–025 written + applied to shared DB via `db query --linked --file` + `migration repair --status applied`. **Spec's `profiles.role` corrected to `'super_admin' = ANY(p.roles)`** (live DB has no `role` column — see lessons).
+- [x] Verified counts: `ava_knowledge`=2, `ava_knowledge_gaps`=0, `ava_vocabulary`=25, `sop_entries` studio cols=4.
+- [x] `/api/ava/ask` — 4 additions (vocab fetch, knowledge fetch, prompt sections + `UNKNOWN:` instruction in cached Block 0, gap detection with friendly-copy swap). `tsc --noEmit` clean; `npx next build` green (38 pages).
+- [x] Committed `da3a352` (5 files only), pushed; **Vercel READY**.
+- [ ] **On-device smoke (the gate):** (a) ask Ava a question using PTR jargon/aliases (e.g. "what's an MQ?" / "do I need wood blocks for a frame tent?") → answer reflects the seeded terminology. (b) Ask something genuinely unknowable from terminology/SOPs/knowledge → Ava returns the friendly "I'm logging your question…" copy (NOT the raw `UNKNOWN:`), and a row lands in `ava_knowledge_gaps` (deduped — asking twice doesn't double-insert). (c) Confirm route questions ("how many stops today?") still answer normally and do NOT falsely trip `UNKNOWN:`.
+- [ ] **A2 (NOT started this session, per the locked spec):** the Studio editing/admin UI + answer-queue that consumes `ava_knowledge_gaps` and writes `ava_knowledge`/`ava_vocabulary`. Awaiting the A2 spec.
+- [ ] **chat-Claude / Notion ledger:** migrations 022–025 are driver-app-owned (not dashboard mirrors); next driver-app migration = 026.
+
 ## June 15, 2026 — Co-driver realtime completion propagation (ON `main`: `13ef281`; no migration)
 
 `dispatch_stops` had NO realtime subscription anywhere — the only channel watched `routes` (transfer state). A co-driver's stop completion wrote `dispatch_stops` correctly but never triggered a refetch on the primary's screen, so completions surfaced only by accident (mount / foreground / the driver's own completion). Fixed by adding a `dispatch_stops` UPDATE subscription in `AppStateProvider` (root layout, always mounted) — NOT a screen, because the App Router unmounts screens on navigation and a screen-scoped channel would drop the moment the driver opens a stop. See CLAUDE.md → "Co-driver realtime completion propagation", `docs/CHANGELOG.md`, and `tasks/lessons.md`.
