@@ -399,6 +399,40 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
   }, [loadDay])
 
+  // ── Realtime: co-driver stop completions propagate to every crew member ──────
+  // dispatch_stops had NO realtime subscription anywhere — the only other channel
+  // (DayRouteSelectorScreen) watches `routes` for transfer state. When a co-driver
+  // marked a stop complete, /api/complete-stop wrote dispatch_stops but nothing
+  // told the primary's client to refetch, so completions surfaced only by accident
+  // (mount / foreground / the driver's own completion).
+  //
+  // This lives in the root-layout AppStateProvider (always mounted) — NOT in a
+  // screen — because the App Router unmounts page screens on navigation, so a
+  // screen-scoped channel would silently drop the moment the driver opens a stop
+  // (exactly the bug scenario). dispatch_stops is in the supabase_realtime
+  // publication AND has an authenticated-read RLS policy (both required —
+  // publication alone is a false green). On any UPDATE to a stop on one of today's
+  // routes, refetch the day. Client-side route-id filter mirrors the proven
+  // routes channel. The joined id string only changes when the day's ROUTE set
+  // changes (not on a stop UPDATE), so a refetch can't re-trigger this effect.
+  const subscribedRouteIdsKey = state.routes.map((r) => r.route_id).join(',')
+  useEffect(() => {
+    if (!subscribedRouteIdsKey) return
+    const ids = new Set(subscribedRouteIdsKey.split(','))
+    const channel = supabase
+      .channel('dispatch-stops-completions')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'dispatch_stops' },
+        (payload) => {
+          const routeId = (payload.new as { route_id?: string } | null)?.route_id
+          if (routeId && ids.has(routeId)) loadDay(todayStr(), true)
+        },
+      )
+      .subscribe()
+    return () => { void supabase.removeChannel(channel) }
+  }, [subscribedRouteIdsKey, loadDay])
+
   return (
     <AppStateContext.Provider
       value={{
