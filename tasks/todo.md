@@ -1,5 +1,21 @@
 # Open Tasks — partytime-driver-app
 
+## June 15, 2026 — Ava Studio A4 — AVA Remembers Phase 2 (ON `main`: `3c92e9d`; migrations 026–027)
+
+Driver-side freshness loop + single-visit notes + clear-site-notes over `ava_stop_notes`/`stop_visit_notes`. See CLAUDE.md → "Ava Studio — AVA Remembers Phase 2 (A4)", `docs/CHANGELOG.md`, `tasks/lessons.md`. **A4b (dashboard Site/Visit Notes panels) is a separate later dashboard-repo session.**
+
+- [x] Mig 026 — extend `ava_stop_notes` (`created_by_role`/`status`/`last_confirmed_at`/`visit_count_since_added`; **`created_by` skipped** — `author_id` already exists) + freshness-confirm UPDATE policy + `ava_stop_notes_guard_foreign_update` column-guard trigger (skips when `auth.uid()` IS NULL). Applied + verified.
+- [x] Mig 027 — `stop_visit_notes` + RLS (insert own; read super_admin-all/others-own). Applied + verified.
+- [x] `POST /api/ava/stop-notes/archive-address` (service-role, archives all active rows for the `address_key`).
+- [x] Freshness prompt — `runStopComplete` defers nav when an active note exists; non-dismissible Yes/Update modal; staleness qualifier where AVA surfaces the note.
+- [x] Visit/remember segmented control in `AvaNoteSheet` (visit → `stop_visit_notes` + category, no photos).
+- [x] "Clear site notes" button on Stop Detail (shown only when active notes exist) → confirm → archive. **Start Fresh VOICE command deferred** (no STT; mic is a stub).
+- [x] `stopNotesClient` — reads filter `status='active'`; `getMostRecentActiveNote`/`confirmNoteFreshness`/`archiveAddressNotes`/`saveVisitNote`.
+- [x] `tsc --noEmit` clean; `npx next build` green (38 pages); DB smoke (trigger/columns/visit table) ok; committed `3c92e9d`, pushed.
+- [ ] **On-device live test (THE gate):** (a) add a site note ("Remember for future visits") at an address, complete that stop → the **freshness prompt** fires before you advance; **Yes, still good** advances (and `last_confirmed_at`/`visit_count` bump in DB); **Update note** opens the sheet pre-filled, and after you save/close you advance. (b) Add a **"Just for this visit"** note (pick a category) → it lands in `stop_visit_notes`, NOT `ava_stop_notes` (it should NOT appear as a durable PRIOR NOTE on the next visit). (c) **Clear site notes** (visible only when active notes exist) → confirm → all notes for that address archive, AVA stops showing them, and a "Site notes cleared" toast shows. (d) **Cross-author**: have driver B (not the note author) hit the freshness prompt and tap Yes → it succeeds (the freshness RLS policy + trigger permit it) and driver B canNOT edit the note text from anywhere. (e) Staleness: a note with `visit_count_since_added >= 3` and never confirmed reads with a "(Note from N visits ago)" prefix where AVA surfaces it.
+- [ ] **chat-Claude / Notion ledger:** migrations 026–027 are driver-app-owned; next driver-app migration = 028.
+- [ ] **A4b (separate dashboard session):** dashboard Site Notes panel + Visit Notes on the dispatch-board stop cards (reads `ava_stop_notes` active + `stop_visit_notes`; `created_by_role='dispatcher'` for dashboard-authored site notes).
+
 ## June 15, 2026 — AVA header chip wired + sheet copy fix (ON `main`: `15c6931`, `d84fa44`; no migration)
 
 Tier 1 activation: the AVA header chip now opens the real `AvaConversationSheet` on every screen (was a "coming soon" placeholder). Plus a one-line empty-state copy update to reflect AVA's full knowledge scope. Wiring/copy only — no new components/routes/migrations. See CLAUDE.md → AVA Phase 1 invariants (AvaChip bullet) + `docs/CHANGELOG.md`.
