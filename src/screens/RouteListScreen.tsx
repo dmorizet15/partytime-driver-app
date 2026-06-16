@@ -192,7 +192,22 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
     && route?.truck_is_own === true
     && !inspected
     && route?.is_primary !== false
-  const stopsTappable = !stopsLocked
+
+  // ── Safety-net guard — truck not assigned (data gap) ─────────────────────
+  // Mirror of DayRouteSelectorScreen. A primary/sole driver whose own crew row
+  // carries no truck can still reach this stop list via the Routes-tab
+  // deep-link; we surface WHY they can't start (banner below) AND block the
+  // stops rather than a silent pass. Scoped to is_primary === true so a
+  // no-truck ride-along co-driver is never caught. Does NOT touch the
+  // inspection gate (stopsLocked / truck_is_own) — those are correct.
+  //
+  // This case is INVISIBLE to stopsLocked: a truckless primary has
+  // truck_is_own === undefined, so stopsLocked is false. We therefore fold
+  // truckUnassigned into stopsTappable directly — a separate data-gap block
+  // layered on top of the inspection gate, NOT a change to it — so the stops
+  // are non-tappable here too, closing the deep-link DOT-bypass.
+  const truckUnassigned = !route?.truck_id && route?.is_primary === true
+  const stopsTappable = !stopsLocked && !truckUnassigned
 
   // ── Per-stop progression gate (Part 2) ───────────────────────────────────
   // Mirror of DayRouteSelectorScreen — fix both. A customer stop is tappable
@@ -444,6 +459,23 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
 
       {/* ── SCROLL BODY ──────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto">
+        {/* Data-gap notice — primary/sole driver with no assigned truck. Amber,
+            actionable. Pairs with the tap block (stopsTappable folds in
+            truckUnassigned), so the stops below are dimmed + non-tappable. */}
+        {truckUnassigned && (
+          <div style={{
+            margin: '14px 18px 0',
+            padding: '12px 14px',
+            borderRadius: 12,
+            background: 'rgba(176,127,0,0.10)',
+            border: `1px solid ${C.goldDeep}`,
+            color: C.goldDeep,
+            fontSize: 13, fontWeight: 700, lineHeight: 1.4,
+            fontFamily: FONT_BODY,
+          }}>
+            Truck not assigned — contact dispatch before starting
+          </div>
+        )}
         {stops.length === 0 ? (
           <div style={{
             padding: '32px 28px',

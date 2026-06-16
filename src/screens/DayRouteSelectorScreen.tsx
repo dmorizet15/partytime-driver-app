@@ -372,6 +372,17 @@ export default function DayRouteSelectorScreen() {
   // Co-driver = explicitly not the primary. Undefined (soft-fail / no crew
   // row) is treated as NOT a co-driver so the badge never shows on bad data.
   const isCoDriver = primaryRoute?.is_primary === false
+  // ── Safety-net guard — truck not assigned (data gap) ─────────────────────
+  // A primary/sole driver whose own route_crew row carries no truck (e.g. a
+  // multi-truck route where dispatch never pinned a truck to the lone crew
+  // row) used to fall straight through to the no-truck "Join Route" CTA and
+  // silently bypass the DOT pre-trip. This guard blocks that path and surfaces
+  // the reason. Scoped to is_primary === true ONLY — a no-truck *co-driver*
+  // (is_primary === false) is the supported ride-along flow and is NOT caught;
+  // a soft-fail with no crew row inherits the route truck (hasTruck === true)
+  // so it never lands here either. Does NOT touch the inspection gate
+  // (stopsLocked / truck_is_own) — those are correct.
+  const truckUnassigned = !hasTruck && primaryRoute?.is_primary === true
   // Stops are locked only for holders of their OWN crew-row truck who haven't
   // inspected yet. Rev 2 (2026-06-10, locked DOT rule): the lock keys on the
   // user's own truck assignment, NEVER an inherited one (`truck_is_own`), and
@@ -513,16 +524,22 @@ export default function DayRouteSelectorScreen() {
   //   has truck, inspected→ "Start Route"         → route view (the
   //                          actual_departure_at write lands with the deferred
   //                          dashboard session; today it just navigates).
-  const ctaLabel = !hasTruck
-    ? 'Join Route'
-    : inspected
-      ? 'Start Route'
-      : 'Inspect & Start Route'
+  const ctaLabel = truckUnassigned
+    ? 'Truck Not Assigned'
+    : !hasTruck
+      ? 'Join Route'
+      : inspected
+        ? 'Start Route'
+        : 'Inspect & Start Route'
   function handleCtaTap() {
     if (!primaryRouteId) return
     // Phase 2B: route handed off to someone else — the ex-primary can't start
     // it. Defense-in-depth; the CTA is also hidden when lostOwnership is true.
     if (lostOwnership) return
+    // Data gap — never silently route past the DOT pre-trip when a primary
+    // driver has no assigned truck. The CTA is also disabled; this is
+    // defense-in-depth against a keyboard/SR activation.
+    if (truckUnassigned) return
     if (hasTruck && !inspected) { handleInspect(); return }
     // Already inspected (truck + pre-trip done) → "Start Route": the truck is
     // leaving the yard, so stamp the warehouse departure (best-effort, never
@@ -1312,13 +1329,13 @@ export default function DayRouteSelectorScreen() {
             <div style={{ padding: '18px 18px 0' }}>
               <button
                 onClick={handleCtaTap}
-                disabled={routes.length === 0}
+                disabled={routes.length === 0 || truckUnassigned}
                 style={{
                   width: '100%', height: 60, borderRadius: 999,
                   background: C.gold, color: C.ink,
                   border: 0,
-                  cursor: routes.length === 0 ? 'default' : 'pointer',
-                  opacity: routes.length === 0 ? 0.5 : 1,
+                  cursor: (routes.length === 0 || truckUnassigned) ? 'default' : 'pointer',
+                  opacity: (routes.length === 0 || truckUnassigned) ? 0.5 : 1,
                   fontSize: 16, fontWeight: 900, fontFamily: FONT_DISPLAY,
                   letterSpacing: '-0.01em',
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -1336,6 +1353,18 @@ export default function DayRouteSelectorScreen() {
                   <ArrowIcon size={18} color="#fff"/>
                 </span>
               </button>
+              {/* Data-gap notice — pairs with the disabled "Truck Not Assigned"
+                  CTA. Amber, not an error red: it's actionable, not a fault. */}
+              {truckUnassigned && (
+                <p style={{
+                  margin: '10px 4px 0',
+                  fontSize: 13, fontWeight: 600, lineHeight: 1.4,
+                  color: C.goldDeep,
+                  fontFamily: FONT_BODY,
+                }}>
+                  Contact dispatch to assign your truck
+                </p>
+              )}
             </div>
             )}
           </>
