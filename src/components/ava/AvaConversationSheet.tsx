@@ -215,8 +215,7 @@ export default function AvaConversationSheet({
               color: '#94A3B8', fontSize: 14, lineHeight: 1.5,
               padding: '8px 2px 0',
             }}>
-              Ask me anything about today&apos;s route — your stops, what&apos;s loaded,
-              cash collection, dispatch notes, or wind on your tents.
+              Ask me anything — your route, stops, equipment, SOPs, or how we do things at PTR.
             </div>
           )}
 
