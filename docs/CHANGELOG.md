@@ -4,6 +4,16 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-06-15 — AVA header chip wired to AvaConversationSheet + copy fix (ON `main`: `15c6931`, `d84fa44`; no migration)
+
+Two micro-sessions, both wiring/copy only — no new components, routes, migrations, or shared/cross-repo files.
+
+- **Chip activation (`15c6931`).** The AVA Tier 1 header chip (`src/components/AvaChip.tsx`, rendered bare as `<AvaChip/>` on Home, Route list, Stop detail, Tools, Profile, Training) previously opened a self-contained "AVA is coming soon" placeholder drawer + a "HOLD TO TALK" mic stub firing a "Voice input coming…" toast. Replaced all of that with the real shared `AvaConversationSheet` (the same Haiku-backed sheet behind Home's "Ask Ava about today" + Training Hub SOP search). State + sheet render live **inside `AvaChip`** so one change covers all 6 screens — no per-screen edits, no `AvaConversationSheet` internal changes, button visual/animation/position byte-identical. Mirrors the existing `AskAvaButton` render pattern. Net −142/+23 lines (placeholder drawer + `MicGlyph` + toast removed).
+- **Context passing.** `AvaChip` reads `routes` from the existing `useAppState()` (no prop drilling, no new props) and passes `routeId = routes.length === 1 ? routes[0].route_id : null` — a single-route day is unambiguous; multiple/none → null. No "current stop" exists at the chip's render level without prop drilling, so none is passed. `seedContext={{}}` always — the sheet/`/api/ava/ask` work fully context-free (graceful degradation; AVA still answers general/terminology/SOP questions; `routeId` only feeds logging/`context_id` + gap context). Per the locked spec's rules.
+- **Copy fix (`d84fa44`).** Replaced the sheet's empty-state description (`AvaConversationSheet.tsx:218`, the only occurrence) — was today's-route-centric ("…your stops, what's loaded, cash collection, dispatch notes, or wind on your tents.") — with the knowledge-scope line: "Ask me anything — your route, stops, equipment, SOPs, or how we do things at PTR." One string, one file.
+- **Verify each:** `tsc --noEmit` clean, `npx next build` green (38 pages), `git status` showed only the one file per commit. Both **Vercel READY** (`work.partytime-rentals.com`). **Pending: browser/on-device tap-through** — confirm the chip opens the sheet on Home, closes cleanly, and the morning-brief + Training Hub Ava entry points still work (unchanged). See `tasks/todo.md`.
+
+
 ## 2026-06-15 — Ava Studio Foundation A1 (ON `main`: `da3a352`; migrations 022–025)
 
 First slice of the Ava Studio: a knowledge/terminology layer Ava reads at request time + a gap-capture loop. Built from a locked walk-away spec (4 migrations + 1 route change). A2 (editing UI / answer-queue) deliberately NOT started.

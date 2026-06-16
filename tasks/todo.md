@@ -1,5 +1,15 @@
 # Open Tasks — partytime-driver-app
 
+## June 15, 2026 — AVA header chip wired + sheet copy fix (ON `main`: `15c6931`, `d84fa44`; no migration)
+
+Tier 1 activation: the AVA header chip now opens the real `AvaConversationSheet` on every screen (was a "coming soon" placeholder). Plus a one-line empty-state copy update to reflect AVA's full knowledge scope. Wiring/copy only — no new components/routes/migrations. See CLAUDE.md → AVA Phase 1 invariants (AvaChip bullet) + `docs/CHANGELOG.md`.
+
+- [x] Chip wired inside `AvaChip.tsx` (one change → all 6 screens); placeholder drawer + mic stub + toast removed; button visual/position untouched; mirrors `AskAvaButton`.
+- [x] Context: `routeId = routes.length === 1 ? routes[0].route_id : null` from `useAppState()` (no prop drilling); `seedContext={{}}`. Graceful degradation when no unambiguous route.
+- [x] Copy: `AvaConversationSheet.tsx:218` description → "Ask me anything — your route, stops, equipment, SOPs, or how we do things at PTR." (1 match in codebase).
+- [x] `tsc --noEmit` clean; `npx next build` green (38 pages) both commits; only the one file changed per commit; pushed; **both Vercel READY**.
+- [ ] **Browser/on-device tap-through (the gate):** tap the header chip on Home → `AvaConversationSheet` opens; close → chip tappable again; confirm the morning-brief "Ask Ava about today" + Training Hub SOP search Ava entry points still work (left untouched). Sanity-check the new empty-state copy renders.
+
 ## June 15, 2026 — Ava Studio Foundation A1 (ON `main`: `da3a352`; migrations 022–025)
 
 Three new tables (`ava_knowledge`, `ava_knowledge_gaps`, `ava_vocabulary`) + `sop_entries` studio columns, plus knowledge injection & `UNKNOWN:` gap detection in `/api/ava/ask`. See CLAUDE.md → "Ava Studio Foundation — Session A1", `docs/CHANGELOG.md`, `tasks/lessons.md`.

@@ -6,6 +6,14 @@ Format: one lesson per block. Lead with the rule, then **Why** and **How to appl
 
 ---
 
+## When a UI element is rendered per-screen (not in the layout), wire its shared state INSIDE the component, and pull "available" context from the global store (`useAppState`) — not by prop-drilling through every screen.
+
+**Why:** 2026-06-15 (AVA header chip activation) the spec said "open the sheet from any screen" and assumed the chip lived at layout level. It does not — `<AvaChip/>` is rendered bare in 6 separate screens (Home, Route list, Stop detail, Tools, Profile, Training); the layout only mounts `AppStateProvider`. Putting `open`/`isAvaOpen` state in the layout would have done nothing for the chip; threading a sheet + context props into all 6 screens would have been a large, error-prone change for a "wiring only" task. Wiring the `open` state + the `<AvaConversationSheet>` render INSIDE `AvaChip` itself made it one file, all screens, zero per-screen edits — exactly mirroring how `AskAvaButton` already self-contains its sheet.
+
+**How to apply:** before reaching for "lift state to the layout," grep where the component actually renders (`grep -rn "<AvaChip" src/`). If it's rendered N times across screens, co-locate the state in the component. For context the sheet/endpoint wants, read it from the global store the component can already reach (`useAppState().routes`) and degrade gracefully when it's ambiguous — e.g. `routeId = routes.length === 1 ? routes[0].route_id : null` (a single route is unambiguous; multiple/none → null + empty `seedContext`). The spec's "pass context where available, never required, no prop drilling, silent degradation" is the right default for any app-global entry point. (Also: `Route.id` does not exist in this repo — the field is `route_id`. Check `src/types/index.ts` before assuming `.id`.)
+
+---
+
 ## When a spec hands you SQL referencing a `profiles` role column, verify the column's name + shape against the LIVE shared DB before applying — never against this repo's local migrations. This DB uses `roles text[]`, not `role`.
 
 **Why:** 2026-06-15 (Ava Studio A1) the locked spec's RLS policies all used `exists (select 1 from profiles where profiles.id = auth.uid() and profiles.role = 'super_admin')`. The driver-app's own local migration `20260426001_create_profiles.sql` still defines `role user_role` (a singular enum) — so the spec looked self-consistent. But this is a TWO-REPO shared DB owned by the dashboard, and `profiles` migrated `role` (enum) → `roles` (text[] array) long ago. Applying the spec verbatim would have failed every migration with Postgres `42703` "column profiles.role does not exist" (PostgREST even hints "Perhaps you meant profiles.roles"). The whole driver-app codebase already proves the truth: the route reads `.select('roles')` + `isElevatedRole(profile.roles)`, and migrations 014 + 016 gate with `'super_admin' = ANY(p.roles)`.
