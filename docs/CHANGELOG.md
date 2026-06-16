@@ -4,6 +4,19 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-06-16 — DOT inspection safety net — truckless primary-driver guard (ON `main`: `e8b26fe`; no migration)
+
+Investigate-then-fix session. **Bug report:** the DOT pre-trip inspection didn't surface for a route with **1 driver + 2 trucks** — it only appeared once a second driver was added (trucks were 2 in both cases). The gate looked driver-count-dependent.
+
+- **Root cause (investigation, no code changed first):** the inspection gate keys on the signed-in driver's **own `route_crew.truck_id`** (`truck_is_own`), NOT on the route-level trucks (`routes.truck_id` / `routes.truck_id_2`). In `supabaseTransform.ts`, when the driver HAS a crew row but its `truck_id` is null, `ownTruck` is null → `truck` is null (the soft-fail fallback to the route truck fires ONLY when there's no crew row at all, not when the crew row exists with a null truck) → `truck_id` undefined → `hasTruck = false`, `truck_is_own = undefined`. So `stopsLocked` (which requires `truck_is_own === true`) is **false**, the stop list never locks, and the CTA reads "Join Route" (because `!hasTruck`) → tapping it routes **straight past the DOT pre-trip**. With a 2nd driver, dispatch assigns one truck per crew row, populating `route_crew.truck_id`, so the gate fires. Hence the driver-count-dependent symptom. **The inspection gate logic is correct — the failure is a silent pass when the per-driver truck assignment is missing.**
+- **Fix = a data-gap safety net (does NOT touch `stopsLocked` / `truck_is_own`).** New `truckUnassigned = !hasTruck && is_primary === true` in BOTH screens (fix-both mirror). **Scoped to `is_primary === true` ONLY** — a no-truck *co-driver* (`is_primary === false`) is the supported ride-along "Join Route" flow and is never caught; a soft-fail with no crew row inherits the route truck (`hasTruck === true`) so it never lands here either.
+  - **`DayRouteSelectorScreen`:** CTA label → "Truck Not Assigned", button disabled + dimmed, `handleCtaTap` early-returns on `truckUnassigned` (defense-in-depth), amber sub-text "Contact dispatch to assign your truck" (`C.goldDeep`).
+  - **`RouteListScreen`:** amber banner "Truck not assigned — contact dispatch before starting" at the top of the stop list **+ stops made non-tappable** via `stopsTappable = !stopsLocked && !truckUnassigned`. This was a deliberate decision (Darren, Option B): RouteListScreen is reachable via the Routes-tab deep-link, and `stopsLocked` does NOT cover this case (truckless primary → `truck_is_own === undefined` → `stopsLocked` false → stops would otherwise stay tappable), so the banner alone would have left the deep-link DOT-bypass open. Folding `truckUnassigned` into `stopsTappable` is an additive data-gap block layered on top of the inspection gate, not a change to it.
+- **Verify:** `tsc --noEmit` clean; `npx next build` green (38 pages). Committed `e8b26fe`, pushed to `main`. **On-device gate:** put a driver in the 1-driver/2-truck state and confirm the banner shows + stops are dimmed/non-tappable + Home CTA is disabled; confirm a no-truck co-driver is unaffected.
+- **Upstream (NOT this repo):** the real question is whether dispatch should pin a truck to a lone crew row on a multi-truck route. This commit is the driver-app guardrail; the dashboard-side data fix is separate. See `tasks/lessons.md`.
+
+---
+
 ## 2026-06-15 — Ava Studio A4 — AVA Remembers Phase 2 (ON `main`: `3c92e9d`; migrations 026–027)
 
 Driver-side of the locked AVA Remembers Phase 2 spec (June 8): a *freshness loop*, *single-visit notes*, and *clear-site-notes* on top of the Phase-1 address-keyed `ava_stop_notes`. Driver-app only — **A4b** (dashboard Site Notes panel + Visit Notes on the board stop cards) is a separate later dashboard-repo session. Three spec/reality mismatches surfaced to Darren up front and decided before coding.

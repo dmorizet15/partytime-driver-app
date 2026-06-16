@@ -1,5 +1,17 @@
 # Open Tasks — partytime-driver-app
 
+## June 16, 2026 — DOT inspection safety net — truckless primary-driver guard (ON `main`: `e8b26fe`; no migration)
+
+Investigation found the DOT pre-trip didn't surface for a 1-driver/2-truck route because the gate keys on the signed-in driver's OWN `route_crew.truck_id` (`truck_is_own`), not the route trucks — a lone primary with a null crew-row truck fell through to "Join Route" and silently bypassed the pre-trip. Added a data-gap guard (no inspection logic touched). See CLAUDE.md → "DOT inspection safety net", `docs/CHANGELOG.md`, `tasks/lessons.md`.
+
+- [x] Investigation (no code first) — traced `stopsLocked → truck_is_own → ownTruck → route_crew.truck_id`; root cause = silent pass when the per-driver crew-row truck is unassigned.
+- [x] `truckUnassigned = !hasTruck && is_primary === true` (scoped to primary; co-drivers/soft-fail excluded) in both `DayRouteSelectorScreen` + `RouteListScreen` (fix-both mirror).
+- [x] Home: CTA disabled + "Truck Not Assigned" + amber "Contact dispatch to assign your truck".
+- [x] Route list: amber banner + stops non-tappable via `stopsTappable = !stopsLocked && !truckUnassigned` (closes the Routes-tab deep-link bypass; `stopsLocked` does NOT cover this case). **Darren-approved Option B.**
+- [x] `tsc --noEmit` clean; `npx next build` green (38 pages); committed `e8b26fe`, pushed.
+- [ ] **On-device gate:** put a driver in the 1-driver/2-truck state (lone primary, no crew-row truck) → Home CTA disabled + "Truck Not Assigned" + amber line; deep-link to `/route/[id]` → amber banner + stops dimmed/non-tappable. Confirm a no-truck **co-driver** (`is_primary === false`) is UNAFFECTED (normal "Join Route"). Confirm a normally truck-assigned primary is unaffected.
+- [ ] **Upstream (DASHBOARD repo, separate):** decide whether dispatch should pin a truck to a lone crew row on a multi-truck route — that's the real data fix; this commit is only the driver-app guardrail. Flag to chat-Claude / dashboard session.
+
 ## June 15, 2026 — Ava Studio A4 — AVA Remembers Phase 2 (ON `main`: `3c92e9d`; migrations 026–027)
 
 Driver-side freshness loop + single-visit notes + clear-site-notes over `ava_stop_notes`/`stop_visit_notes`. See CLAUDE.md → "Ava Studio — AVA Remembers Phase 2 (A4)", `docs/CHANGELOG.md`, `tasks/lessons.md`. **A4b (dashboard Site/Visit Notes panels) is a separate later dashboard-repo session.**
