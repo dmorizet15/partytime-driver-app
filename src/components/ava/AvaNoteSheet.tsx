@@ -4,8 +4,10 @@ import { useEffect, useRef, useState } from 'react'
 import {
   listNotesForAddress,
   saveStopNote,
+  saveVisitNote,
   uploadStopNotePhoto,
   type StopNoteRow,
+  type VisitNoteCategory,
 } from '@/lib/ava/stopNotesClient'
 
 // AVA Remembers note sheet — opens from the Stop Detail Tier 3 pill, the
@@ -20,21 +22,39 @@ import {
 const BLUE       = '#0000FF'
 const NOTE_LIMIT = 280
 
+type NoteMode = 'remember' | 'visit'
+
+const VISIT_CATEGORIES: { key: VisitNoteCategory; label: string }[] = [
+  { key: 'general',          label: 'General' },
+  { key: 'customer_behavior', label: 'Customer' },
+  { key: 'tip',              label: 'Tip' },
+  { key: 'access',           label: 'Access' },
+  { key: 'equipment',        label: 'Equipment' },
+]
+
 interface AvaNoteSheetProps {
   stopId:      string
   addressKey:  string
   rawAddress:  string
   authorId:    string
+  orderRef?:   string | null
+  initialDraft?: string
   onClose:     () => void
   onSaved?:    (row: StopNoteRow) => void
+  /** Fired after any successful save (durable OR visit) so callers can resume
+   *  a deferred flow (e.g. the freshness "Update note" → navigate). */
+  onAnySaved?: () => void
 }
 
 export default function AvaNoteSheet({
-  stopId, addressKey, rawAddress, authorId, onClose, onSaved,
+  stopId, addressKey, rawAddress, authorId, orderRef = null,
+  initialDraft, onClose, onSaved, onAnySaved,
 }: AvaNoteSheetProps) {
   const [priorNotes,   setPriorNotes]   = useState<StopNoteRow[]>([])
   const [loadingPrior, setLoadingPrior] = useState(true)
-  const [draft,        setDraft]        = useState('')
+  const [mode,         setMode]         = useState<NoteMode>('remember')
+  const [category,     setCategory]     = useState<VisitNoteCategory>('general')
+  const [draft,        setDraft]        = useState(initialDraft ?? '')
   const [photoUrls,    setPhotoUrls]    = useState<string[]>([])
   const [uploading,    setUploading]    = useState(false)
   const [saving,       setSaving]       = useState(false)
@@ -79,6 +99,29 @@ export default function AvaNoteSheet({
     const text = draft.trim()
     if (!text) return
     setSaving(true)
+
+    // "Just for this visit" → stop_visit_notes (ephemeral, not durable memory).
+    if (mode === 'visit') {
+      const result = await saveVisitNote({
+        stop_id:       stopId || null,
+        order_ref:     orderRef,
+        address_key:   addressKey,
+        note_text:     text,
+        note_category: category,
+        created_by:    authorId,
+      })
+      setSaving(false)
+      if (result.ok) {
+        onAnySaved?.()
+        setToast('Saved for this visit ✓')
+        window.setTimeout(onClose, 700)
+        return
+      }
+      setToast(result.error || 'Save failed — try again.')
+      return
+    }
+
+    // "Remember for future visits" → durable ava_stop_notes (existing path).
     const result = await saveStopNote({
       stop_id:     stopId,
       address_key: addressKey,
@@ -91,11 +134,13 @@ export default function AvaNoteSheet({
 
     if (result.ok && result.row) {
       onSaved?.(result.row)
+      onAnySaved?.()
       setToast('Note saved — AVA will remember this stop ✓')
       window.setTimeout(onClose, 700)
       return
     }
     if (result.queued) {
+      onAnySaved?.()
       setToast('Saved offline — AVA will sync when you reconnect.')
       window.setTimeout(onClose, 900)
       return
@@ -249,6 +294,76 @@ export default function AvaNoteSheet({
           LEAVE A NOTE
         </div>
 
+        {/* Mode toggle — durable site memory vs. single-visit note. Two clearly
+            labeled buttons (not a checkbox) so the difference is unmistakable. */}
+        <div style={{
+          display: 'flex', gap: 8, marginBottom: 10,
+        }}>
+          {([
+            { key: 'remember' as NoteMode, label: 'Remember for future visits' },
+            { key: 'visit'    as NoteMode, label: 'Just for this visit' },
+          ]).map((opt) => {
+            const active = mode === opt.key
+            return (
+              <button
+                key={opt.key}
+                type="button"
+                onClick={() => setMode(opt.key)}
+                aria-pressed={active}
+                style={{
+                  flex: 1,
+                  background: active ? BLUE : 'transparent',
+                  color:      active ? '#fff' : '#94A3B8',
+                  border: `1px solid ${active ? BLUE : 'rgba(255,255,255,0.14)'}`,
+                  borderRadius: 10,
+                  padding: '9px 8px',
+                  fontSize: 12, fontWeight: 700, lineHeight: 1.25,
+                  cursor: 'pointer', fontFamily: 'inherit',
+                }}
+              >
+                {opt.label}
+              </button>
+            )
+          })}
+        </div>
+
+        <div style={{
+          fontSize: 11.5, color: '#64748B', marginBottom: 10, lineHeight: 1.4,
+        }}>
+          {mode === 'remember'
+            ? 'Saved to this address forever — every driver who comes here sees it.'
+            : 'Only for today — this note won’t follow the address to future visits.'}
+        </div>
+
+        {mode === 'visit' && (
+          <div style={{
+            display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12,
+          }}>
+            {VISIT_CATEGORIES.map((c) => {
+              const active = category === c.key
+              return (
+                <button
+                  key={c.key}
+                  type="button"
+                  onClick={() => setCategory(c.key)}
+                  aria-pressed={active}
+                  style={{
+                    background: active ? 'rgba(0,0,255,0.18)' : 'transparent',
+                    color:      active ? '#C7D2FE' : '#94A3B8',
+                    border: `1px solid ${active ? BLUE : 'rgba(255,255,255,0.12)'}`,
+                    borderRadius: 999,
+                    padding: '5px 12px',
+                    fontSize: 12, fontWeight: 600,
+                    cursor: 'pointer', fontFamily: 'inherit',
+                  }}
+                >
+                  {c.label}
+                </button>
+              )
+            })}
+          </div>
+        )}
+
         <textarea
           value={draft}
           onChange={(e) => setDraft(e.target.value.slice(0, NOTE_LIMIT))}
@@ -272,23 +387,25 @@ export default function AvaNoteSheet({
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           marginTop: 8,
         }}>
-          <button
-            type="button"
-            onClick={() => fileRef.current?.click()}
-            disabled={uploading}
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-              background: 'transparent',
-              color: uploading ? '#475569' : '#94A3B8',
-              border: '1px solid rgba(255,255,255,0.12)',
-              borderRadius: 999,
-              padding: '6px 12px',
-              fontSize: 12, fontWeight: 600,
-              cursor: uploading ? 'default' : 'pointer',
-            }}
-          >
-            {uploading ? 'Uploading…' : '+ Photo'}
-          </button>
+          {mode === 'remember' ? (
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              disabled={uploading}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                background: 'transparent',
+                color: uploading ? '#475569' : '#94A3B8',
+                border: '1px solid rgba(255,255,255,0.12)',
+                borderRadius: 999,
+                padding: '6px 12px',
+                fontSize: 12, fontWeight: 600,
+                cursor: uploading ? 'default' : 'pointer',
+              }}
+            >
+              {uploading ? 'Uploading…' : '+ Photo'}
+            </button>
+          ) : <span />}
           <span style={{
             fontSize: 11,
             color: remaining < 20 ? '#FFB800' : '#64748B',
@@ -307,7 +424,7 @@ export default function AvaNoteSheet({
           style={{ display: 'none' }}
         />
 
-        {photoUrls.length > 0 && (
+        {mode === 'remember' && photoUrls.length > 0 && (
           <div style={{
             display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap',
           }}>

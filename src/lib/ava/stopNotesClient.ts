@@ -37,6 +37,11 @@ export interface StopNoteRow {
   author_id:   string | null
   photo_urls:  string[]
   created_at:  string
+  // AVA Remembers Phase 2 (mig 026). Optional so older callers still typecheck.
+  status?:                  'active' | 'archived'
+  last_confirmed_at?:       string | null
+  visit_count_since_added?: number
+  created_by_role?:         'driver' | 'dispatcher'
   // Hydrated client-side from a paired profiles fetch; kept optional so the
   // raw DB shape stays usable too.
   author_name?: string | null
@@ -56,6 +61,7 @@ export async function fetchTodayNotesHitCount(addressKeys: string[]): Promise<nu
     .from('ava_stop_notes')
     .select('address_key')
     .in('address_key', addressKeys)
+    .eq('status', 'active')
   if (error) {
     console.warn('[stopNotesClient] fetch failed:', error.message)
     return 0
@@ -78,6 +84,7 @@ export async function fetchLatestNotesByAddress(
     .from('ava_stop_notes')
     .select('*')
     .in('address_key', addressKeys)
+    .eq('status', 'active')
     .order('created_at', { ascending: false })
   if (error || !data) {
     if (error) console.warn('[stopNotesClient] fetchLatestNotesByAddress failed:', error.message)
@@ -97,6 +104,7 @@ export async function listNotesForAddress(address_key: string): Promise<StopNote
     .from('ava_stop_notes')
     .select('*')
     .eq('address_key', address_key)
+    .eq('status', 'active')
     .order('created_at', { ascending: false })
   if (error || !data) {
     if (error) console.warn('[stopNotesClient] listNotesForAddress failed:', error.message)
@@ -105,6 +113,23 @@ export async function listNotesForAddress(address_key: string): Promise<StopNote
   const rows = data as unknown as StopNoteRow[]
   await hydrateAuthors(rows)
   return rows
+}
+
+/**
+ * The newest ACTIVE note for an address (or null). Drives the post-completion
+ * freshness prompt — we only need the most recent note's age + freshness state.
+ */
+export async function getMostRecentActiveNote(address_key: string): Promise<StopNoteRow | null> {
+  if (!address_key) return null
+  const { data, error } = await supabase
+    .from('ava_stop_notes')
+    .select('*')
+    .eq('address_key', address_key)
+    .eq('status', 'active')
+    .order('created_at', { ascending: false })
+    .limit(1)
+  if (error || !data || data.length === 0) return null
+  return data[0] as unknown as StopNoteRow
 }
 
 async function hydrateAuthors(rows: StopNoteRow[]): Promise<void> {
@@ -178,6 +203,105 @@ export async function saveStopNote(input: SaveStopNoteInput): Promise<SaveStopNo
       queued: true,
       error: err instanceof Error ? err.message : 'Network error',
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Freshness confirm (AVA Remembers Phase 2)
+
+/**
+ * "Yes, still good" — stamps last_confirmed_at = now and bumps the visit
+ * counter. Allowed for ANY authenticated driver (not just the author) via the
+ * ava_stop_notes_confirm_freshness policy; the DB trigger guarantees a foreign
+ * driver can change only these two columns. Best-effort — a failure is logged,
+ * never surfaced (the prompt is a nicety, never a gate).
+ */
+export async function confirmNoteFreshness(
+  noteId: string, currentVisitCount: number,
+): Promise<boolean> {
+  if (!noteId) return false
+  try {
+    const { error } = await supabase
+      .from('ava_stop_notes')
+      .update({
+        last_confirmed_at:       new Date().toISOString(),
+        visit_count_since_added: (currentVisitCount ?? 0) + 1,
+      })
+      .eq('id', noteId)
+    if (error) {
+      console.warn('[stopNotesClient] confirmNoteFreshness failed:', error.message)
+      return false
+    }
+    return true
+  } catch (err) {
+    console.warn('[stopNotesClient] confirmNoteFreshness threw:', err)
+    return false
+  }
+}
+
+/**
+ * "Clear site notes" — archives every active note for the address via the
+ * server route (service-role; archiving other drivers' notes is elevated).
+ * Returns the number archived, or null on failure.
+ */
+export async function archiveAddressNotes(address_key: string): Promise<number | null> {
+  if (!address_key) return null
+  try {
+    const res = await fetch('/api/ava/stop-notes/archive-address', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ address_key }),
+    })
+    if (!res.ok) {
+      console.warn('[stopNotesClient] archiveAddressNotes HTTP', res.status)
+      return null
+    }
+    const j = await res.json().catch(() => null) as { archived?: number } | null
+    return j?.archived ?? 0
+  } catch (err) {
+    console.warn('[stopNotesClient] archiveAddressNotes threw:', err)
+    return null
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Visit notes (AVA Remembers Phase 2) — "just for this visit", non-durable
+
+export type VisitNoteCategory =
+  'customer_behavior' | 'tip' | 'access' | 'equipment' | 'general'
+
+export interface SaveVisitNoteInput {
+  stop_id:       string | null
+  order_ref:     string | null
+  address_key:   string
+  note_text:     string
+  note_category: VisitNoteCategory
+  created_by:    string
+}
+
+/**
+ * Inserts a single-visit note into stop_visit_notes (own-row RLS). No offline
+ * queue — a visit note is ephemeral by nature; a failed save returns ok:false
+ * and the caller surfaces a retry. Mirrors saveStopNote's result shape.
+ */
+export async function saveVisitNote(
+  input: SaveVisitNoteInput,
+): Promise<{ ok: boolean; error?: string }> {
+  const trimmed = input.note_text.trim()
+  if (!trimmed) return { ok: false, error: 'Note text is empty.' }
+  try {
+    const { error } = await supabase.from('stop_visit_notes').insert({
+      stop_id:       input.stop_id,
+      order_ref:     input.order_ref,
+      address_key:   input.address_key,
+      note_text:     trimmed,
+      note_category: input.note_category,
+      created_by:    input.created_by,
+    })
+    if (error) return { ok: false, error: error.message }
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Network error' }
   }
 }
 

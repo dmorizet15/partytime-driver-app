@@ -32,7 +32,12 @@ import { reportIssueSuccessKey } from '@/screens/workOrders/ReportIssueScreen'
 import { useAuthContext } from '@/context/AuthContext'
 import { isActiveDriver, isTransferredAway, crewMemberName } from '@/lib/routeOwnership'
 import { normalizeAddressKey } from '@/lib/ava/addressKey'
-import { fetchTodayNotesHitCount, listNotesForAddress } from '@/lib/ava/stopNotesClient'
+import {
+  getMostRecentActiveNote,
+  confirmNoteFreshness,
+  archiveAddressNotes,
+  type StopNoteRow,
+} from '@/lib/ava/stopNotesClient'
 import AvaNoteSheet from '@/components/ava/AvaNoteSheet'
 import StopNotesPreSheet, { type StopNotesSections } from '@/components/ava/StopNotesPreSheet'
 import ItemCheckoffPanel, {
@@ -396,6 +401,14 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   const [avaNoteOpen,     setAvaNoteOpen]     = useState(false)
   const [avaNoteCount,    setAvaNoteCount]    = useState(0)
   const [avaNoteRefresh,  setAvaNoteRefresh]  = useState(0)
+  const [avaActiveNote,   setAvaActiveNote]   = useState<StopNoteRow | null>(null)
+  // AVA Remembers Phase 2 — post-completion freshness prompt + "clear site notes".
+  const [freshnessOpen,    setFreshnessOpen]    = useState(false)
+  const [pendingNavDest,   setPendingNavDest]   = useState<string | null>(null)
+  const [noteSheetDraft,   setNoteSheetDraft]   = useState<string | undefined>(undefined)
+  const [noteSheetThenNav, setNoteSheetThenNav] = useState<string | null>(null)
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false)
+  const [clearing,         setClearing]         = useState(false)
   // Pre-launch notes sheet — fires before Send-ETA or Navigate when the stop
   // has any note. Once-per-stop guard via a ref Set so it shows at most once
   // per stop per mount; resets naturally on unmount / route reload.
@@ -406,13 +419,14 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     ? normalizeAddressKey(stop.address_line_1)
     : ''
   useEffect(() => {
-    if (!avaAddressKey) return
+    if (!avaAddressKey) { setAvaActiveNote(null); setAvaNoteCount(0); return }
     let cancelled = false
-    fetchTodayNotesHitCount([avaAddressKey]).then((distinct) => {
+    // One query feeds both the surface gate and the freshness prompt: the most
+    // recent ACTIVE note for this address (or null). count is just "has any".
+    getMostRecentActiveNote(avaAddressKey).then((row) => {
       if (cancelled) return
-      // Bucket of 1 — distinct returns 0 or 1 since we passed a single key.
-      // We just need to know "has any" for the surface gate.
-      setAvaNoteCount(distinct)
+      setAvaActiveNote(row)
+      setAvaNoteCount(row ? 1 : 0)
     })
     return () => { cancelled = true }
   }, [avaAddressKey, avaNoteRefresh])
@@ -991,7 +1005,22 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
 
     closeModal()
     setLoading(false)
-    if (nextStop) { router.replace(`/route/${routeId}/stop/${nextStop.stop_id}`) } else { router.replace(`/route/${routeId}`) }
+
+    const dest = nextStop
+      ? `/route/${routeId}/stop/${nextStop.stop_id}`
+      : `/route/${routeId}`
+
+    // AVA Remembers Phase 2 — freshness prompt. If this address has an active
+    // site note, ask "still accurate?" BEFORE leaving the screen (there's no
+    // completion animation here — completion navigates immediately — so the
+    // prompt holds navigation until the driver answers). Depot legs excluded.
+    if (avaActiveNote && !isDepotStop) {
+      setPendingNavDest(dest)
+      setFreshnessOpen(true)
+      return true
+    }
+
+    router.replace(dest)
     return true
   }
 
@@ -1009,6 +1038,57 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     setCashReasonError(null)
     setCashError(null)
     setShowCashModal(true)
+  }
+
+  // ── AVA Remembers Phase 2 — freshness prompt + clear-site-notes handlers ────
+  function relativeNoteAge(iso: string | null | undefined): string {
+    if (!iso) return 'a while back'
+    const then = new Date(iso).getTime()
+    if (!then || Number.isNaN(then)) return 'a while back'
+    const days = Math.floor((Date.now() - then) / 86_400_000)
+    if (days <= 0) return 'today'
+    if (days === 1) return 'yesterday'
+    if (days < 7)  return `${days} days ago`
+    const weeks = Math.floor(days / 7)
+    if (days < 30) return weeks === 1 ? 'last week' : `${weeks} weeks ago`
+    const months = Math.floor(days / 30)
+    if (days < 365) return months === 1 ? 'last month' : `${months} months ago`
+    const years = Math.floor(days / 365)
+    return years === 1 ? 'last year' : `${years} years ago`
+  }
+
+  function navigateAfterPrompt() {
+    const dest = pendingNavDest
+    setPendingNavDest(null)
+    setFreshnessOpen(false)
+    if (dest) router.replace(dest)
+  }
+
+  // "Yes, still good" — bump confirmation + visit count (best-effort), then go.
+  function handleFreshnessYes() {
+    const note = avaActiveNote
+    if (note) void confirmNoteFreshness(note.id, note.visit_count_since_added ?? 0)
+    navigateAfterPrompt()
+  }
+
+  // "Update note" — open the note sheet pre-filled; after it closes (saved OR
+  // cancelled — the stop is already complete) advance to the next stop.
+  function handleFreshnessUpdate() {
+    setNoteSheetDraft(avaActiveNote?.note ?? '')
+    setNoteSheetThenNav(pendingNavDest)
+    setPendingNavDest(null)
+    setFreshnessOpen(false)
+    setAvaNoteOpen(true)
+  }
+
+  async function handleClearSiteNotes() {
+    if (clearing || !avaAddressKey) return
+    setClearing(true)
+    await archiveAddressNotes(avaAddressKey)
+    setClearing(false)
+    setClearConfirmOpen(false)
+    setAvaNoteRefresh((n) => n + 1)   // refresh count + active note
+    setNavMessage('Site notes cleared')
   }
 
   // Mark-Complete tap — the NON-check-off paths only (Rev 1 moved the item
@@ -1190,10 +1270,17 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   async function buildStopNoteSections(): Promise<StopNotesSections | null> {
     if (!stop) return null
     const timing = stop.notes_set_by_time?.trim() || stop.notes_strike_time?.trim() || null
+    // AVA Remembers — surface the freshest active note for this address, with a
+    // staleness qualifier prepended when it's 3+ visits old and never confirmed
+    // (so AVA flags it as possibly out of date before reading it aloud).
     let avaText: string | null = null
-    if (avaNoteCount > 0 && avaAddressKey) {
-      const rows = await listNotesForAddress(avaAddressKey)
-      avaText = rows[0]?.note?.trim() || null
+    if (avaActiveNote) {
+      const base = avaActiveNote.note?.trim() || ''
+      if (base) {
+        const visits = avaActiveNote.visit_count_since_added ?? 0
+        const stale  = visits >= 3 && !avaActiveNote.last_confirmed_at
+        avaText = stale ? `(Note from ${visits} visits ago) ${base}` : base
+      }
     }
     const sections: StopNotesSections = {
       dispatcherNote: stop.dispatcher_notes?.trim() || null,
@@ -2737,6 +2824,27 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
                 <span style={{ fontSize: 14, lineHeight: 1, opacity: 0.7 }}>›</span>
               </button>
             )}
+
+            {/* Clear site notes — only when active notes exist for this address.
+                Archives them all via the server route (Start Fresh, button form
+                — the voice command is deferred until real mic input exists). */}
+            {avaNoteCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setClearConfirmOpen(true)}
+                style={{
+                  marginTop: 8,
+                  width: '100%', background: 'transparent', border: 0,
+                  cursor: 'pointer', fontFamily: 'inherit',
+                  fontSize: 12, fontWeight: 600, color: C.muted,
+                  textAlign: 'center', padding: '6px 4px',
+                  textDecoration: 'underline', textUnderlineOffset: 3,
+                }}
+                aria-label="Clear all saved site notes for this address"
+              >
+                Clear site notes
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -3106,8 +3214,93 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
           addressKey={avaAddressKey}
           rawAddress={stop.address_line_1}
           authorId={authUser.id}
-          onClose={() => setAvaNoteOpen(false)}
+          orderRef={stop.order_id ?? null}
+          initialDraft={noteSheetDraft}
+          onClose={() => {
+            setAvaNoteOpen(false)
+            setNoteSheetDraft(undefined)
+            // If this sheet was opened from the freshness "Update note" path,
+            // advance to the next stop now (saved or not — completion is done).
+            const dest = noteSheetThenNav
+            setNoteSheetThenNav(null)
+            if (dest) router.replace(dest)
+          }}
           onSaved={() => setAvaNoteRefresh((n) => n + 1)}
+        />
+      )}
+
+      {/* AVA Remembers Phase 2 — post-completion freshness prompt. Non-dismissible
+          (no backdrop close): both buttons navigate, so the driver is never
+          stranded on a just-completed stop. */}
+      {freshnessOpen && avaActiveNote && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Confirm note freshness"
+          style={{
+            position: 'fixed', inset: 0, zIndex: 210,
+            background: 'rgba(0,0,0,0.6)',
+            display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+            padding: 16,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%', maxWidth: 384, background: '#fff',
+              borderRadius: 18, overflow: 'hidden',
+              boxShadow: '0 -8px 32px rgba(0,0,0,0.4)',
+            }}
+          >
+            <div style={{ padding: '20px 22px 16px' }}>
+              <div style={{ fontWeight: 800, fontSize: 16, color: '#0A0B14', marginBottom: 8 }}>
+                Still accurate?
+              </div>
+              <div style={{ fontSize: 13.5, color: '#475569', lineHeight: 1.5, marginBottom: 10 }}>
+                Notes here are from {relativeNoteAge(avaActiveNote.last_confirmed_at || avaActiveNote.created_at)} — still accurate?
+              </div>
+              <div style={{
+                fontSize: 13, color: '#0A0B14', lineHeight: 1.5,
+                background: '#F1F5F9', borderRadius: 10, padding: '10px 12px',
+              }}>
+                {avaActiveNote.note}
+              </div>
+            </div>
+            <div style={{ display: 'flex', borderTop: '1px solid #E2E8F0' }}>
+              <button
+                onClick={handleFreshnessUpdate}
+                style={{
+                  flex: 1, padding: '15px 8px', fontSize: 14, fontWeight: 700,
+                  color: '#475569', border: 0, borderRight: '1px solid #E2E8F0',
+                  background: '#fff', cursor: 'pointer', fontFamily: 'inherit',
+                }}
+              >
+                Update note
+              </button>
+              <button
+                onClick={handleFreshnessYes}
+                style={{
+                  flex: 1, padding: '15px 8px', fontSize: 14, fontWeight: 800,
+                  color: '#0A0B14', border: 0, background: '#fff',
+                  cursor: 'pointer', fontFamily: 'inherit',
+                }}
+              >
+                ✓ Yes, still good
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {clearConfirmOpen && (
+        <ConfirmationModal
+          title="Clear site notes?"
+          message="This archives every saved note for this address. AVA will stop showing them. This can't be undone from the app."
+          confirmLabel="Clear notes"
+          cancelLabel="Keep them"
+          onConfirm={handleClearSiteNotes}
+          onCancel={() => setClearConfirmOpen(false)}
+          isLoading={clearing}
         />
       )}
     </div>
