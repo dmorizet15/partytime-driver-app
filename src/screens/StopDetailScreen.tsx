@@ -632,7 +632,7 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   // pickup window has opened we tear the interval down on the next tick.
   const pickupWindow = stop ? effectiveWindow(stop) : null
   const pickupOpensAt =
-    stop && stop.stop_type === 'pickup' && stop.arrived_at && !earlyOverride
+    stop && stop.stop_type === 'pickup' && !earlyOverride
       ? pickupWindow?.startsAt ?? null
       : null
   const isOnStandby =
