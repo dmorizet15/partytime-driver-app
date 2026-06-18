@@ -30,11 +30,14 @@ function startOfWeekISO(): string {
 export async function fetchPersonalStats(driverId: string): Promise<PersonalStats> {
   // 1. Routes assigned to the driver.
   const { data: assignments, error: aErr } = await supabase
-    .from('route_assignments')
+    .from('route_crew')
     .select('route_id')
     .eq('user_id', driverId)
-    .eq('role', 'driver')
-  if (aErr) throw aErr
+    .eq('is_primary', true)
+  if (aErr) {
+    console.error('[personalStats] route_crew lookup failed:', aErr.message)
+    throw aErr
+  }
 
   const routeIds = Array.from(new Set((assignments ?? []).map((a) => a.route_id)))
   if (routeIds.length === 0) {

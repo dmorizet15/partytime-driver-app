@@ -127,11 +127,15 @@ export async function GET(req: NextRequest) {
   const routeIds = routes.map((r) => r.id as string)
   const driverByRoute = new Map<string, { id: string; name: string | null }>()
   if (routeIds.length > 0) {
-    const { data: assignments } = await db
-      .from('route_assignments')
+    const { data: assignments, error: assignmentsError } = await db
+      .from('route_crew')
       .select('route_id, user_id')
       .in('route_id', routeIds)
-      .eq('role', 'driver')
+      .eq('is_primary', true)
+      .not('user_id', 'is', null)
+    if (assignmentsError) {
+      console.error('[schedule/week] route_crew lookup failed:', assignmentsError.message)
+    }
     const userIds = Array.from(
       new Set((assignments ?? []).map((a) => a.user_id).filter((x): x is string => !!x)),
     )
