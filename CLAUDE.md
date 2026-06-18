@@ -102,6 +102,12 @@ Full doctrine: `docs/claude/doctrine.md`.
 
 ---
 
+## Doctrine / Known Landmines (read every session)
+
+- **`route_assignments` is DROPPED as of Phase 2A** (driver `35e4c37`, 2026-06-09). The table **no longer exists in the DB** — a live query returns **PGRST205** ("Could not find the table 'public.route_assignments'"). Any reference to it that destructures only `data` (not `error`) will **fail SILENTLY**: `data` comes back `undefined` → `?? []` → empty set → callers behave as "no driver assigned" with no error surfaced. **The correct assignment source is `route_crew`.** For a primary-driver lookup, filter `.eq('is_primary', true).not('user_id','is',null)` (the driver-role value in `route_crew` is `'primary_driver'`, NOT `'driver'`, and helper/WIW rows carry `user_id = null`). **Always destructure and log `error`** on `route_crew` lookups so the next stale-table bug isn't invisible. This regression hid the Week View "YOU" badge for weeks (fixed 2026-06-17, `3173c48` — `api/schedule/week/route.ts` + `personalStatsClient.ts`). Remaining `route_assignments` mentions in `src/` are all **comments** (`types/index.ts`, `api/routes/route.ts`, `personalStatsClient.ts` header) — no live code references; verify with `grep -rn route_assignments src/` before adding any new assignment-touching endpoint.
+
+---
+
 ## Time Window Constraints — Phase 4 (driver-app read-only)
 
 Dashboard Migration 058 computes `constraint_confidence` + window bounds on every `dispatch_stops` row. Driver app surfaces these in three places — all read-only, no writes:

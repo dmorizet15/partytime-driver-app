@@ -1,5 +1,9 @@
 # Open Tasks — partytime-driver-app
 
+## Cleanup (low priority)
+
+- [ ] personalStatsClient.ts:3 — file header comment still says 'route_assignments'; update to reflect route_crew. One-line edit, no logic change, no migration.
+
 ## June 16, 2026 — DOT inspection safety net — truckless primary-driver guard (ON `main`: `e8b26fe`; no migration)
 
 Investigation found the DOT pre-trip didn't surface for a 1-driver/2-truck route because the gate keys on the signed-in driver's OWN `route_crew.truck_id` (`truck_is_own`), not the route trucks — a lone primary with a null crew-row truck fell through to "Join Route" and silently bypassed the pre-trip. Added a data-gap guard (no inspection logic touched). See CLAUDE.md → "DOT inspection safety net", `docs/CHANGELOG.md`, `tasks/lessons.md`.
