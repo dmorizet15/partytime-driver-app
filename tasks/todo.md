@@ -4,6 +4,15 @@
 
 - [ ] personalStatsClient.ts:3 — file header comment still says 'route_assignments'; update to reflect route_crew. One-line edit, no logic change, no migration.
 
+## June 18, 2026 — Manifest bundle grouping (ON `main`: `c862d24`; no migration)
+
+`dispatch_stops.items` now carries `bundle_name` on FLOORING & STAGING deck items (e.g. `STAGE 8'X12'`). The static manifest on StopDetailScreen groups bundled items under an uppercase section header above its item(s); items without `bundle_name` render flat exactly as before. Rendering only — qty/status/check-off untouched. See CLAUDE.md → "Manifest bundle grouping", `docs/CHANGELOG.md`.
+
+- [x] Investigation — render location is `StopDetailScreen` static-manifest `!checkoffActive` branch (`items.map`); `ItemCheckoffPanel` branch out of scope. Type plumbing: added `bundle_name?: string | null` to `Stop['items']` (`types/index.ts`) + `RawItem` (`supabaseTransform.ts`) — type-only, value already flows through items JSONB.
+- [x] Group by `bundle_name` (first-appearance order); header above item(s); same row style for items; slight indent on bundled items; border never sits between header and its first item.
+- [x] `npx next build` green (38 pages, ✓ Compiled, types valid); committed `c862d24`, pushed.
+- [ ] **On-device / data check:** confirm the dashboard sync is actually writing `bundle_name` into `dispatch_stops.items` for live reservations (render path + types verified driver-side; data presence is dashboard-side). Verify reservation `0F5B5AE2` manifest renders `STAGE 8'X12'` header with `STAGE 4'X4' ×6` indented under it.
+
 ## June 16, 2026 — DOT inspection safety net — truckless primary-driver guard (ON `main`: `e8b26fe`; no migration)
 
 Investigation found the DOT pre-trip didn't surface for a 1-driver/2-truck route because the gate keys on the signed-in driver's OWN `route_crew.truck_id` (`truck_is_own`), not the route trucks — a lone primary with a null crew-row truck fell through to "Join Route" and silently bypassed the pre-trip. Added a data-gap guard (no inspection logic touched). See CLAUDE.md → "DOT inspection safety net", `docs/CHANGELOG.md`, `tasks/lessons.md`.

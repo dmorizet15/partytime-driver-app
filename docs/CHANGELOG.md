@@ -4,6 +4,17 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-06-18 — Manifest bundle grouping (ON `main`: `c862d24`; no migration)
+
+Investigate-then-fix UI session. `dispatch_stops.items` now carries `bundle_name` on FLOORING & STAGING deck items (example reservation `0F5B5AE2`: `{qty:6, name:"STAGE 4'X4'", category:"FLOORING & STAGING", bundle_name:"STAGE 8'X12'", tapgoods_pick_list_item_id:4976205}`). All other items (skirts, stairs, grill, propane, chairs, linens) have no `bundle_name` and are untouched.
+
+- **Render location (investigation):** `src/screens/StopDetailScreen.tsx` static manifest — the `!checkoffActive` branch (`items.map`), one bordered card, each line = name + `sentenceCase(category)` sub-line + `×qty` pill, `borderTop` separator when row index > 0. The interactive `ItemCheckoffPanel` branch (`checkoffActive`) was left untouched (check-off behavior explicitly out of scope).
+- **Type plumbing:** added `bundle_name?: string | null` to `Stop['items']` (`src/types/index.ts`) and `RawItem` (`src/lib/supabaseTransform.ts`). Type-only — the value already flows through the `items` JSONB at runtime (`s.items as RawItem[]`), no fetch/SELECT change.
+- **Fix (rendering only):** group items by `bundle_name` in first-appearance order. Each unique bundle → an uppercase section header (`FONT_DISPLAY`, `C.muted`, letter-spaced) rendered above its item(s); bundled items get a small left indent (`paddingLeft: 28`) but otherwise the **same row style** (name/qty/category). Items without `bundle_name` render flat exactly as before. Border logic: a top border separates rows but never sits between a header and its first item (the item belongs to the header above it) — tracked via an `anyRendered` closure flag. **Untouched:** qty display, status logic, check-off, COD, everything else.
+- **Verify:** `npx next build` green (✓ Compiled successfully, types valid, 38 pages). Committed `c862d24`, pushed (`b6155c6..c862d24`). **Pending:** confirm the dashboard sync actually writes `bundle_name` into live `dispatch_stops.items` (driver-side render path + types verified; data presence is dashboard-side).
+
+---
+
 ## 2026-06-16 — DOT inspection safety net — truckless primary-driver guard (ON `main`: `e8b26fe`; no migration)
 
 Investigate-then-fix session. **Bug report:** the DOT pre-trip inspection didn't surface for a route with **1 driver + 2 trucks** — it only appeared once a second driver was added (trucks were 2 in both cases). The gate looked driver-count-dependent.
