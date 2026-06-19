@@ -2668,50 +2668,107 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
                 borderRadius: 18,
                 overflow: 'hidden',
               }}>
-                {items.map((item, i) => {
-                  const name = (item.name ?? '').trim() || '—'
-                  const sub  = item.category ? sentenceCase(item.category) : null
-                  const qty  = item.qty ?? 1
-                  return (
-                    <div
-                      key={i}
-                      style={{
-                        display: 'flex', alignItems: 'flex-start', gap: 12,
-                        padding: '14px 16px',
-                        borderTop: i > 0 ? '1px solid rgba(10,11,20,0.10)' : 0,
-                      }}
-                    >
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{
-                          fontSize: 14, fontWeight: 800, color: C.ink, lineHeight: 1.3,
-                          letterSpacing: '-0.005em',
-                          overflow: 'hidden', textOverflow: 'ellipsis',
-                        }}>
-                          {name}
-                        </div>
-                        {sub && (
+                {(() => {
+                  // Group items by bundle_name where present (e.g. FLOORING &
+                  // STAGING deck items carry a parent bundle like "STAGE 8'X12'").
+                  // Each unique bundle becomes a header above its item(s); items
+                  // without bundle_name stay flat in their original position.
+                  // Rendering only — qty/status/check-off untouched.
+                  type Item = typeof items[number]
+                  type Entry =
+                    | { kind: 'bundle'; bundleName: string; items: Item[] }
+                    | { kind: 'item'; item: Item }
+                  const entries: Entry[] = []
+                  const bundleAt = new Map<string, number>()
+                  items.forEach((item) => {
+                    const bn = (item.bundle_name ?? '').trim()
+                    if (bn) {
+                      let idx = bundleAt.get(bn)
+                      if (idx === undefined) {
+                        idx = entries.length
+                        entries.push({ kind: 'bundle', bundleName: bn, items: [] })
+                        bundleAt.set(bn, idx)
+                      }
+                      ;(entries[idx] as Extract<Entry, { kind: 'bundle' }>).items.push(item)
+                    } else {
+                      entries.push({ kind: 'item', item })
+                    }
+                  })
+
+                  // Top borders separate rows but never sit between a header and
+                  // its first item (the item belongs to the header above it).
+                  let anyRendered = false
+                  let rowKey = 0
+                  const renderItemRow = (item: Item, indent: boolean, topBorder: boolean) => {
+                    const showBorder = anyRendered && topBorder
+                    anyRendered = true
+                    const name = (item.name ?? '').trim() || '—'
+                    const sub  = item.category ? sentenceCase(item.category) : null
+                    const qty  = item.qty ?? 1
+                    return (
+                      <div
+                        key={`item-${rowKey++}`}
+                        style={{
+                          display: 'flex', alignItems: 'flex-start', gap: 12,
+                          padding: '14px 16px',
+                          paddingLeft: indent ? 28 : 16,
+                          borderTop: showBorder ? '1px solid rgba(10,11,20,0.10)' : 0,
+                        }}
+                      >
+                        <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{
-                            marginTop: 2, fontSize: 12.5, color: C.muted, lineHeight: 1.35,
+                            fontSize: 14, fontWeight: 800, color: C.ink, lineHeight: 1.3,
+                            letterSpacing: '-0.005em',
                             overflow: 'hidden', textOverflow: 'ellipsis',
                           }}>
-                            {sub}
+                            {name}
                           </div>
-                        )}
+                          {sub && (
+                            <div style={{
+                              marginTop: 2, fontSize: 12.5, color: C.muted, lineHeight: 1.35,
+                              overflow: 'hidden', textOverflow: 'ellipsis',
+                            }}>
+                              {sub}
+                            </div>
+                          )}
+                        </div>
+                        <div style={{
+                          background: C.ink, color: '#fff',
+                          padding: '5px 11px', borderRadius: 999,
+                          fontSize: 12, fontWeight: 800,
+                          fontVariantNumeric: 'tabular-nums',
+                          letterSpacing: '-0.005em',
+                          flexShrink: 0,
+                          marginTop: 1,
+                        }}>
+                          ×{qty}
+                        </div>
                       </div>
-                      <div style={{
-                        background: C.ink, color: '#fff',
-                        padding: '5px 11px', borderRadius: 999,
-                        fontSize: 12, fontWeight: 800,
-                        fontVariantNumeric: 'tabular-nums',
-                        letterSpacing: '-0.005em',
-                        flexShrink: 0,
-                        marginTop: 1,
-                      }}>
-                        ×{qty}
+                    )
+                  }
+
+                  return entries.map((entry, ei) => {
+                    if (entry.kind === 'item') {
+                      return renderItemRow(entry.item, false, true)
+                    }
+                    const headerBorder = anyRendered
+                    anyRendered = true
+                    return (
+                      <div key={`bundle-${ei}`}>
+                        <div style={{
+                          padding: '12px 16px 8px',
+                          borderTop: headerBorder ? '1px solid rgba(10,11,20,0.10)' : 0,
+                          fontFamily: FONT_DISPLAY,
+                          fontSize: 11, fontWeight: 800, letterSpacing: '0.12em',
+                          textTransform: 'uppercase', color: C.muted,
+                        }}>
+                          {entry.bundleName}
+                        </div>
+                        {entry.items.map((it, k) => renderItemRow(it, true, k > 0))}
                       </div>
-                    </div>
-                  )
-                })}
+                    )
+                  })
+                })()}
               </div>
             </div>
           </>

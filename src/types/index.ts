@@ -139,6 +139,10 @@ export interface Stop {
     name?: string | null
     qty?: number | null
     tapgoods_pick_list_item_id?: number | null
+    // Parent bundle (e.g. FLOORING & STAGING deck items carry a bundle like
+    // "STAGE 8'X12'"). Written into the items JSONB by the dashboard sync;
+    // absent on items that aren't part of a bundle. Manifest rendering only.
+    bundle_name?: string | null
   }>
   payment_state?: PaymentState
   balance_due_amount?: number | null  // dollars owed at delivery; null when nothing to collect

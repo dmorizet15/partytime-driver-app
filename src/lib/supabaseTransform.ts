@@ -134,6 +134,9 @@ type RawItem = {
   name?: string | null
   qty?: number | null
   tapgoods_pick_list_item_id?: number | null
+  // Parent bundle name (e.g. "STAGE 8'X12'" on FLOORING & STAGING deck items).
+  // Written into the items JSONB by the dashboard sync; flows through untouched.
+  bundle_name?: string | null
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
