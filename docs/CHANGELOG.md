@@ -4,6 +4,18 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-06-21 — AVA inflatable specs batch (data patch; no migration, no code)
+
+Populated the AVA operational knowledge base (`ava_knowledge`) with set-up specs for the inflatable fleet. AVA injects published `ava_knowledge` rows into the cached Block 0 of `/api/ava/ask`, so a driver can now ask "what does the Wild Rapids need to set up?" and get the bin, blower count/HP, stake counts, and accessories spoken back.
+
+- **Scope:** 1 `UPDATE` (the pre-existing partial-dupe Pirate Battle row — re-pointed to `category='inflatables'`, `source='inflatable_specs'`, canonical answer) + **56 `INSERT`s** covering racks R1–R5, S rack, and the U bins. `status` omitted → defaults to `'published'` (driver-readable). Source: `INFLATABLE_WORKSHEET.xlsx` + `Book_1.xlsx`. Typos corrected at write time: ISALND→ISLAND, MIDEVAL→MEDIEVAL, SEARGEANT→SERGEANT.
+- **Answer format (consistent):** `Name — Bin XX — takes N blower(s) at H HP[ each]. Stakes: A hook stakes[ and B large stakes]. Accessories: … / No accessories needed.` Voice-first phrasing (numbers in words where natural, em-dash separators that ElevenLabs pauses on). Two double-unit entries (Vertical Rush R3-1/R3-2, Leaps and Bounds S7-9/S7-10) call out both bins in one row.
+- **Re-runnable patch:** `supabase/data-patches/ava_inflatable_specs.sql`. Applied via `supabase db query --linked --file …` (NOT a numbered migration — it's a data change, re-apply after a fresh DB rebuild).
+- **⚠️ NOT idempotent — do not re-run.** `ava_knowledge.question` has **no UNIQUE constraint**, so a second run would silently insert 56 duplicate rows (the `UPDATE` half is fine; only the `INSERT` half duplicates). This differs from the `dependency_map` data-patches (UPDATE + guarded INSERT, safely re-runnable). On a fresh DB rebuild apply exactly once.
+- **Verified:** Pirate Battle rows = **1** (UPDATE hit one row, no leftover dupe); `COUNT(*) WHERE category='inflatables'` = **57** (1 + 56); Wild Rapids spot-check returns `Wild Rapids — Bin R4-3 — takes 1 blower at 2 HP. Stakes: 4 hook stakes and 4 large stakes. No accessories needed.` Counts confirmed via a separate read-only query — the insert file ran **once**.
+
+---
+
 ## 2026-06-18 — Manifest bundle grouping (ON `main`: `c862d24`; no migration)
 
 Investigate-then-fix UI session. `dispatch_stops.items` now carries `bundle_name` on FLOORING & STAGING deck items (example reservation `0F5B5AE2`: `{qty:6, name:"STAGE 4'X4'", category:"FLOORING & STAGING", bundle_name:"STAGE 8'X12'", tapgoods_pick_list_item_id:4976205}`). All other items (skirts, stairs, grill, propane, chairs, linens) have no `bundle_name` and are untouched.

@@ -6,6 +6,22 @@ Format: one lesson per block. Lead with the rule, then **Why** and **How to appl
 
 ---
 
+## `supabase db query --linked --file <multi-statement.sql>` returns ONLY the last statement's result set. Intermediate `SELECT`s (counts, smoke checks) in the same file are run but their output is discarded — re-run them as single-statement queries to actually see the numbers.
+
+**Why:** 2026-06-21 the AVA inflatable specs patch ended with three verification `SELECT`s (an UPDATE-count check, a `COUNT(*)`, and a Wild Rapids spot-check, plus an ordered listing). The CLI echoed only the **final** statement (the ordered listing of all 57 rows); the `pirate_battle_rows_updated` count and the `total_inflatable_entries` count never appeared. The statements DID execute against the DB — the CLI just serializes one result set per invocation. Confirming the expected counts required a second, single-`SELECT` query.
+
+**How to apply:** when you need to *report* a count/verification from `db query --linked --file`, put it in its OWN file as the sole (or last) statement, or run a separate one-liner afterward (read-only `SELECT`s are always safe to re-run). Combine the checks you need into one final `SELECT` with sub-selects (`SELECT (SELECT COUNT(*) …) AS a, (SELECT COUNT(*) …) AS b;`) so a single statement returns everything. Don't assume a silent/missing result means the statement failed — it ran; you just didn't get to see it.
+
+---
+
+## `ava_knowledge.question` has NO UNIQUE constraint — an INSERT-based data patch into it is NOT idempotent. Run it exactly once; a second run silently inserts duplicates. Prefer UPDATE + guarded INSERT for re-runnable patches, and when that's not practical, label the file "DO NOT RE-RUN" loudly.
+
+**Why:** 2026-06-21 the inflatable specs patch was 1 UPDATE + 56 plain INSERTs. With no unique key on `question`, re-running it would have added 56 duplicate rows that AVA would then inject into its knowledge base (no error, no signal). This is unlike the `dependency_map` data-patches under `supabase/data-patches/`, which use `UPDATE … WHERE` + `INSERT … WHERE NOT EXISTS`-style guards and are safe to replay (and self-heal a fresh DB rebuild that restored the migration-seed defaults). The inflatable patch can't self-heal the same way — on a rebuild it must be applied once and only once.
+
+**How to apply:** before writing an INSERT data-patch, check whether the target column/table has a UNIQUE/PK that makes a re-run a no-op (or an ON CONFLICT target). If not: (1) gate each INSERT with `WHERE NOT EXISTS (SELECT 1 … WHERE question = …)` to make it replay-safe, OR (2) accept one-shot semantics and put a bold "DO NOT RE-RUN — no UNIQUE on question, duplicates insert silently" header in the `.sql` so future-you / a rebuild script applies it once. Either way, state the idempotency property in the CHANGELOG entry. Data patches live forever and get re-applied on rebuilds — "run once" must be encoded in the file, not just remembered.
+
+---
+
 ## A table migration (`route_assignments` → `route_crew`, Phase 2A) was not applied uniformly — two stale references survived for weeks, hidden by silently-swallowed query errors. Any new endpoint touching driver↔route assignment MUST use `route_crew`, and MUST destructure `error`, not just `data`.
 
 **Why:** 2026-06-09 Phase 2A (`35e4c37`) migrated driver assignment from `route_assignments` to `route_crew` and **the old table was dropped from the DB**. `/api/routes` was updated, but two readers were missed: `src/app/api/schedule/week/route.ts` (fed the Week View "YOU" badge's `driver_id`) and `src/lib/personalStatsClient.ts`. Both kept querying the dropped table. The week-view query did `const { data: assignments } = await db.from('route_assignments')…` — destructuring ONLY `data`, never `error`. A query against a non-existent table returns PGRST205 in `error` and `null` in `data`; `(assignments ?? [])` then silently became `[]`, so every route serialized with `driver_id: null` and the badge could never match `route.driver_id === currentUserId`. No exception, no 500, no log — the bug was invisible at runtime and survived weeks until someone noticed the badge was gone (fixed 2026-06-17, `3173c48`).

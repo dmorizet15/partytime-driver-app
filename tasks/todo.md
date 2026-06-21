@@ -4,6 +4,18 @@
 
 - [ ] personalStatsClient.ts:3 — file header comment still says 'route_assignments'; update to reflect route_crew. One-line edit, no logic change, no migration.
 
+## June 21, 2026 — AVA inflatable specs batch insert (DONE — data patch applied; no migration, no code)
+
+57-row inflatable setup-specs batch into `ava_knowledge` (bin, blower count/HP, stake counts, accessories) so AVA can answer e.g. "what does the Wild Rapids need to set up?". chat-Claude generated the SQL; pasted in + applied this session. See CLAUDE.md → "AVA (Driver App)", `docs/CHANGELOG.md`, `tasks/lessons.md`.
+
+- [x] Schema confirmed (project `fumprcyavpefyupurvsv`, table `ava_knowledge`): 12 cols. Required = `question` + `answer`. Defaults: `category='general'`, `source='answer_queue'`, **`status='published'`** (a status string, NOT a `published` boolean), `version=1`, timestamps `now()`. AVA's `/api/ava/ask` surfaces `status='published'`. Constraints: **PK on `id` only — no UNIQUE on `question`, no CHECKs.**
+- [x] Wrote `supabase/data-patches/ava_inflatable_specs.sql` (1 UPDATE Pirate Battle + 56 INSERTs; `category='inflatables'`, `source='inflatable_specs'`). The pre-existing Pirate Battle row was UPDATE'd (re-pointed to the inflatables category + canonical answer), not duplicated.
+- [x] Applied **once** via `supabase db query --linked --file …`. Verified: Pirate Battle rows = **1**; `COUNT(*) WHERE category='inflatables'` = **57**; Wild Rapids spot-check = `Wild Rapids — Bin R4-3 — takes 1 blower at 2 HP. Stakes: 4 hook stakes and 4 large stakes. No accessories needed.` (counts captured via a separate read-only query — `db query --file` only echoes the last statement; see lessons).
+- [ ] **⚠️ DO NOT RE-RUN this file** — no UNIQUE on `question` → a second run inserts 56 silent duplicates (UPDATE half is safe; INSERT half is not). On a fresh DB rebuild apply exactly once. (Unlike the `dependency_map` patches, this is not self-healing/replay-safe.)
+- [ ] **On-device AVA smoke:** ask the Ask-Ava sheet "what does the Wild Rapids need to set up?" → expect bin R4-3 / 1 blower @ 2 HP / 4 hook + 4 large stakes spoken back. Try Pirate Battle, the UFO carpet-blower caveat, and a double-unit (Vertical Rush / Leaps and Bounds) to confirm the knowledge injection reads these rows.
+- [ ] **Source coverage (Darren):** confirm the 57 entries cover the full active inflatable fleet — any unit absent from `INFLATABLE_WORKSHEET.xlsx` / `Book_1.xlsx` (or added since) won't be in AVA's knowledge. Add follow-ups as a NEW one-shot patch (don't re-run this one).
+- [ ] **Commit the patch file** — `supabase/data-patches/ava_inflatable_specs.sql` is currently untracked; commit it so it survives a rebuild (Darren to confirm commit/push).
+
 ## June 18, 2026 — Manifest bundle grouping (ON `main`: `c862d24`; no migration)
 
 `dispatch_stops.items` now carries `bundle_name` on FLOORING & STAGING deck items (e.g. `STAGE 8'X12'`). The static manifest on StopDetailScreen groups bundled items under an uppercase section header above its item(s); items without `bundle_name` render flat exactly as before. Rendering only — qty/status/check-off untouched. See CLAUDE.md → "Manifest bundle grouping", `docs/CHANGELOG.md`.
