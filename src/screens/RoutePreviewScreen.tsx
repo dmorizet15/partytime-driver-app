@@ -132,11 +132,11 @@ export default function RoutePreviewScreen({ routeId }: RoutePreviewScreenProps)
   const crew = route?.crew ?? []
 
   return (
-    <div className="screen" style={{ background: C.cream, fontFamily: FONT_BODY, color: C.ink, paddingBottom: 96 }}>
-      {/* ── Header ───────────────────────────────────────────────────────── */}
+    <div className="screen" style={{ background: C.cream, fontFamily: FONT_BODY, color: C.ink }}>
+      {/* ── Header (fixed; sits above the scroll area like RouteListScreen) ── */}
       <div style={{
         background: C.dark, color: '#fff', padding: '16px 18px 18px',
-        position: 'sticky', top: 0, zIndex: 20, flexShrink: 0,
+        zIndex: 20, flexShrink: 0,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <button
@@ -168,6 +168,11 @@ export default function RoutePreviewScreen({ routeId }: RoutePreviewScreenProps)
         </div>
       </div>
 
+      {/* Scroll container — `.screen` is height:100svh + overflow:hidden, so the
+          page only scrolls inside a flex:1/overflow-y-auto child (same pattern
+          as RouteListScreen's `flex-1 overflow-y-auto`). Bottom padding clears
+          the home-indicator inset for the last item. */}
+      <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
       {loading && (
         <div style={{ padding: '40px 22px', textAlign: 'center', color: C.muted }}>Loading preview…</div>
       )}
@@ -295,6 +300,7 @@ export default function RoutePreviewScreen({ routeId }: RoutePreviewScreenProps)
           </div>
         </>
       )}
+      </div>
 
       <AvaConversationSheet
         open={avaOpen}
