@@ -100,6 +100,11 @@ export interface SupabaseStopRow {
   completed_at:          string | null
   arrived_at:            string | null
   tapgoods_order_token:  string | null
+  // TapGoods reservation id — groups every stop belonging to the same job
+  // (one order can split across multiple trucks/routes). Read-only here; feeds
+  // the SameJobIndicator "N trucks on this job" chip (Next Day Route Preview
+  // Session 3). Never null on real delivery/pickup rows (verified live: 0/848).
+  reservation_id:        string | null
   // Time-window constraint columns (Phase 1/2 of the dashboard rollout —
   // driver app reads only, never writes). `constraint_confidence` is set
   // by the dashboard's Migration 058 trigger; the window bounds come from
@@ -178,6 +183,7 @@ function toRealStop(s: SupabaseStopRow, routeId: string, seq: number): Stop {
     route_id:       routeId,
     stop_sequence:  seq,
     order_id:       s.tapgoods_order_token ?? '',
+    reservation_id: s.reservation_id ?? undefined,
     stop_type:      mappedType,
     customer_name:  s.customer_name,
     company_name:   s.company_name   ?? undefined,

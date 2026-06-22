@@ -193,7 +193,7 @@ export async function GET(req: NextRequest) {
         calculated_eta,
         stop_status, completed_at,
         arrived_at,
-        tapgoods_order_token,
+        tapgoods_order_token, reservation_id,
         constraint_confidence, has_any_constraint,
         delivery_window_start, delivery_window_end,
         pickup_window_start, pickup_window_end,

@@ -94,6 +94,11 @@ export interface Stop {
   route_id: string
   stop_sequence: number
   order_id: string
+  // TapGoods reservation id — groups every stop belonging to the same job (one
+  // order can split across multiple trucks/routes). Read-only; feeds the
+  // SameJobIndicator "N trucks on this job" chip. Never null on real
+  // delivery/pickup rows in production.
+  reservation_id?: string
   // 'warehouse_return' (dashboard Migration 070/071) — auto-injected
   // end-of-route depot stop. Real dispatch_stops row with the warehouse
   // address, geofenced auto-completion at 150m. Notion spec

@@ -17,6 +17,7 @@ import type { Route, Stop } from '@/types'
 import { resolveCategory } from '@/lib/itemCategories'
 import { StopWindowBadge } from '@/components/StopWindowBadge'
 import AvaConversationSheet from '@/components/ava/AvaConversationSheet'
+import SameJobIndicator from '@/components/SameJobIndicator'
 
 const C = {
   blue:    '#1F46FF',
@@ -254,6 +255,8 @@ export default function RoutePreviewScreen({ routeId }: RoutePreviewScreenProps)
                   key={s.stop_id}
                   stop={s}
                   index={i + 1}
+                  routeDate={date}
+                  currentRouteId={routeId}
                 />
               ))}
               {stops.length === 0 && (
@@ -350,8 +353,8 @@ function trucknameForCrew(route: Route, role?: string): string | null {
 }
 
 function StopPreviewCard({
-  stop, index,
-}: { stop: Stop; index: number }) {
+  stop, index, routeDate, currentRouteId,
+}: { stop: Stop; index: number; routeDate: string; currentRouteId: string }) {
   const isDepot = stop.stop_type === 'warehouse' || stop.stop_type === 'warehouse_return'
   const items = stop.items ?? []
   const address = [stop.address_line_1, stop.city && `${stop.city}, ${stop.state ?? ''}`.trim()]
@@ -417,6 +420,16 @@ function StopPreviewCard({
           ))}
         </div>
       )}
+
+      {/* Same-job indicator — below the full item list, above the notes block.
+          Session 3. Self-contained; renders null (0-height) when no siblings. */}
+      <div style={{ padding: '0 16px' }}>
+        <SameJobIndicator
+          reservation_id={stop.reservation_id ?? null}
+          route_date={routeDate}
+          current_route_id={currentRouteId}
+        />
+      </div>
 
       {/* Notes block */}
       {notes.length > 0 && (

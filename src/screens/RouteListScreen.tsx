@@ -11,6 +11,7 @@ import BottomNav from '@/components/BottomNav'
 import { OfflineBanner } from '@/components/OfflineBanner'
 import WeekScheduleView from '@/components/WeekScheduleView'
 import StopWindowBadge from '@/components/StopWindowBadge'
+import SameJobIndicator from '@/components/SameJobIndicator'
 import AvaChip from '@/components/AvaChip'
 import { formatEta } from '@/lib/formatEta'
 
@@ -674,6 +675,18 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
                         )}
                       </div>
                     )}
+
+                    {/* Same-job indicator (Next Day Route Preview Session 3) —
+                        below the item pills, above the chips/note indicators.
+                        Inserted at RouteListScreen.tsx stop card render block
+                        (was line ~677). Self-contained; null when no siblings. */}
+                    <div style={{ marginTop: 6 }}>
+                      <SameJobIndicator
+                        reservation_id={stop.reservation_id ?? null}
+                        route_date={route.operating_date}
+                        current_route_id={routeId}
+                      />
+                    </div>
 
                     {/* Chips row: type + status + payment */}
                     {hasChips && (

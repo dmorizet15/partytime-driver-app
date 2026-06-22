@@ -22,6 +22,7 @@ import { HAS_STOP_LEVEL_BADGES } from '@/lib/weather/thresholds'
 import { formatEta } from '@/lib/formatEta'
 import { useArrivalGeofence } from '@/hooks/useArrivalGeofence'
 import StopWindowBadge from '@/components/StopWindowBadge'
+import SameJobIndicator from '@/components/SameJobIndicator'
 import {
   effectiveWindow,
   formatCountdown,
@@ -2785,6 +2786,20 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
               </div>
             </div>
           </>
+        )}
+
+        {/* Same-job indicator (Next Day Route Preview Session 3) — below the
+            full item list / manifest, above the notes block. Inserted at
+            StopDetailScreen.tsx after the manifest section (was line ~2788).
+            Self-contained; renders null when there are no sibling trucks. */}
+        {!isDepotStop && stop.reservation_id && (
+          <div style={{ padding: '12px 18px 0' }}>
+            <SameJobIndicator
+              reservation_id={stop.reservation_id}
+              route_date={route?.operating_date ?? ''}
+              current_route_id={routeId}
+            />
+          </div>
         )}
 
         {/* Order Notes — TapGoods-synced notes for this order. Collapsed by
