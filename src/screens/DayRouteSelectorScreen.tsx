@@ -12,6 +12,7 @@ import PwaHomePrompts                    from '@/components/pwa/PwaHomePrompts'
 import PostTripDefectCard               from '@/components/PostTripDefectCard'
 import StopWindowBadge                  from '@/components/StopWindowBadge'
 import FleetAlertCard                   from '@/components/fleet/FleetAlertCard'
+import NextShiftCard                    from '@/components/NextShiftCard'
 import AvaChip                          from '@/components/AvaChip'
 import WeatherFlagCard                  from '@/components/WeatherFlagCard'
 import AvaMorningCard                   from '@/components/ava/AvaMorningCard'
@@ -814,6 +815,10 @@ export default function DayRouteSelectorScreen() {
                 Enjoy the day off.
               </div>
             </div>
+
+            {/* Next Day Route Preview — when not scheduled today, surface the
+                driver's soonest upcoming shift. Renders null when none. */}
+            <NextShiftCard />
           </div>
         )}
 
@@ -843,6 +848,10 @@ export default function DayRouteSelectorScreen() {
             {routeComplete && primaryTruckId && postTripSubmitted === false && (
               <PostTripDefectCard truckId={primaryTruckId}/>
             )}
+
+            {/* Next Day Route Preview — once today's route is complete, surface
+                the driver's soonest upcoming shift below it. Null when none. */}
+            {routeComplete && <NextShiftCard />}
 
             {/* COD card — single stop: tappable card linking to that stop.
                 Multi-stop: consolidated rollup with count + names list (no nav
