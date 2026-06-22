@@ -212,7 +212,7 @@ export default function NextShiftCard() {
           <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
             <button
               type="button"
-              onClick={() => router.push(`/route-preview/${shift.route_id}`)}
+              onClick={() => router.push(`/route-preview/${shift.route_id}?date=${shift.route_date}`)}
               style={{
                 flex: 1, background: GOLD, color: DARK,
                 border: 0, borderRadius: 12, padding: '12px 10px',
@@ -247,6 +247,7 @@ export default function NextShiftCard() {
           dispatcherNotes: shift.dispatcher_notes ? [shift.dispatcher_notes] : [],
         }}
         routeId={shift.route_id}
+        routeDate={shift.route_date}
       />
     </div>
   )
