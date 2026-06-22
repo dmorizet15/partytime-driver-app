@@ -78,6 +78,23 @@ Format: one lesson per block. Lead with the rule, then **Why** and **How to appl
 
 ---
 
+## iOS does NOT throw or reject a `fetch()` when the network drops mid-flight — it stalls indefinitely. Any code after `await fetch(...)` (including `setLoading(false)`, `closeModal()`, `setCashSubmitting(false)`) is permanently frozen until iOS's own multi-minute TCP timeout. Add an `AbortController` timeout to EVERY action-critical fetch.
+
+**Why:** 2026-06-22 drivers reported the app freezing when cell reception dropped while completing a stop or confirming cash. The stop-complete spinner never cleared, the cash modal locked with all inputs disabled, and the driver had no way to dismiss or retry. Root cause: on iOS, a fetch that starts while online and then loses the connection does NOT reject — the promise hangs in the pending state for minutes. Unlike desktop browsers or Android where network errors resolve quickly to a `TypeError: Failed to fetch`, iOS's TCP stack keeps the connection alive (SYN retransmit cycle) for a long time before giving up. So `await fetch(url)` just never settles, and the code below it — including all UI-unlock calls — never runs. A simple `navigator.onLine === false` guard only fires when the connection is already known to be down BEFORE the fetch; it does nothing for mid-flight drops.
+
+**How to apply:** every action-critical fetch (one that blocks user-visible UI) needs an `AbortController` timeout:
+```ts
+const ctrl = new AbortController()
+const tid  = setTimeout(() => ctrl.abort(), 10_000)  // 8–12 s depending on criticality
+const r = await fetch(url, { …, signal: ctrl.signal }).finally(() => clearTimeout(tid))
+```
+Put the timeout in `finally` so it clears on BOTH success and abort. Wrap in try/catch:
+- **Background/status fetches** (no modal, just derived state): catch → fail closed, log the error. E.g. `useInspectionStatus` → `setInspection(null)` (gate stays closed = safe default).
+- **Action-blocking fetches** (completion, cash, OTW): catch → surface a dismissible error message (`setCashError`, `setShowError`) + unlock the UI (`setCashSubmitting(false)`, `setLoading(false)`) so the driver can retry or bail. For completion specifically: the optimistic `markComplete()` already runs BEFORE the fetch, so on timeout route into `enqueueCompletion()` (same path as offline) and navigate forward — the driver is not stranded.
+- **Corollary — `visibilitychange` for foreground restoration:** iOS's `window 'online'` event does NOT fire when the app comes from background to foreground if the network state didn't change (was online before, still online after). Add a `document.visibilitychange` listener that calls `loadDay` when `visibilityState === 'visible'` — this is the reliable foreground-restoration trigger. `loadDay` is already abort-controller-guarded (10 s) + has an offline fast-path, so it's safe to call on every foreground event. The `online` event stays for the network-recovery case.
+
+---
+
 ## Apply driver-app-OWNED migrations to the shared DB with `db query --linked --file` + `migration repair`, not `supabase db push`.
 
 **Why:** 2026-06-15 — `db push` compares local migrations against the remote `schema_migrations` tracker and pushes everything unapplied. On this two-repo shared DB the remote tracker holds 90+ dashboard migrations the driver app has never seen, and the driver app's local history (001–021) may not all be recorded remotely → push risks a history-mismatch block or re-running already-applied DDL. The spec said `supabase db push`, but CLAUDE.md's established path (used for migs 093/095/097) sidesteps the whole problem: run the SQL directly via the Management API, then mark it applied.

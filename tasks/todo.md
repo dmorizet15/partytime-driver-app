@@ -1,5 +1,16 @@
 # Open Tasks — partytime-driver-app
 
+## June 22, 2026 — Offline freeze fix — AbortController + visibilitychange (ON `main`: `6cfe9ff`; no migration)
+
+Prevent the app from freezing when cell reception drops mid-operation. Root cause: iOS stalls fetches indefinitely on connection loss (no throw/reject), permanently blocking any code that runs after `await fetch(...)`. Three additive fixes — driver-app only, no migrations, no schema changes, no shared files. See `docs/CHANGELOG.md` + `tasks/lessons.md` (iOS fetch-hang lesson).
+
+- [x] Investigation (read-only): traced the three freeze scenarios — (a) stop-complete spinner never clears → `handleMarkCompleteTap` / `runStopComplete`; (b) cash modal locks → `handleCashCollected`/`handleCashNotCollected`; (c) stale Home after foreground → `AppStateContext` listener gap.
+- [x] Fix 1 — `StopDetailScreen`: 8 s AbortController on cash-status hydration fetch; 12 s on completion POST (`runStopComplete`); 12 s on cash-confirm POST (`handleCashCollected`); 12 s on cash-not-collected POST (`handleCashNotCollected`). Timeout catch paths route into existing error handling (enqueue completion / setCashError + unlock modal).
+- [x] Fix 2 — `useInspectionStatus`: 8 s AbortController on the `/api/inspection/status` fetch; `controller.abort()` added to the cleanup return. Timeout catch → `setInspection(null)` (safe default, gate closed).
+- [x] Fix 3 — `AppStateContext`: `document.visibilitychange` listener (fires `loadDay` on `visibilityState === 'visible'`) wired alongside `window 'online'`/`'offline'` in the existing network-listener `useEffect`, cleaned up in the same return.
+- [x] `tsc --noEmit` clean; committed `6cfe9ff`; pushed to feature branch + `main`.
+- [ ] **On-device smoke test (THE gate):** (a) load route online, kill network, complete a stop → completion modal unlocks within ≤12 s, stop queued for sync, driver advances to next stop; (b) drop connection mid-cash modal → error message appears after ≤12 s, inputs unlock, driver can retry or close; (c) background + foreground app → Home/route data refreshes automatically without manual pull-to-refresh.
+
 ## Cleanup (low priority)
 
 - [ ] personalStatsClient.ts:3 — file header comment still says 'route_assignments'; update to reflect route_crew. One-line edit, no logic change, no migration.
