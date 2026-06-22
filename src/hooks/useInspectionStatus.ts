@@ -47,7 +47,9 @@ export function useInspectionStatus(
     }
 
     let cancelled = false
-    fetch(`/api/inspection/status?route_id=${routeId}&truck_id=${truckId}`)
+    const controller = new AbortController()
+    const timeoutId  = setTimeout(() => controller.abort(), 8_000)
+    fetch(`/api/inspection/status?route_id=${routeId}&truck_id=${truckId}`, { signal: controller.signal })
       .then((r) => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
       .then((json) => {
         if (cancelled) return
@@ -57,7 +59,8 @@ export function useInspectionStatus(
         console.warn('[useInspectionStatus] fetch failed:', err instanceof Error ? err.message : err)
         if (!cancelled) setInspection(null)
       })
-    return () => { cancelled = true }
+      .finally(() => clearTimeout(timeoutId))
+    return () => { cancelled = true; controller.abort() }
   }, [routeId, truckId])
 
   return inspection

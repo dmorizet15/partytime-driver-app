@@ -390,12 +390,20 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
     const handleOnline = () => { void loadDay(todayStr(), true) }
     const handleOffline = () => { dispatch({ type: 'SET_OFFLINE', payload: { value: true } }) }
+    // iOS doesn't reliably fire 'online'/'offline' on foreground restoration — use
+    // visibilitychange too. loadDay has a 10s AbortController + offline fast-path
+    // so it's safe to fire on every foreground event in all network states.
+    const handleVisible = () => {
+      if (document.visibilityState === 'visible') void loadDay(todayStr(), true)
+    }
 
     window.addEventListener('online', handleOnline)
     window.addEventListener('offline', handleOffline)
+    document.addEventListener('visibilitychange', handleVisible)
     return () => {
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('offline', handleOffline)
+      document.removeEventListener('visibilitychange', handleVisible)
     }
   }, [loadDay])
 

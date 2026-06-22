@@ -517,16 +517,20 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
       return
     }
     let cancelled = false
+    const controller = new AbortController()
+    const timeoutId  = setTimeout(() => controller.abort(), 8_000)
     ;(async () => {
       try {
-        const r = await fetch(`/api/cash-collections?stop_id=${encodeURIComponent(stop.stop_id)}`)
+        const r = await fetch(`/api/cash-collections?stop_id=${encodeURIComponent(stop.stop_id)}`, { signal: controller.signal })
         const j = await r.json()
         if (!cancelled) setCashConfirmed(!!j.exists)
       } catch {
         if (!cancelled) setCashConfirmed(false)
+      } finally {
+        clearTimeout(timeoutId)
       }
     })()
-    return () => { cancelled = true }
+    return () => { cancelled = true; controller.abort() }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stopId, stop?.payment_state, stop?.stop_type])
 
@@ -976,11 +980,14 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
 
     let synced = true
     try {
+      const ctrl = new AbortController()
+      const tid  = setTimeout(() => ctrl.abort(), 12_000)
       const r = await fetch('/api/complete-stop', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ stop_id: stop.stop_id }),
-      })
+        signal:  ctrl.signal,
+      }).finally(() => clearTimeout(tid))
       const j = await r.json().catch(() => null)
       if (!r.ok || !j?.success) synced = false
     } catch (err) {
@@ -1159,6 +1166,8 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
 
     setCashSubmitting(true)
     try {
+      const ctrl = new AbortController()
+      const tid  = setTimeout(() => ctrl.abort(), 12_000)
       const r = await fetch('/api/cash-collections', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1167,7 +1176,8 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
           status:           'collected',
           amount_collected: amount,
         }),
-      })
+        signal: ctrl.signal,
+      }).finally(() => clearTimeout(tid))
       const j = await r.json().catch(() => null)
       if (!r.ok || !j?.success) {
         setCashError(j?.error ?? 'Failed to confirm — try again')
@@ -1203,6 +1213,8 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
 
     setCashSubmitting(true)
     try {
+      const ctrl = new AbortController()
+      const tid  = setTimeout(() => ctrl.abort(), 12_000)
       const r = await fetch('/api/cash-collections', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1211,7 +1223,8 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
           status:               'not_collected',
           not_collected_reason: reason,
         }),
-      })
+        signal: ctrl.signal,
+      }).finally(() => clearTimeout(tid))
       const j = await r.json().catch(() => null)
       if (!r.ok || !j?.success) {
         setCashError(j?.error ?? 'Failed to record — try again')
