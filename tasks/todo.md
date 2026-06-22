@@ -1,5 +1,15 @@
 # Open Tasks — partytime-driver-app
 
+## June 22, 2026 — Next Day Route Preview (3 sessions) (ON `main`: `083821c` / `fedc216` / `6589a87`; no migration)
+
+Surface a driver's upcoming shift on Home, a read-only preview of that route, and multi-truck-job awareness. Spec was 3 locked sessions, "investigate then immediately proceed." See CLAUDE.md → "Next Day Route Preview (Driver App)" + `docs/CHANGELOG.md`.
+
+- [x] **S1** investigation (live DB): future `route_crew`→`routes`→`trucks` join confirmed (truck_id nullable); `dispatch_stops` reachable via `route_id`+`scheduled_date`; route_crew RLS moot (service-role read).
+- [x] **S1** `GET /api/routes/next-shift` (service-role, soonest future shift, optional `?today=` for tz-correct "future", `{shift:null}` never errors) + `NextShiftCard.tsx` (returns null on no data) wired into Home empty + completed states. Committed `083821c`.
+- [x] **S2** confirmed `/api/routes` already accepts `?date=` (crew-scoped) — reused, no new endpoint. `AvaConversationSheet` `routeDate` prop loads that date's payload as AVA context. `RoutePreviewScreen` (`/route-preview/[routeId]?date=`, Suspense-wrapped) — read-only, disabled Navigate, no ETA/check-off/completion. Committed `fedc216`.
+- [x] **S3** investigation: `reservation_id` null rate on delivery/pickup = **0/848**; insertion points RouteList ~677 / StopDetail ~2788. `reservation_id` plumbed through `/api/routes` SELECT + transform + Stop type (no regen). `GET /api/stops/same-job` (service-role) + `SameJobIndicator.tsx` (null when no siblings) dropped into RoutePreview + RouteList + StopDetail. Committed `6589a87`.
+- [ ] **On-device phone smoke (S3's explicit gate):** NextShiftCard shows the upcoming shift; "Preview route" opens read-only and looks right; "Ask Ava" answers about the *upcoming* route (not today); `SameJobIndicator` chip + bottom sheet render correctly on a live multi-truck job on RouteListScreen + StopDetailScreen.
+
 ## June 22, 2026 — Offline freeze fix — AbortController + visibilitychange (ON `main`: `6cfe9ff`; no migration)
 
 Prevent the app from freezing when cell reception drops mid-operation. Root cause: iOS stalls fetches indefinitely on connection loss (no throw/reject), permanently blocking any code that runs after `await fetch(...)`. Three additive fixes — driver-app only, no migrations, no schema changes, no shared files. See `docs/CHANGELOG.md` + `tasks/lessons.md` (iOS fetch-hang lesson).

@@ -6,6 +6,22 @@ Format: one lesson per block. Lead with the rule, then **Why** and **How to appl
 
 ---
 
+## Cross-route `route_crew` / `profiles` reads need a SERVICE-ROLE endpoint — a client-side supabase query returns EMPTY crew for routes the driver isn't on.
+
+**Why:** `route_crew`/`profiles` RLS is scoped so a driver only reads their OWN routes' crew — that's the whole reason `/api/routes` runs its reads through the service-role client (RLS-bypass). Any new feature that needs to show *other* routes' drivers/trucks (e.g. SameJobIndicator's "N trucks on this job" — sibling routes the caller is NOT crewed on) will silently get back `[]` if it queries from the browser, so the chip would render with no names/trucks and look broken — not error, just empty.
+
+**How to apply:** for any cross-route crew/truck lookup, add a small `GET` route handler that does `getSessionClient().auth.getUser()` to authenticate, then `createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, …)` for the actual reads — mirror `/api/routes`, `/api/routes/next-shift`, `/api/stops/same-job`. Filter `dispatch_stops` on `scheduled_date` (held = `routes.route_date` by the Mig 035 trigger), not a non-existent `route_date` column. The component stays "self-contained" by owning the `fetch()`, not by querying supabase directly.
+
+---
+
+## A page whose screen calls `useSearchParams()` MUST wrap that screen in `<Suspense>` (Next 14 App Router), or `next build` bails the route out of static optimization and can error.
+
+**Why:** `useSearchParams()` forces client-side rendering of everything below it; without a Suspense boundary Next can't statically prerender the page shell. `RoutePreviewScreen` reads `?date=` via `useSearchParams`, so `src/app/route-preview/[routeId]/page.tsx` wraps it in `<Suspense fallback={null}>`.
+
+**How to apply:** when a `[param]` page hosts a `'use client'` screen that reads query params, put the `<Suspense>` in the page (server) component around the screen. Reading the dynamic `params` is fine bare (Next 14 passes a plain object); only `useSearchParams` needs the boundary.
+
+---
+
 ## `supabase db query --linked --file <multi-statement.sql>` returns ONLY the last statement's result set. Intermediate `SELECT`s (counts, smoke checks) in the same file are run but their output is discarded — re-run them as single-statement queries to actually see the numbers.
 
 **Why:** 2026-06-21 the AVA inflatable specs patch ended with three verification `SELECT`s (an UPDATE-count check, a `COUNT(*)`, and a Wild Rapids spot-check, plus an ordered listing). The CLI echoed only the **final** statement (the ordered listing of all 57 rows); the `pirate_battle_rows_updated` count and the `total_inflatable_entries` count never appeared. The statements DID execute against the DB — the CLI just serializes one result set per invocation. Confirming the expected counts required a second, single-`SELECT` query.
