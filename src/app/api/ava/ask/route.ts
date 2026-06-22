@@ -24,6 +24,7 @@ import { createClient }              from '@supabase/supabase-js'
 import Anthropic                     from '@anthropic-ai/sdk'
 import { isDriverVisibleSop }        from '@/lib/ava/sopVisibility'
 import { isElevatedRole }            from '@/lib/ava/access'
+import { resolveCategory }           from '@/lib/itemCategories'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -31,6 +32,7 @@ export const dynamic = 'force-dynamic'
 const MODEL       = 'claude-haiku-4-5-20251001'
 const MAX_TOKENS  = 500   // answers are short — they get read aloud via ElevenLabs
 const MAX_HISTORY = 12    // trim long sessions; this is single-day Q&A, not a thread
+const DATE_RE     = /^\d{4}-\d{2}-\d{2}$/
 
 // ─── Seeded route context (client-computed on Home) ──────────────────────────
 interface AskContext {
@@ -49,6 +51,12 @@ interface AskBody {
   context?:   AskContext
   routeId?:   string | null
   stopId?:    string | null
+  // Next Day Route Preview — when the conversation is opened from the route
+  // preview / next-shift card, this is the UPCOMING route's date (YYYY-MM-DD).
+  // The server loads THAT date's route (crew-scoped to the caller) into the
+  // system prompt instead of the today-seeded `context`, so AVA can answer
+  // about the upcoming route ("how many tents on my route Wednesday?").
+  routeDate?: string | null
 }
 
 interface ChatTurn { role: 'user' | 'ava'; text: string }
@@ -242,6 +250,142 @@ function buildRouteContextBlock(ctx: AskContext): string {
   return lines.join('\n')
 }
 
+// ── Block 1 (alt) — an UPCOMING route, loaded server-side from routeDate ──────
+// Next Day Route Preview. The today path is client-seeded (Home computes the
+// context, including live weather), but the preview/next-shift surfaces only
+// know a future date — and the client-built manifest summary drops low-qty items
+// like tents, so "how many tents Wednesday?" was unanswerable → logged as a gap.
+// This loads the caller's route for `routeDate` (crew-scoped, service-role,
+// same data shape as /api/routes) and emits a block WITH EXPLICIT counts so AVA
+// answers from real route data. Returns null on no-route / error → caller falls
+// through to the today-seeded context block.
+function humanDate(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number)
+  if (!y || !m || !d) return iso
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', {
+    weekday: 'long', month: 'long', day: 'numeric',
+  })
+}
+
+async function loadRouteDateContext(
+  admin: ReturnType<typeof getAdminClient>,
+  userId: string,
+  routeDate: string,
+): Promise<string | null> {
+  try {
+    // Crew-scope: the caller's own driver rows on that date → route ids.
+    const crewRes = await admin
+      .from('route_crew')
+      .select('route_id, routes!inner(route_date, route_number, dispatcher_notes)')
+      .eq('user_id', userId)
+      .in('role', ['primary_driver', 'secondary_driver'])
+      .eq('routes.route_date', routeDate)
+    if (crewRes.error || !crewRes.data?.length) return null
+
+    type CrewRow = {
+      route_id: string
+      routes: { route_number: number | null; dispatcher_notes: string | null }
+             | { route_number: number | null; dispatcher_notes: string | null }[]
+    }
+    const rows = (crewRes.data ?? []) as unknown as CrewRow[]
+    const firstRel = <T,>(v: T | T[] | null | undefined): T | null =>
+      Array.isArray(v) ? (v[0] ?? null) : (v ?? null)
+
+    const routeIds = Array.from(new Set(rows.map((r) => r.route_id).filter(Boolean)))
+    if (routeIds.length === 0) return null
+
+    const stopsRes = await admin
+      .from('dispatch_stops')
+      .select('stop_type, items, payment_state, customer_name, dispatcher_notes')
+      .in('route_id', routeIds)
+      .eq('scheduled_date', routeDate)
+    if (stopsRes.error) return null
+
+    type StopRow = {
+      stop_type: string | null
+      items: unknown
+      payment_state: string | null
+      customer_name: string | null
+      dispatcher_notes: string | null
+    }
+    type RawItem = { qty?: number | null; name?: string | null; category?: string | null }
+    const stops = (stopsRes.data ?? []) as StopRow[]
+    const customerStops = stops.filter(
+      (s) => s.stop_type !== 'warehouse' && s.stop_type !== 'warehouse_return'
+    )
+
+    const allItems: RawItem[] = customerStops.flatMap((s) =>
+      Array.isArray(s.items) ? (s.items as RawItem[]) : []
+    )
+    let tents = 0, chairs = 0, tables = 0
+    for (const it of allItems) {
+      const qty = it.qty ?? 1
+      // Tent count uses the app's vetted definition (countTentItems): category
+      // contains 'tent' AND the name is an actual tent/canopy/marquee. A bare
+      // category match wrongly pulls in TENTS-filed accessories like "CAFE
+      // LIGHTS" (qty 200) and grossly inflates the count.
+      const nameL = (it.name ?? '').toLowerCase()
+      if ((it.category ?? '').toLowerCase().includes('tent')
+        && (nameL.includes('tent') || nameL.includes('canopy') || nameL.includes('marquee'))) {
+        tents += qty
+      }
+      const bucket = resolveCategory(it.category, it.name ?? '')
+      if (bucket === 'Chairs') chairs += qty
+      else if (bucket === 'Tables') tables += qty
+    }
+    const codCount = customerStops.filter(
+      (s) => s.stop_type === 'delivery' && (s.payment_state ?? '') === 'cod'
+    ).length
+
+    // Full manifest aggregate by item name (qty-desc) — the explicit counts
+    // above cover tents/chairs/tables; this gives AVA the rest verbatim.
+    const byName = new Map<string, number>()
+    for (const it of allItems) {
+      const name = (it.name ?? '').trim()
+      if (!name) continue
+      byName.set(name, (byName.get(name) ?? 0) + (it.qty ?? 1))
+    }
+    const manifest = Array.from(byName.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, qty]) => `${qty}× ${name}`)
+      .join(', ')
+
+    const routeNumbers = rows
+      .map((r) => firstRel(r.routes)?.route_number)
+      .filter((n): n is number => n != null)
+    const dispatcherNotes = [
+      ...rows.map((r) => firstRel(r.routes)?.dispatcher_notes),
+      ...customerStops.map((s) => s.dispatcher_notes),
+    ].filter((n): n is string => !!n && n.trim().length > 0)
+
+    const lines: string[] = [
+      `── The driver's UPCOMING route (${humanDate(routeDate)}) ──`,
+      `This is the route the driver is asking about — it is NOT today. Answer from this route's data.`,
+    ]
+    if (routeNumbers.length) {
+      lines.push(`Route ${routeNumbers.join(' & ')}.`)
+    }
+    lines.push(`Customer stops: ${customerStops.length}.`)
+    lines.push(`Tents: ${tents}. Chairs: ${chairs}. Tables: ${tables}.`)
+    lines.push(
+      codCount > 0
+        ? `Cash-on-delivery (COD) stops: ${codCount} — collect payment on arrival.`
+        : `No cash-on-delivery stops on this route.`
+    )
+    if (manifest) lines.push(`Full manifest (item × qty): ${manifest}.`)
+    if (dispatcherNotes.length) {
+      lines.push('Dispatch notes:')
+      for (const n of dispatcherNotes) lines.push(`- ${n.trim()}`)
+    }
+
+    return lines.join('\n')
+  } catch (e) {
+    console.warn('[/api/ava/ask] route-date context load failed (non-fatal):',
+      e instanceof Error ? e.message : String(e))
+    return null
+  }
+}
+
 // Role-scoped SOP load. Drivers get the driver-visible set (same filter as the
 // Training Hub); elevated roles (super_admin) get every SOP. Reads roles
 // server-side from the authenticated user — never a client-supplied flag —
@@ -328,6 +472,13 @@ export async function POST(request: NextRequest) {
   const history = sanitizeHistory(body.history)
   const routeId = typeof body.routeId === 'string' && body.routeId ? body.routeId : null
   const stopId  = typeof body.stopId  === 'string' && body.stopId  ? body.stopId  : null
+  // Upcoming-route date (preview / next-shift). Only load server-side when it's
+  // a real date AND not today (today's context is already client-seeded with
+  // live weather — don't override it with a cheaper server fetch).
+  const serverToday = new Date().toISOString().slice(0, 10)
+  const routeDate = typeof body.routeDate === 'string' && DATE_RE.test(body.routeDate) && body.routeDate !== serverToday
+    ? body.routeDate
+    : null
 
   // ── Knowledge load: SOPs (role-scoped) + global terminology + Q&A base ──────
   const admin = getAdminClient()
@@ -348,6 +499,15 @@ export async function POST(request: NextRequest) {
     .limit(100)
 
   const sops = await loadScopedSops(admin, user.id)
+
+  // Block 1 text: the UPCOMING route (loaded server-side from routeDate) when
+  // present, else the today-seeded client context. Server-load falls through to
+  // the seeded block on null (no route / error) so behavior degrades gracefully.
+  let routeContextText = buildRouteContextBlock(ctx)
+  if (routeDate) {
+    const upcoming = await loadRouteDateContext(admin, user.id, routeDate)
+    if (upcoming) routeContextText = upcoming
+  }
 
   // ── Build messages: prior turns + the new question ──────────────────────────
   const messages: Anthropic.MessageParam[] = [
@@ -380,7 +540,7 @@ export async function POST(request: NextRequest) {
         },
         {
           type: 'text',
-          text: buildRouteContextBlock(ctx),
+          text: routeContextText,
         },
       ],
       messages,

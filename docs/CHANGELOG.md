@@ -4,6 +4,17 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-06-22 — Fix: AVA upcoming-route context (preview / next-shift) (ON `main`; no migration)
+
+The preview-screen + Home-card "Ask Ava" CTAs couldn't answer about the upcoming route — "how many tents on my route Wednesday?" returned a logged knowledge gap instead of an answer. Root cause: the today path is client-seeded and the sheet pre-built the future-route context client-side, but RoutePreviewScreen seeded `{}` (load race) and the client `manifestSummary` was top-8-by-qty, which dropped low-qty tents from the prompt entirely.
+
+- **Fix = server-side load from `routeDate`.** `AskBody` gained `routeDate`; `AvaConversationSheet` now sends it in the body (removed the client-side `buildContextFromPayload` + redundant `/api/routes` fetch). `/api/ava/ask` `loadRouteDateContext()` crew-scopes the caller's `route_crew` for that date → routes + `dispatch_stops` (service-role) and injects a Block-1 string with **explicit Tents/Chairs/Tables counts + the full manifest** (item × qty) + COD + dispatch notes. Null on no-route/error → falls through to the today-seeded block.
+- **Guarded to `routeDate !== serverToday`** so today's weather-enriched client context is never overridden.
+- **Tent count uses the strict `countTentItems` rule** (category 'tent' AND name tent/canopy/marquee) — the loose category-only match reported 202 tents (it counted "CAFE LIGHTS" qty 200 filed under TENTS); strict gives the real 2. Verified against the live DB.
+- Build green (38 pages). Confirm on device: ask "how many tents on my route Wednesday?" from the preview Ava CTA → answers from route data, no gap.
+
+---
+
 ## 2026-06-22 — Next Day Route Preview (3 sessions) (ON `main`: `083821c` / `fedc216` / `6589a87`; no migration)
 
 Three locked sessions, executed investigate-then-proceed. Surfaces a driver's soonest upcoming shift, a read-only preview of that route, and multi-truck-job awareness. No migration; `reservation_id` plumbing is additive/read-only.

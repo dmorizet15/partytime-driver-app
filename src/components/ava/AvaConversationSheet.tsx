@@ -13,7 +13,6 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { speak, stopSpeaking } from '@/lib/ava/elevenLabs'
-import type { Route, Stop } from '@/types'
 
 const BLUE = '#0000FF'
 const GOLD = '#FFB800'
@@ -37,68 +36,16 @@ interface AvaConversationSheetProps {
   seedContext:  AvaSeedContext
   routeId?:     string | null
   /**
-   * Next Day Route Preview — Session 2. When provided, the sheet loads THAT
-   * date's route payload (GET /api/routes?date=routeDate) and builds the AVA
-   * context from it instead of using the today-computed seedContext. Used by
-   * the NextShiftCard "Ask Ava" and the RoutePreviewScreen bottom CTA so AVA
-   * answers about the upcoming route, not today. Falls back to seedContext if
-   * the load fails or hasn't completed.
+   * Next Day Route Preview. When provided (and not today), this UPCOMING route
+   * date (YYYY-MM-DD) is sent to /api/ava/ask, which loads that date's route
+   * (crew-scoped, server-side, with explicit tent/chair/table counts) into the
+   * system prompt instead of the today-seeded `seedContext`. Used by the
+   * NextShiftCard "Ask Ava" and the RoutePreviewScreen bottom CTA so AVA answers
+   * about the upcoming route, not today.
    */
   routeDate?:   string | null
   /** Optional first question to pre-fill (e.g. from a failed SOP search). */
   initialQuestion?: string
-}
-
-// Build an AvaSeedContext from a /api/routes payload for a specific route.
-// Mirrors the Home seedContext shape (minus live weather — a future date has no
-// arrival-hour forecast). Customer stops only, matching every other count.
-function buildContextFromPayload(
-  payload: { routes: Route[]; stops: Stop[] },
-  routeId: string | null,
-): AvaSeedContext {
-  const route = routeId
-    ? payload.routes.find((r) => r.route_id === routeId) ?? payload.routes[0]
-    : payload.routes[0]
-
-  const routeStops = routeId
-    ? payload.stops.filter((s) => s.route_id === routeId)
-    : payload.stops
-  const customerStops = routeStops.filter(
-    (s) => s.stop_type !== 'warehouse' && s.stop_type !== 'warehouse_return'
-  )
-
-  const codCount = customerStops.filter(
-    (s) => s.stop_type === 'delivery' && (s.payment_state ?? '') === 'cod'
-  ).length
-
-  const dispatcherNotes = [
-    route?.dispatcher_notes,
-    ...customerStops.map((s) => s.dispatcher_notes),
-  ].filter((n): n is string => !!n && n.trim().length > 0)
-
-  const byName = new Map<string, number>()
-  for (const s of customerStops) {
-    for (const it of s.items ?? []) {
-      const name = it.name?.trim()
-      if (!name) continue
-      byName.set(name, (byName.get(name) ?? 0) + (it.qty ?? 1))
-    }
-  }
-  const manifestSummary = Array.from(byName.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 8)
-    .map(([name, qty]) => `${qty}× ${name}`)
-    .join(', ') || null
-
-  return {
-    driverName:      route?.primary_driver_name ?? null,
-    stopCount:       customerStops.length,
-    codCount,
-    hasWeatherFlag:  false,
-    weatherStops:    [],
-    dispatcherNotes,
-    manifestSummary,
-  }
 }
 
 function Waveform({ small }: { small?: boolean }) {
@@ -122,35 +69,6 @@ export default function AvaConversationSheet({
   const [sending,   setSending]   = useState(false)
   const [error,     setError]     = useState<string | null>(null)
   const [voiceMode, setVoiceMode] = useState(true)
-  // When routeDate is set, the context loaded from that date's route payload.
-  // null until loaded / when routeDate isn't used → falls back to seedContext.
-  const [dateContext, setDateContext] = useState<AvaSeedContext | null>(null)
-
-  // Load the upcoming route's payload as context when routeDate is provided.
-  useEffect(() => {
-    if (!open || !routeDate) { setDateContext(null); return }
-    let cancelled = false
-    fetch(`/api/routes?date=${routeDate}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((payload: { routes?: Route[]; stops?: Stop[] }) => {
-        if (cancelled) return
-        if (payload?.routes?.length) {
-          setDateContext(buildContextFromPayload(
-            { routes: payload.routes, stops: payload.stops ?? [] },
-            routeId,
-          ))
-        }
-      })
-      .catch((err) => {
-        console.warn('[AvaConversationSheet] route-date context load failed (non-fatal):',
-          err instanceof Error ? err.message : err)
-      })
-    return () => { cancelled = true }
-  }, [open, routeDate, routeId])
-
-  // Effective context: the loaded upcoming-route context when present, else the
-  // caller-supplied today context.
-  const effectiveContext = dateContext ?? seedContext
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef  = useRef<HTMLInputElement>(null)
@@ -201,7 +119,7 @@ export default function AvaConversationSheet({
       const res = await fetch('/api/ava/ask', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, history, context: effectiveContext, routeId }),
+        body: JSON.stringify({ question, history, context: seedContext, routeId, routeDate }),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json() as { answer?: string }
