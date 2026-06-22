@@ -16,6 +16,17 @@
 - [ ] **Source coverage (Darren):** confirm the 57 entries cover the full active inflatable fleet — any unit absent from `INFLATABLE_WORKSHEET.xlsx` / `Book_1.xlsx` (or added since) won't be in AVA's knowledge. Add follow-ups as a NEW one-shot patch (don't re-run this one).
 - [ ] **Commit the patch file** — `supabase/data-patches/ava_inflatable_specs.sql` is currently untracked; commit it so it survives a rebuild (Darren to confirm commit/push).
 
+## June 21, 2026 — AVA tent specs batch (DONE — data patches applied + committed; no migration, no code)
+
+35 `tents` rows into `ava_knowledge` across 5 one-shot patches so AVA answers tent set-up/load/weight questions. Committed `5491770` (Stillwater) + `70053d9` (30-wide frame), both pushed to `main`. See CLAUDE.md → "Ava Studio Foundation — Session A1" note, `docs/CHANGELOG.md`, `tasks/lessons.md`.
+
+- [x] Stillwater 44-wide sailcloth — 25 rows: `ava_stillwater_44_specs.sql` (15) + `ava_stillwater_44_weights_total.sql` (5) + `ava_stillwater_44_weights_v2.sql` (5 + tent-top-breakdown UPDATEs). Run order: specs → weights_total → weights_v2.
+- [x] 30-wide traditional CPB frame — 10 rows: `ava_30wide_frame_tent.sql` (8) + `ava_30wide_frame_spreaders.sql` (2 + 30x45 "11 spreaders" UPDATE). Run order: frame_tent → spreaders. Spreader count 30x45=11 (Darren-confirmed; Notion had 6, flagged VERIFY).
+- [x] Verified read-only: count 25 → 33 → 35; 44x83 stakes = "52 double-head stakes and 26 ratchets."; both spreader rows present; 30x45 "What goes on" includes "11 spreaders." All 5 files committed + pushed.
+- [ ] **⚠️ DO NOT RE-RUN** any of these — no UNIQUE on `question` → re-run duplicates. Fresh DB rebuild: apply each once, in family order (above).
+- [ ] **On-device AVA smoke:** ask the Ask-Ava sheet "what goes on the 44 by 83 Stillwater?", "how many spreaders on the 30 by 45 frame?", "how much does the 44 by 123 weigh?" → expect the seeded answers spoken back (knowledge injection reads these `tents` rows).
+- [ ] **Source coverage (Darren):** these cover Stillwater 44-wide (43–123) + 30-wide frame (30x30/30x45) only. Other tent families (other widths, pole tents, etc.) aren't in AVA's knowledge yet — add as NEW one-shot patches (don't re-run these).
+
 ## June 18, 2026 — Manifest bundle grouping (ON `main`: `c862d24`; no migration)
 
 `dispatch_stops.items` now carries `bundle_name` on FLOORING & STAGING deck items (e.g. `STAGE 8'X12'`). The static manifest on StopDetailScreen groups bundled items under an uppercase section header above its item(s); items without `bundle_name` render flat exactly as before. Rendering only — qty/status/check-off untouched. See CLAUDE.md → "Manifest bundle grouping", `docs/CHANGELOG.md`.

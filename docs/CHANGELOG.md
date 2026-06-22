@@ -4,6 +4,18 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-06-21 — AVA tent specs batch — Stillwater 44-wide + 30-wide frame (data patches; no migration, no code)
+
+Populated `ava_knowledge` (`category='tents'`) so AVA can answer tent set-up/load questions ("what goes on the 44 by 83 Stillwater?", "how many spreaders on the 30 by 45 frame?", "how much does the 44 by 123 weigh?"). Five one-shot data-patches, **35 `tents` rows** end state, two commits (`5491770`, `70053d9`), both pushed to `main`.
+
+- **Stillwater 44-wide sailcloth (25 rows):** `ava_stillwater_44_specs.sql` (15 — what-goes-on / stakes / poles for 44x43–44x123) + `ava_stillwater_44_weights_total.sql` (5 total-weight) + `ava_stillwater_44_weights_v2.sql` (5 tent-top-only weights + UPDATEs adding the tent-top fabric breakdown to the total-weight answers). `status='published'` (matched the inflatable rows via a read-only check first).
+- **30-wide traditional CPB frame (10 rows):** `ava_30wide_frame_tent.sql` (8 — 30x30 & 30x45 what-goes-on / stakes / legs / weight) + `ava_30wide_frame_spreaders.sql` (2 spreader counts: 30x30=8, 30x45=11, + UPDATE adding "11 spreaders" to the 30x45 comprehensive answer; Darren-confirmed — Notion had 6, flagged VERIFY).
+- **Run order matters within each family** (the `_v2`/`spreaders` file UPDATEs a row the earlier file INSERTs): Stillwater = `specs → weights_total → weights_v2`; 30-wide = `frame_tent → spreaders`. Run the fixup first and the UPDATE silently no-ops (count short, fix lost). This surfaced live mid-session: `weights_v2` was run before `weights_total` existed (5 UPDATEs hit 0 rows, count 20 not 25) and `spreaders` couldn't run until `frame_tent` created the 30x45 row — both reported honestly and corrected by running the base file. **A referenced base file (`/mnt/user-data/outputs/ava_30wide_frame_tent.sql`) was missing from disk; flagged the dependency and held the dependent run rather than no-op into a hard-to-clean state — Darren then supplied the contents.**
+- **⚠️ NOT idempotent — one-shot.** `ava_knowledge.question` has no UNIQUE constraint; re-running any of these silently duplicates its INSERT rows. Re-apply each exactly once (in family order) after a fresh DB rebuild.
+- **Verified (read-only re-queries — `db query --file` only echoes the last statement):** `COUNT(*) WHERE category='tents'` stepped 25 → 33 → 35; 44x83 stakes = "52 double-head stakes and 26 ratchets."; both spreader rows present; 30x45 "What goes on" now includes "11 spreaders."
+
+---
+
 ## 2026-06-21 — AVA inflatable specs batch (data patch; no migration, no code)
 
 Populated the AVA operational knowledge base (`ava_knowledge`) with set-up specs for the inflatable fleet. AVA injects published `ava_knowledge` rows into the cached Block 0 of `/api/ava/ask`, so a driver can now ask "what does the Wild Rapids need to set up?" and get the bin, blower count/HP, stake counts, and accessories spoken back.
