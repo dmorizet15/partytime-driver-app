@@ -258,6 +258,16 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   const stop = getStop(stopId)
   const allStops = getStopsForRoute(routeId)
 
+  // Is there a stop AFTER this one on the route? (allStops is sorted by
+  // stop_sequence = route_position order.) Drives the mid-route warehouse_return
+  // behavior: a depot stop that is NOT the last position is a mid-route stop
+  // (e.g. a truck swap / reload) the driver dismisses manually to continue —
+  // whereas the FINAL warehouse_return keeps its geofence auto-complete +
+  // auto-logout. Defaults to false (→ treat as final / existing behavior) when
+  // there's no later stop, so the normal single-tail-depot route is untouched.
+  const hasLaterStopOnRoute =
+    !!stop && allStops.some((s) => s.stop_sequence > stop.stop_sequence)
+
   // Cold-boot rehydrate. Like RouteListScreen, this normally relies on Home
   // having driven the initial loadDay; an OFFLINE hard-navigation served from
   // the cached page shell boots this screen with empty AppState. Pull today's
@@ -611,7 +621,11 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
       // dashboard's realtime toast surfaces immediately without waiting
       // for the driver to tap Mark Complete. Idempotent — repeating the
       // POST against an already-completed stop is harmless.
-      if (stop?.stop_type === 'warehouse_return' && canComplete) {
+      // Gated to the FINAL depot stop (no later stop on the route): a MID-ROUTE
+      // warehouse_return (truck swap / reload) must NOT auto-complete + auto-
+      // logout via the geofence — the driver dismisses it manually and continues
+      // the route. The final depot keeps the existing arrival-is-completion flow.
+      if (stop?.stop_type === 'warehouse_return' && !hasLaterStopOnRoute && canComplete) {
         try {
           const r = await fetch('/api/complete-stop', {
             method:  'POST',
@@ -2376,13 +2390,15 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
               }}>
                 {isWarehouseReturn ? (
                   // warehouse_return — the spec's "active prompt" surface:
-                  // a top message line ("Head back to the warehouse — your
-                  // day is done"), the big gold Navigate CTA, and a smaller
-                  // Mark Complete fallback below. ETA is the calculated_eta
-                  // cascade value (already shown in the stop hero), so we
-                  // don't repeat it here. Geofence at the depot auto-fires
-                  // /api/complete-stop on arrival; the fallback is for cases
-                  // where GPS drift prevents the auto-fire from landing.
+                  // a top message line, the big gold Navigate CTA, and a
+                  // completion button below. ETA is the calculated_eta cascade
+                  // value (already shown in the stop hero), so we don't repeat
+                  // it here.
+                  // FINAL depot (no later stop): geofence at the depot auto-fires
+                  // /api/complete-stop on arrival + auto-logout; the button is a
+                  // GPS-drift fallback. MID-ROUTE depot (a truck swap / reload
+                  // with stops still ahead): no geofence auto-complete — the
+                  // driver taps "Done — continue route" to advance.
                   <>
                     <div
                       style={{
@@ -2395,7 +2411,9 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
                         textAlign:     'center',
                       }}
                     >
-                      Head back to the warehouse — your day is done.
+                      {hasLaterStopOnRoute
+                        ? 'Warehouse stop — reload or swap trucks, then continue your route.'
+                        : 'Head back to the warehouse — your day is done.'}
                     </div>
                     <button
                       onClick={handleNavigate}
@@ -2435,7 +2453,10 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
                           letterSpacing: '-0.01em',
                         }}
                       >
-                        Mark Complete
+                        {/* MID-ROUTE depot → manual dismiss to continue the route;
+                            FINAL depot → GPS-drift completion fallback. Both run
+                            the standard runStopComplete path via handleMarkCompleteTap. */}
+                        {hasLaterStopOnRoute ? 'Done — continue route' : 'Mark Complete'}
                       </button>
                     )}
                     {welcomeBackAt && (
