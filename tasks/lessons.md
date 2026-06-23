@@ -14,6 +14,22 @@ Format: one lesson per block. Lead with the rule, then **Why** and **How to appl
 
 ---
 
+## When AVA must answer a COUNT question ("how many tents?"), inject EXPLICIT counts + the FULL manifest into the prompt — never a top-N-by-qty summary, and load the data server-side when you can.
+
+**Why:** the Home "Ask Ava about today" context is client-seeded, and its `manifestSummary` is **top-8 items by quantity**. Tents have low qty (1–2 each), so they fall off the bottom and never reach the model — AVA then answers `UNKNOWN:` and logs a knowledge gap instead of counting. Reusing that same client-seeded shape for the route-preview surface inherited the bug; RoutePreviewScreen also seeded `{}` with a fetch race, so AVA frequently got no route at all. A summary built for a human-readable headline is not a substitute for the data the model needs to compute an answer.
+
+**How to apply:** for any AVA surface that should answer quantitative route questions, load the route SERVER-SIDE in `/api/ava/ask` (crew-scoped, service-role, same data path as `/api/routes`) keyed on a date/id from the body, and emit a Block-1 string with **explicit `Tents: N. Chairs: N. Tables: N.`** lines AND the **full** `item × qty` manifest. Guard server-load to `routeDate !== serverToday` so today's weather-enriched client context isn't overridden. Fall through to the seeded block on null. See `loadRouteDateContext()` in `src/app/api/ava/ask/route.ts`.
+
+---
+
+## Counting "tents" by `category.includes('tent')` alone is WRONG — it sums TENTS-filed accessories (e.g. "CAFE LIGHTS" qty 200 → "202 tents").
+
+**Why:** TapGoods files cafe lights, stakes, weights, and other accessories under the TENTS category. A bare category match sums their (often huge) quantities. The vetted app definition (`countTentItems`, `dependencyHits.ts`) requires category contains 'tent' **AND** the item name contains tent/canopy/marquee.
+
+**How to apply:** any new tent count must use `category.toLowerCase().includes('tent') && (name includes tent|canopy|marquee)`. (Note: the Session-1 `/api/routes/next-shift` `tent_count` still uses the loose spec-literal rule — if that card ever shows an inflated tent number, switch it to this strict rule too.)
+
+---
+
 ## A page whose screen calls `useSearchParams()` MUST wrap that screen in `<Suspense>` (Next 14 App Router), or `next build` bails the route out of static optimization and can error.
 
 **Why:** `useSearchParams()` forces client-side rendering of everything below it; without a Suspense boundary Next can't statically prerender the page shell. `RoutePreviewScreen` reads `?date=` via `useSearchParams`, so `src/app/route-preview/[routeId]/page.tsx` wraps it in `<Suspense fallback={null}>`.
