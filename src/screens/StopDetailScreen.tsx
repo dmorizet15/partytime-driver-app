@@ -49,6 +49,7 @@ import {
   hasCheckoffRows,
   isCheckoffCommittedLocal,
 } from '@/lib/checkoff/service'
+import { stripHtml } from '@/lib/utils'
 
 // sessionStorage key — driver chose to proceed despite the pickup window
 // not yet being open. Set by the standby card's dismiss button AND by the
@@ -769,7 +770,7 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   // Only non-empty fields are shown; section hidden entirely when empty.
   const orderNotes: Array<{ label: string; text: string }> = [
     { label: 'Delivery instructions', text: stop.notes_additional_delivery ?? '' },
-    { label: 'Staff note',            text: stop.notes_employee_authored ?? '' },
+    { label: 'Staff note',            text: stripHtml(stop.notes_employee_authored) },
     { label: 'Flip / teardown note',  text: stop.notes_flip ?? '' },
     { label: 'Set-by time',           text: stop.notes_set_by_time ?? '' },
     { label: 'Strike time',           text: stop.notes_strike_time ?? '' },
