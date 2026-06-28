@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "check:version": "node scripts/check-version-bump.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",

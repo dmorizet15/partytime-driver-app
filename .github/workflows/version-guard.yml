@@ -1,0 +1,44 @@
+name: Version guard
+
+# Fails when a change touches the driver-facing app without bumping the app
+# VERSION (src/lib/appVersion.ts). Keeps the "What's New" release-notes sheet
+# from going stale: it only re-shows on a VERSION change, so every driver-facing
+# deploy needs a bump + changelog entry. See scripts/check-version-bump.mjs.
+#
+# • On pull requests: a failure blocks the merge (if marked a required check).
+# • On direct pushes to main (this repo's normal flow): a failure shows a red ✗
+#   on the commit as a loud reminder — it does not roll back the deploy, so add
+#   the bump in a follow-up commit (or [skip version] if nothing is driver-facing).
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  version-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history so the base..head diff is available
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Check version bump on driver-facing changes
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+            HEAD="${{ github.event.pull_request.head.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+            HEAD="${{ github.sha }}"
+            # First push / unknown base → fall back to the previous commit.
+            if ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+              BASE="$(git rev-parse HEAD~1 2>/dev/null || echo HEAD)"
+            fi
+          fi
+          echo "Comparing $BASE..$HEAD"
+          node scripts/check-version-bump.mjs "$BASE" "$HEAD"
