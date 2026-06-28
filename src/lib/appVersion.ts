@@ -8,11 +8,12 @@
 //
 // Keep bullets short, plain-language, and driver-facing (no engineering terms).
 
-export const VERSION = '2.0.0'
+export const VERSION = '2.1.0'
 
 export const CHANGELOG: string[] = [
-  'Your route now loads even without signal',
-  'App installs to your home screen with the PartyTime Work icon',
-  "Offline indicator shows when you're working without connection",
-  'App updates automatically when a new version is available',
+  'See your next shift and preview the full route before you start the day',
+  "Ask Ava about your route — including what you're delivering vs. picking up",
+  'Completing a stop no longer freezes if you lose signal mid-tap',
+  'See when other trucks are working the same job',
+  'Staging and flooring pieces now group together on the stop manifest',
 ]
