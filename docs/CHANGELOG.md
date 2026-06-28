@@ -4,6 +4,19 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-06-28 — Fix: AVA stop-type-aware route context (delivery vs pickup) (ON `main`: `08ebf01`; no migration)
+
+Darren reported two production bugs: AVA couldn't answer basic questions about today's route/equipment, and "how many chairs am I picking up today?" answered "none" because the chairs were on **pickup** stops while AVA had no concept of stop direction. Root cause (investigated before any code): for **today's** questions AVA only ever saw the **client seed** (`DayRouteSelectorScreen.tsx:338–351`), which aggregates items across all stops with **no `stop_type` split** and then `.slice(0, 8)` (top-8 by qty) — so direction was unknowable and most items were dropped. The server-side `loadRouteDateContext()` ran *only* for future preview dates and *also* lumped every direction together (`flatMap` over all stops). Delivery vs pickup was never separated anywhere. Driver-app-only; no migration, no schema, no shared/cross-repo files.
+
+- **Fix 1 — `loadRouteDateContext()` is now stop-type aware** (`src/app/api/ava/ask/route.ts`). Fetches `stop_type, items, payment_state, customer_name, address, reservation_id, dispatcher_notes` (route_position-ordered), splits customer stops into **DELIVERY / PICKUP-RETURN / OTHER**, and emits per-stop lines (customer, address, order ref, items) plus **separate DELIVERING vs PICKING UP** item totals and per-direction category totals (tents/chairs/tables). New pure helpers: `isTentItem`, `aggregateItems`, `categoryTotals`, `itemsList`, `stopLines`. Every Supabase call destructures + logs `error`.
+- **Fix 2 — runs server-side for TODAY too, not just preview dates.** POST resolves `targetDate = routeDate ?? localToday` and always calls the loader. Degradation ladder: server load → coarse client seed (today only, no regression) → `NO_ROUTE_FALLBACK`. Weather (client-seeded, live Tomorrow.io) is still appended for today only; the cached Block 0 and gap detection are untouched.
+- **Fix 3 — `NO_ROUTE_FALLBACK`** instructs AVA to reply exactly "I don't have your route loaded yet. Make sure you're clocked in and your route is active for today." and to **not** emit the `UNKNOWN:` gap signal (an unloaded route is a known state, not a knowledge gap).
+- **Timezone correctness — new `localDate` field.** `AvaConversationSheet` now sends the device's local YYYY-MM-DD (`localTodayStr()`); the server loads today's route in the driver's timezone instead of the Vercel UTC date (which rolls a day ahead in the evening). Mirrors the next-shift `?today=` pattern. `routeDate` is now compared against `localToday`, not `serverToday`.
+- **Tent count keeps the strict `countTentItems` rule** (category 'tent' AND name tent/canopy/marquee), so "CAFE LIGHTS" filed under TENTS doesn't inflate the count.
+- **Verified:** `npx next build` green (38 pages, types valid). Manual context-log harness with the reported scenario (chairs on pickup stops) confirms the assembled Block 1 reads `DELIVERING: 0 chairs` / `PICKING UP: 1025 chairs` — directions never conflated. **Pending: on-device smoke** — ask "how many chairs am I picking up today?" on a route with chairs on pickup stops → answers from the PICKING UP total; ask "delivering?" → answers from DELIVERING.
+
+---
+
 ## 2026-06-22 — Fix: AVA upcoming-route context (preview / next-shift) (ON `main`; no migration)
 
 The preview-screen + Home-card "Ask Ava" CTAs couldn't answer about the upcoming route — "how many tents on my route Wednesday?" returned a logged knowledge gap instead of an answer. Root cause: the today path is client-seeded and the sheet pre-built the future-route context client-side, but RoutePreviewScreen seeded `{}` (load race) and the client `manifestSummary` was top-8-by-qty, which dropped low-qty tents from the prompt entirely.
