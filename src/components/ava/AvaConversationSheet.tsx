@@ -18,6 +18,17 @@ const BLUE = '#0000FF'
 const GOLD = '#FFB800'
 const INK  = '#0A0B14'
 
+// Device-local YYYY-MM-DD (matches AppStateContext.todayStr). Sent to
+// /api/ava/ask so today's route is loaded in the driver's timezone, not the
+// Vercel UTC date (which can roll a day ahead in the evening).
+function localTodayStr(): string {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 export interface AvaSeedContext {
   driverName?:      string | null
   stopCount?:       number | null
@@ -119,7 +130,7 @@ export default function AvaConversationSheet({
       const res = await fetch('/api/ava/ask', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, history, context: seedContext, routeId, routeDate }),
+        body: JSON.stringify({ question, history, context: seedContext, routeId, routeDate, localDate: localTodayStr() }),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json() as { answer?: string }
