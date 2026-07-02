@@ -48,6 +48,7 @@ import ItemCheckoffPanel, {
 import EquipmentReturnSection, {
   type EquipmentReturnSectionHandle,
 } from '@/components/equipment/EquipmentReturnSection'
+import EquipmentPickupSection from '@/components/equipment/EquipmentPickupSection'
 import EquipmentRetrieveCard from '@/components/equipment/EquipmentRetrieveCard'
 import { commitEquipmentReturns } from '@/lib/equipmentReturns/service'
 import {
@@ -359,6 +360,9 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   // own stepper state (sessionStorage draft); runStopComplete reads the
   // touched counts through this ref and upserts them fire-and-forget.
   const equipmentReturnRef = useRef<EquipmentReturnSectionHandle>(null)
+  // Pickup-side confirm (reservation ledger) — same handle shape; completion
+  // POSTs the confirmed counts + runs the final-pickup discrepancy check.
+  const equipmentPickupRef = useRef<EquipmentReturnSectionHandle>(null)
 
   // Dispatcher note (NEW-D) — read-only modal that pops on stop open when
   // the dashboard has saved a dispatcher_notes value. "Got it" dismisses
@@ -1000,14 +1004,19 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     markComplete(stop.stop_id, completedAt)
     logEvent('STOP_COMPLETED', routeId, stopId, stop.order_id, { completed_at: completedAt })
 
-    // Equipment Return Tracking — upsert the touched "left on-site" counts
-    // (extension cords, racks, crates, chair carts) for the pickup crew.
-    // Fire-and-forget + queue-backed (never blocks or delays completion);
-    // untouched steppers write no rows. runStopComplete is the single
-    // completion chokepoint, so this covers every delivery-completion path.
-    if (stop.stop_type === 'delivery' && authUser?.id) {
-      const entries = equipmentReturnRef.current?.getTouchedEntries() ?? []
-      void commitEquipmentReturns(stop.stop_id, entries, authUser.id)
+    // Equipment Return Tracking — reservation-scoped ledger writes. Delivery:
+    // upsert the touched "left on-site" counts (untouched steppers write no
+    // rows). Pickup: POST the confirmed retrieved counts — sent even with
+    // zero confirmations so the server's final-pickup check runs (last pickup
+    // on the reservation + nonzero balance → dispatch discrepancy alert;
+    // intermediate pickups never alert). Fire-and-forget + queue-backed —
+    // never blocks or delays completion. runStopComplete is the single
+    // completion chokepoint, so this covers every completion path.
+    if ((stop.stop_type === 'delivery' || stop.stop_type === 'pickup') && authUser?.id) {
+      const entries = (stop.stop_type === 'delivery'
+        ? equipmentReturnRef.current?.getTouchedEntries()
+        : equipmentPickupRef.current?.getTouchedEntries()) ?? []
+      void commitEquipmentReturns(stop.stop_id, entries, authUser.id, stop.stop_type)
     }
 
     // Auto-ETA (Part 3): fire-and-forget OTW/ETA to the next customer when this
@@ -2839,14 +2848,21 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
           <EquipmentReturnSection ref={equipmentReturnRef} stop={stop} />
         )}
 
-        {/* RETRIEVE FROM THIS SITE (Equipment Return Tracking) — pickup-side.
-            Self-contained: resolves the linked delivery stop server-side
-            (linked_stop_id, reservation fallback) and renders null when the
-            delivery crew captured nothing. */}
+        {/* RETRIEVE FROM THIS SITE (Equipment Return Tracking) — pickup-side
+            reminder. Self-contained: reads the reservation's running balance
+            server-side (ledger across ALL delivery/pickup stops) and renders
+            null when nothing remains to retrieve. */}
         {stop.stop_type === 'pickup' && (
           <div style={{ padding: '14px 18px 0' }}>
             <EquipmentRetrieveCard stopId={stop.stop_id} />
           </div>
+        )}
+
+        {/* CONFIRM EQUIPMENT RETRIEVED — pickup-side capture, pre-filled with
+            the same running balance. Confirmed counts are written at
+            completion (runStopComplete → POST); soft prompt, never gates. */}
+        {stop.stop_type === 'pickup' && !isCompleted && (
+          <EquipmentPickupSection ref={equipmentPickupRef} stop={stop} />
         )}
 
         {/* Same-job indicator (Next Day Route Preview Session 3) — below the

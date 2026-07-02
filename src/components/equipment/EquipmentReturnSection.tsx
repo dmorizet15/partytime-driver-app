@@ -183,8 +183,9 @@ function StepperRow({ rule, count, touched, onStep }: {
 }
 
 // Mirrors ItemCheckoffPanel's StepBtn (44px ink circle) at 40px — same
-// interaction affordance, slightly tighter for a multi-row section.
-function StepBtn({ label, onClick, disabled }: { label: string; onClick: () => void; disabled?: boolean }) {
+// interaction affordance, slightly tighter for a multi-row section. Shared
+// with the pickup-side EquipmentPickupSection (named export).
+export function StepBtn({ label, onClick, disabled }: { label: string; onClick: () => void; disabled?: boolean }) {
   return (
     <button
       onClick={onClick}

@@ -6,6 +6,14 @@ Format: one lesson per block. Lead with the rule, then **Why** and **How to appl
 
 ---
 
+## Cross-stop reconciliation must be modeled as a LEDGER over the job (reservation), not a pairwise stop-to-stop match.
+
+**Why:** the first equipment-returns cut compared each pickup against its single linked delivery stop. That silently breaks on split jobs — tent delivered separately from inflatable, inflatable picked up before the tent — where the last crew must see whatever is LEFT after earlier pickups, not any one delivery's original count. Pairwise matching also forced a special case for multiple pickups per delivery; the ledger makes that the normal path (a stop with no rows contributes 0 and needs no handling).
+
+**How to apply:** aggregate per `(reservation_id, key)`: delivered = SUM over delivery-stop rows, retrieved = SUM over COMPLETED pickup-stop rows excluding the current stop; balance = the difference. Decide "is this the last stop?" with a LIVE query (`completed_at IS NULL` on siblings), never a denormalized count column (`required_pickup_count` diverges: 31 live multi-pickup reservations vs 23 flagged pickups, 2026-07-02). Fire cross-crew alerts only from the FINAL stop — a partial number mid-job is normal, not a discrepancy. Canonical implementation: `src/lib/equipmentReturns/ledger.ts`.
+
+---
+
 ## Chairs are unreliably categorized in `dispatch_stops.items` — match chairs by item NAME substring, never gate on category.
 
 **Why:** the same item name ("CHAIR WHITE PADDED GARDEN", "CHAIR WHITE FOLDING") appears live under **SEATING, Chairs, AND Misc** depending on the order — a category-gated chair rule silently misses real chairs. Verified live 2026-07-02 (e.g. CHAIR WHITE FOLDING: 247× seating + 27× misc). CHINA / FLATWARE / GLASSWARE categories ARE reliable (exact strings confirmed live) — the unreliability is chair-specific.

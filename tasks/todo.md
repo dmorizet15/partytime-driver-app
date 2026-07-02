@@ -1,5 +1,17 @@
 # Open Tasks — partytime-driver-app
 
+## July 2, 2026 — Equipment Return Tracking: reservation-scoped ledger revision (Migration 029; v2.3.0)
+
+Design correction over the initial ship: running ledger per `(reservation_id, equipment_key)` replaces pairwise pickup↔delivery matching. See CLAUDE.md → "Equipment Return Tracking (Driver App) → Ledger revision" + Known Landmines (ledger model).
+
+- [x] Migration 029 `equipment_return_alerts` (once-per-reservation alert stamp) — applied live, tracker at `20260702029`. `dispatch_stops.reservation_id` already indexed.
+- [x] `ledger.ts` (pure computeBalances/traceLines) + GET rewrite (`returns` for cards + `balances` for prefill).
+- [x] POST pickup-completion path: crew-gated upsert → live final-pickup check → discrepancy alert (insert-once, `retryAlert` keeps the queue retrying a failed send).
+- [x] `EquipmentPickupSection` (prefilled steppers, one-tap confirm, below-prefill inline note) + `runStopComplete` pickup wiring + queue kinds.
+- [x] Ledger smoke 12/12 (scenarios a–d) + live-DB round trip on a real 2-del/2-pickup reservation + build green.
+- [ ] **Darren: set `RESEND_API_KEY` in the driver app's Vercel env** (production + preview) — the discrepancy email is inert (loud log only) until then. Optional: `EQUIPMENT_ALERT_EMAIL_TO` (defaults dispatch@partytimerentals.com).
+- [ ] **On-device smoke (THE gate):** pickup stop shows pre-filled expected counts; one-tap confirm at prefill → completes, no alert; final pickup reporting a shortfall → dispatch email with per-stop trace; intermediate pickup below prefill → NO alert; offline pickup completion queues the POST + flushes.
+
 ## July 2, 2026 — Equipment Return Tracking (Migration 028; v2.2.0)
 
 Delivery crews log equipment left on-site (cords / china racks / glassware racks / flatware crates / chair carts); pickup crews see "Retrieve N …" on the linked pickup stop. See CLAUDE.md → "Equipment Return Tracking (Driver App)" + `docs/CHANGELOG.md`.
@@ -10,7 +22,8 @@ Delivery crews log equipment left on-site (cords / china racks / glassware racks
 - [x] `GET /api/stops/equipment-returns` (linked_stop_id → reservation fallback) + `EquipmentRetrieveCard` in StopDetail / RouteList / RoutePreview pickup contexts.
 - [x] Rule-matrix smoke (tent-only, china+glassware = two racks, flatware, two chair types = ONE stepper, cushions-only = no trigger) ALL PASS; live-DB round trip incl. 164-day Will Call gap; build green (38 pages).
 - [ ] **On-device smoke (THE gate):** complete a delivery with counts entered → rows land in `stop_equipment_returns`; open the linked pickup stop → blue "Retrieve from this site" card shows the counts (StopDetail + RouteList + RoutePreview); untouched steppers write nothing; offline completion queues the counts and flushes on reconnect.
-- [ ] **Flag to Darren:** (a) two pickups linked to the SAME delivery both show the same reminder — first crew retrieves, second sees a stale card (Phase 1 accepted?); (b) service-labor item names ("SETUP -TABLES/CHAIRS") can render a harmless extra chair-cart stepper — tighten the rule only if drivers notice.
+- [x] ~~Flag to Darren: two pickups linked to the SAME delivery both show the same reminder~~ — **RESOLVED by the ledger revision** (the second crew sees the post-first-crew balance).
+- [ ] **Flag to Darren:** service-labor item names ("SETUP -TABLES/CHAIRS") can render a harmless extra chair-cart stepper — tighten the rule only if drivers notice.
 
 ## June 22, 2026 — Next Day Route Preview (3 sessions) (ON `main`: `083821c` / `fedc216` / `6589a87`; no migration)
 

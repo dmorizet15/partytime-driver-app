@@ -8,9 +8,11 @@
 //
 // Keep bullets short, plain-language, and driver-facing (no engineering terms).
 
-export const VERSION = '2.2.0'
+export const VERSION = '2.3.0'
 
 export const CHANGELOG: string[] = [
+  'Pickup stops now show a pre-filled count of equipment to bring back — one tap confirms it, or correct it to what you actually found',
+  'Counts carry across split jobs: if another crew already grabbed some of it, your number reflects what’s actually left',
   'Log extension cords, racks, crates, and chair carts you leave at a delivery — the pickup crew will see exactly what to grab',
   'See your next shift and preview the full route before you start the day',
   "Ask Ava about your route — including what you're delivering vs. picking up",
