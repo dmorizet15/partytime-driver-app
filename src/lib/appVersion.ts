@@ -8,9 +8,10 @@
 //
 // Keep bullets short, plain-language, and driver-facing (no engineering terms).
 
-export const VERSION = '2.1.0'
+export const VERSION = '2.2.0'
 
 export const CHANGELOG: string[] = [
+  'Log extension cords, racks, crates, and chair carts you leave at a delivery — the pickup crew will see exactly what to grab',
   'See your next shift and preview the full route before you start the day',
   "Ask Ava about your route — including what you're delivering vs. picking up",
   'Completing a stop no longer freezes if you lose signal mid-tap',

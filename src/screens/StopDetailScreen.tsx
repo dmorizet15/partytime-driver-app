@@ -45,6 +45,11 @@ import ItemCheckoffPanel, {
   type CheckoffPanelHandle,
   type CheckoffPanelProgress,
 } from '@/components/checkoff/ItemCheckoffPanel'
+import EquipmentReturnSection, {
+  type EquipmentReturnSectionHandle,
+} from '@/components/equipment/EquipmentReturnSection'
+import EquipmentRetrieveCard from '@/components/equipment/EquipmentRetrieveCard'
+import { commitEquipmentReturns } from '@/lib/equipmentReturns/service'
 import {
   hasCheckoffRows,
   isCheckoffCommittedLocal,
@@ -349,6 +354,11 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   const [checkoffProgress, setCheckoffProgress]     = useState<CheckoffPanelProgress>({ confirmed: 0, total: 0, allResolved: false })
   const [checkoffCommitting, setCheckoffCommitting] = useState(false)
   const checkoffPanelRef = useRef<CheckoffPanelHandle>(null)
+
+  // Equipment Return Tracking — delivery-side capture. The section holds its
+  // own stepper state (sessionStorage draft); runStopComplete reads the
+  // touched counts through this ref and upserts them fire-and-forget.
+  const equipmentReturnRef = useRef<EquipmentReturnSectionHandle>(null)
 
   // Dispatcher note (NEW-D) — read-only modal that pops on stop open when
   // the dashboard has saved a dispatcher_notes value. "Got it" dismisses
@@ -989,6 +999,16 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     // and the stop stayed incomplete forever.
     markComplete(stop.stop_id, completedAt)
     logEvent('STOP_COMPLETED', routeId, stopId, stop.order_id, { completed_at: completedAt })
+
+    // Equipment Return Tracking — upsert the touched "left on-site" counts
+    // (extension cords, racks, crates, chair carts) for the pickup crew.
+    // Fire-and-forget + queue-backed (never blocks or delays completion);
+    // untouched steppers write no rows. runStopComplete is the single
+    // completion chokepoint, so this covers every delivery-completion path.
+    if (stop.stop_type === 'delivery' && authUser?.id) {
+      const entries = equipmentReturnRef.current?.getTouchedEntries() ?? []
+      void commitEquipmentReturns(stop.stop_id, entries, authUser.id)
+    }
 
     // Auto-ETA (Part 3): fire-and-forget OTW/ETA to the next customer when this
     // driver has the flag. Self-gates on online + GPS + a phone; invisible.
@@ -2808,6 +2828,25 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
               </div>
             </div>
           </>
+        )}
+
+        {/* EQUIPMENT LEFT ON-SITE (Equipment Return Tracking) — delivery-side
+            capture, below the manifest. Soft prompt: steppers for equipment
+            the crew leaves behind (cords always; racks/crates/carts when the
+            manifest matches the shared rules config). Never gates completion —
+            runStopComplete reads the touched counts through the ref. */}
+        {stop.stop_type === 'delivery' && !isCompleted && (
+          <EquipmentReturnSection ref={equipmentReturnRef} stop={stop} />
+        )}
+
+        {/* RETRIEVE FROM THIS SITE (Equipment Return Tracking) — pickup-side.
+            Self-contained: resolves the linked delivery stop server-side
+            (linked_stop_id, reservation fallback) and renders null when the
+            delivery crew captured nothing. */}
+        {stop.stop_type === 'pickup' && (
+          <div style={{ padding: '14px 18px 0' }}>
+            <EquipmentRetrieveCard stopId={stop.stop_id} />
+          </div>
         )}
 
         {/* Same-job indicator (Next Day Route Preview Session 3) — below the

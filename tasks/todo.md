@@ -1,5 +1,17 @@
 # Open Tasks — partytime-driver-app
 
+## July 2, 2026 — Equipment Return Tracking (Migration 028; v2.2.0)
+
+Delivery crews log equipment left on-site (cords / china racks / glassware racks / flatware crates / chair carts); pickup crews see "Retrieve N …" on the linked pickup stop. See CLAUDE.md → "Equipment Return Tracking (Driver App)" + `docs/CHANGELOG.md`.
+
+- [x] Migration 028 `stop_equipment_returns` (crew RLS matching stop_item_checkoffs, updated_at trigger) — applied live, tracker at `20260702028`.
+- [x] Shared rules config (`equipmentReturns/rules.ts`) + service (upsert, `ptd_equipreturn_queue`, draft) + flush wired into `loadDay`.
+- [x] `EquipmentReturnSection` (delivery StopDetail, grouped steppers, soft prompt) + commit in `runStopComplete`.
+- [x] `GET /api/stops/equipment-returns` (linked_stop_id → reservation fallback) + `EquipmentRetrieveCard` in StopDetail / RouteList / RoutePreview pickup contexts.
+- [x] Rule-matrix smoke (tent-only, china+glassware = two racks, flatware, two chair types = ONE stepper, cushions-only = no trigger) ALL PASS; live-DB round trip incl. 164-day Will Call gap; build green (38 pages).
+- [ ] **On-device smoke (THE gate):** complete a delivery with counts entered → rows land in `stop_equipment_returns`; open the linked pickup stop → blue "Retrieve from this site" card shows the counts (StopDetail + RouteList + RoutePreview); untouched steppers write nothing; offline completion queues the counts and flushes on reconnect.
+- [ ] **Flag to Darren:** (a) two pickups linked to the SAME delivery both show the same reminder — first crew retrieves, second sees a stale card (Phase 1 accepted?); (b) service-labor item names ("SETUP -TABLES/CHAIRS") can render a harmless extra chair-cart stepper — tighten the rule only if drivers notice.
+
 ## June 22, 2026 — Next Day Route Preview (3 sessions) (ON `main`: `083821c` / `fedc216` / `6589a87`; no migration)
 
 Surface a driver's upcoming shift on Home, a read-only preview of that route, and multi-truck-job awareness. Spec was 3 locked sessions, "investigate then immediately proceed." See CLAUDE.md → "Next Day Route Preview (Driver App)" + `docs/CHANGELOG.md`.

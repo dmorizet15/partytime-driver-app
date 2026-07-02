@@ -12,6 +12,7 @@ import { OfflineBanner } from '@/components/OfflineBanner'
 import WeekScheduleView from '@/components/WeekScheduleView'
 import StopWindowBadge from '@/components/StopWindowBadge'
 import SameJobIndicator from '@/components/SameJobIndicator'
+import EquipmentRetrieveCard from '@/components/equipment/EquipmentRetrieveCard'
 import AvaChip from '@/components/AvaChip'
 import { formatEta } from '@/lib/formatEta'
 
@@ -687,6 +688,15 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
                         current_route_id={routeId}
                       />
                     </div>
+
+                    {/* Retrieve-from-site card (Equipment Return Tracking) —
+                        pickup stops only. Self-contained; null when the
+                        delivery crew captured nothing at the linked delivery. */}
+                    {stop.stop_type === 'pickup' && (
+                      <div style={{ marginTop: 8 }}>
+                        <EquipmentRetrieveCard stopId={stop.stop_id} />
+                      </div>
+                    )}
 
                     {/* Chips row: type + status + payment */}
                     {hasChips && (

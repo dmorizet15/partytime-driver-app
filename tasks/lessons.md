@@ -6,6 +6,14 @@ Format: one lesson per block. Lead with the rule, then **Why** and **How to appl
 
 ---
 
+## Chairs are unreliably categorized in `dispatch_stops.items` — match chairs by item NAME substring, never gate on category.
+
+**Why:** the same item name ("CHAIR WHITE PADDED GARDEN", "CHAIR WHITE FOLDING") appears live under **SEATING, Chairs, AND Misc** depending on the order — a category-gated chair rule silently misses real chairs. Verified live 2026-07-02 (e.g. CHAIR WHITE FOLDING: 247× seating + 27× misc). CHINA / FLATWARE / GLASSWARE categories ARE reliable (exact strings confirmed live) — the unreliability is chair-specific.
+
+**How to apply:** chair triggers = lowercase name contains `chair`, **minus** names containing `cushion` — "CHAIR CUSHIONS -BLACK (VELCRO)" / "CHAIR CUSHIONS -WHITE (TIE)" are a LINENS accessory, not a chair, and would false-trigger without the exclusion. The exclusion is per-item (an order with cushions AND real chairs still triggers via the chair line). Bar stools / farm benches intentionally don't match. The canonical implementation is `EQUIPMENT_RETURN_RULES` in `src/lib/equipmentReturns/rules.ts` — extend that config rather than re-deriving the match. Known accepted noise: service-labor lines ("SETUP -TABLES/CHAIRS") contain "chair".
+
+---
+
 ## Cross-route `route_crew` / `profiles` reads need a SERVICE-ROLE endpoint — a client-side supabase query returns EMPTY crew for routes the driver isn't on.
 
 **Why:** `route_crew`/`profiles` RLS is scoped so a driver only reads their OWN routes' crew — that's the whole reason `/api/routes` runs its reads through the service-role client (RLS-bypass). Any new feature that needs to show *other* routes' drivers/trucks (e.g. SameJobIndicator's "N trucks on this job" — sibling routes the caller is NOT crewed on) will silently get back `[]` if it queries from the browser, so the chip would render with no names/trucks and look broken — not error, just empty.

@@ -15,6 +15,7 @@ import { supabase } from '@/lib/supabase'
 import { stopStateService } from '@/services/StopStateService'
 import { flushCheckoffQueue } from '@/lib/checkoff/service'
 import { flushCompleteQueue } from '@/lib/completeQueue'
+import { flushEquipmentReturnQueue } from '@/lib/equipmentReturns/service'
 import { writeRouteCache, readRouteCache, pruneOldRouteCache, warmRouteShells } from '@/lib/routeCache'
 import { clearCachedUser, writeCachedProfile } from '@/lib/authCache'
 import { getUserRole } from '@/lib/auth'
@@ -250,6 +251,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       // /api/complete-stop POST, drops on 2xx/4xx, retries 5xx/network.
       // Fire-and-forget; never throws.
       if (user?.id) void flushCompleteQueue()
+
+      // And queued equipment-return upserts (delivery-side capture) —
+      // fire-and-forget, dedupe-by-stop, retries until the upsert lands.
+      if (user?.id) void flushEquipmentReturnQueue()
 
       // Read OTW status from Supabase for this batch of stops
       const supabaseOtw = await stopStateService.readOtwStatus(stopIds)

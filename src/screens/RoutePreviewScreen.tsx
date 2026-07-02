@@ -18,6 +18,7 @@ import { resolveCategory } from '@/lib/itemCategories'
 import { StopWindowBadge } from '@/components/StopWindowBadge'
 import AvaConversationSheet from '@/components/ava/AvaConversationSheet'
 import SameJobIndicator from '@/components/SameJobIndicator'
+import EquipmentRetrieveCard from '@/components/equipment/EquipmentRetrieveCard'
 
 const C = {
   blue:    '#1F46FF',
@@ -436,6 +437,15 @@ function StopPreviewCard({
           current_route_id={currentRouteId}
         />
       </div>
+
+      {/* Retrieve-from-site card (Equipment Return Tracking) — pickup stops
+          only. Self-contained; null when nothing was captured at the linked
+          delivery, so non-pickup previews render exactly as before. */}
+      {stop.stop_type === 'pickup' && (
+        <div style={{ padding: '10px 16px 0' }}>
+          <EquipmentRetrieveCard stopId={stop.stop_id} />
+        </div>
+      )}
 
       {/* Notes block */}
       {notes.length > 0 && (
