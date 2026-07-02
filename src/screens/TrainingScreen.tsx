@@ -124,7 +124,7 @@ const GRID_CATEGORIES: Category[] = [
     Icon: ShieldCheckIcon,
     iconBg: 'rgba(220,50,50,0.15)',
     iconColor: '#E05555',
-    badge: { text: 'Live', kind: 'live' },
+    badge: { text: 'Coming Soon', kind: 'soon' },
   },
   {
     id: 'tent-setup',
@@ -133,7 +133,7 @@ const GRID_CATEGORIES: Category[] = [
     Icon: TentIcon,
     iconBg: 'rgba(0,0,255,0.18)',
     iconColor: '#6B8FFF',
-    badge: { text: 'Live', kind: 'live' },
+    badge: { text: 'Coming Soon', kind: 'soon' },
   },
   {
     id: 'equipment-ops',
@@ -142,7 +142,7 @@ const GRID_CATEGORIES: Category[] = [
     Icon: SettingsIcon,
     iconBg: 'rgba(255,184,0,0.15)',
     iconColor: C.gold,
-    badge: { text: 'Live', kind: 'live' },
+    badge: { text: 'Coming Soon', kind: 'soon' },
   },
   {
     id: 'customer-service',
@@ -151,7 +151,7 @@ const GRID_CATEGORIES: Category[] = [
     Icon: HeartHandshakeIcon,
     iconBg: 'rgba(150,100,255,0.15)',
     iconColor: '#A57FFF',
-    badge: { text: 'Live', kind: 'live' },
+    badge: { text: 'Coming Soon', kind: 'soon' },
   },
 ]
 
@@ -162,7 +162,7 @@ const ORIENTATION: Category = {
   Icon: SteeringWheelIcon,
   iconBg: 'rgba(31,191,107,0.12)',
   iconColor: '#1FBF6B',
-  badge: { text: 'Live', kind: 'live' },
+  badge: { text: 'Coming Soon', kind: 'soon' },
 }
 
 // ─── Tiny presentational components ─────────────────────────────────────────

@@ -34,6 +34,17 @@ Capture equipment PTR leaves behind at a delivery that the pickup crew must retr
 
 ---
 
+## 2026-07-02 — Bug queue cleanup: Arcade scroll, Training badges, snow-season gate (VERSION 2.3.1; no migration)
+
+Three May-17 bug-queue items fixed directly; driver-app only, no migration, no schema, no shared files. VERSION bumped → 2.3.1 (bug-fixes-only → PATCH, on top of the 2.3.0 pickup-count feature that landed on `main` concurrently). A fourth item (INVESTIGATION-001, dispatcher notes on the home screen) was investigated read-only — findings reported to Darren, no code written pending his review.
+
+- **BUG-001 — Android: Party Kong Play button unreachable.** Root cause was NOT in the game — it was the **Arcade hub** (`src/components/arcade/ArcadeHub.tsx`). The hub root is `className="screen"` (globals.css `.screen` = `height:100svh; overflow:hidden`) and set an inline `minHeight:100vh` that could NOT create a scroll region — so on short/Android viewports the three tiles overflowed `100svh` and the last tile (Party Kong) with its "Play" button was clipped below the fold with no way to scroll to it. Fix (repo's RouteListScreen/RoutePreviewScreen pattern): removed the conflicting inline `minHeight:100vh`, and made the tiles container the scroll region — `flex:1` + `minHeight:0` + `overflowY:auto` + `WebkitOverflowScrolling:'touch'`, with `env(safe-area-inset-bottom)` folded into its bottom padding. Hero stays pinned (`flexShrink:0`); tiles scroll. The in-game "Tap to Play" StartOverlay was NOT the culprit (it's `position:absolute; inset:0` and fully clickable regardless of position).
+- **BUG-002 — Training badge wrongly read "Live".** All non-Arcade training items in `src/screens/TrainingScreen.tsx` (Safety & DOT, Tent setup, Equipment ops, Customer service, and New driver orientation) had `badge: { text:'Live', kind:'live' }` while their tap already opens the "Coming soon" toast (no `href`). Switched all five to `{ text:'Coming Soon', kind:'soon' }` (the "soon" pill styling already existed but no item used it). The Arcade tile (a separate component, genuinely playable) is untouched.
+- **BUG-003 — Snow forecast shown year-round.** `src/screens/WeatherScreen.tsx` rendered `<SnowForecastCard>` unconditionally. Added a pure `isSnowSeason(d = new Date())` helper (local device date) — shows Oct 1 → Apr 15 (`month >= 9 || month <= 2 || (month === 3 && day <= 15)`), hidden Apr 16 → Sep 30 — and gated the render site (`{isSnowSeason() && <SnowForecastCard …/>}`). Rain/Wind/Current/Lightning cards unchanged.
+- **Verified:** `npx next build` green (38 pages, types valid).
+
+---
+
 ## 2026-06-28 — Fix: AVA stop-type-aware route context (delivery vs pickup) (ON `main`: `08ebf01`; no migration)
 
 Darren reported two production bugs: AVA couldn't answer basic questions about today's route/equipment, and "how many chairs am I picking up today?" answered "none" because the chairs were on **pickup** stops while AVA had no concept of stop direction. Root cause (investigated before any code): for **today's** questions AVA only ever saw the **client seed** (`DayRouteSelectorScreen.tsx:338–351`), which aggregates items across all stops with **no `stop_type` split** and then `.slice(0, 8)` (top-8 by qty) — so direction was unknowable and most items were dropped. The server-side `loadRouteDateContext()` ran *only* for future preview dates and *also* lumped every direction together (`flatMap` over all stops). Delivery vs pickup was never separated anywhere. Driver-app-only; no migration, no schema, no shared/cross-repo files.

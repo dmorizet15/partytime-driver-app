@@ -51,6 +51,18 @@ function todayStr(): string {
   return `${y}-${m}-${day}`
 }
 
+// Snow forecast only makes sense in cold months. Show it October 1 through
+// April 15; hide it April 16 through September 30. Uses the device's local
+// date so the season boundary is correct for the driver, not Vercel UTC.
+function isSnowSeason(d: Date = new Date()): boolean {
+  const month = d.getMonth() // 0 = Jan … 11 = Dec
+  const day = d.getDate()
+  if (month >= 9) return true // Oct, Nov, Dec
+  if (month <= 2) return true // Jan, Feb, Mar
+  if (month === 3) return day <= 15 // April 1–15
+  return false // April 16 – September 30
+}
+
 export default function WeatherScreen() {
   const router = useRouter()
   const { stops, loadDay, loadedDate } = useAppState()
@@ -314,7 +326,7 @@ export default function WeatherScreen() {
                 onComingSoon={showToast}
               />
               <RainForecastCard hourly={snapshot.rainHourly} />
-              <SnowForecastCard daily={snapshot.snowDaily} />
+              {isSnowSeason() && <SnowForecastCard daily={snapshot.snowDaily} />}
 
               {/* Designed stub — Phase 2B stop-level badges */}
               {!HAS_STOP_LEVEL_BADGES && (

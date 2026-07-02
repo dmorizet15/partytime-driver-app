@@ -8,9 +8,12 @@
 //
 // Keep bullets short, plain-language, and driver-facing (no engineering terms).
 
-export const VERSION = '2.3.0'
+export const VERSION = '2.3.1'
 
 export const CHANGELOG: string[] = [
+  'Arcade: the Play button is now reachable on every phone',
+  'Weather: the snow forecast only shows during the winter months',
+  'Training: sections that aren\'t ready yet now correctly read "Coming Soon"',
   'Pickup stops now show a pre-filled count of equipment to bring back — one tap confirms it, or correct it to what you actually found',
   'Counts carry across split jobs: if another crew already grabbed some of it, your number reflects what’s actually left',
   'Log extension cords, racks, crates, and chair carts you leave at a delivery — the pickup crew will see exactly what to grab',

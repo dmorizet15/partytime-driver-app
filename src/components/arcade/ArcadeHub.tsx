@@ -98,7 +98,6 @@ export default function ArcadeHub() {
       style={{
         background:  C.bgGlow,
         color:       C.text,
-        minHeight:   '100vh',
         fontFamily:  'inherit',
         display:     'flex',
         flexDirection: 'column',
@@ -170,13 +169,20 @@ export default function ArcadeHub() {
       </div>
 
       {/* ── TILES ────────────────────────────────────────────────────────── */}
+      {/* Scroll region: .screen is height:100svh + overflow:hidden, so this
+          flex child must own the scroll (minHeight:0 + overflowY:auto) or the
+          last tile's Play button is clipped below the fold on short/Android
+          viewports and never becomes reachable. */}
       <div
         style={{
-          padding: '14px 18px 28px',
+          padding: '14px 18px calc(28px + env(safe-area-inset-bottom))',
           display: 'flex',
           flexDirection: 'column',
           gap: 14,
           flex: 1,
+          minHeight: 0,
+          overflowY: 'auto',
+          WebkitOverflowScrolling: 'touch',
         }}
       >
         {TILES.map((t) => (
