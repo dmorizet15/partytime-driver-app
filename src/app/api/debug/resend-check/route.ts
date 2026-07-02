@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
 
   const key = process.env.RESEND_API_KEY
   const keySet = !!key
-  const keyHint = key ? `${key.slice(0, 6)}…(${key.length} chars)` : null
+  const keyHint = key ? `${key.slice(0, 3)}…(${key.length} chars)` : null
   const toOverride = process.env.EQUIPMENT_ALERT_EMAIL_TO?.trim() || null
   const fromOverride = process.env.EQUIPMENT_ALERT_EMAIL_FROM?.trim() || null
 
