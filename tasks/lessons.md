@@ -6,6 +6,14 @@ Format: one lesson per block. Lead with the rule, then **Why** and **How to appl
 
 ---
 
+## A `className="screen"` container is `height:100svh; overflow:hidden` — a flex child that overflows is CLIPPED with no scroll, not scrollable. Give the body its own scroll region.
+
+**Why:** globals.css `.screen` locks to `height:100svh` + `overflow:hidden` (so iOS Safari's collapsible toolbar can't leave a gap under BottomNav). Any content taller than the small viewport is silently clipped below the fold. Setting an inline `minHeight:100vh` on the same element does NOT help — `height` still resolves the box and `overflow:hidden` still clips. This is exactly how the Arcade hub's third tile (Party Kong) had its "Play" button rendered but unreachable on short/Android viewports (2026-07-02, BUG-001) — "the page doesn't scroll far enough." Same root cause as the RoutePreviewScreen no-scroll fix (`1adbd48`).
+
+**How to apply:** keep the hero/header `flexShrink:0` and make the scrollable body its own flex child with `flex:1` + `minHeight:0` + `overflowY:auto` (+ `WebkitOverflowScrolling:'touch'`, and fold `env(safe-area-inset-bottom)` into its bottom padding). Never rely on `minHeight:100vh` to "let the page grow" inside a `.screen`. Pattern reference: RouteListScreen, RoutePreviewScreen, and now ArcadeHub.
+
+---
+
 ## Cross-stop reconciliation must be modeled as a LEDGER over the job (reservation), not a pairwise stop-to-stop match.
 
 **Why:** the first equipment-returns cut compared each pickup against its single linked delivery stop. That silently breaks on split jobs — tent delivered separately from inflatable, inflatable picked up before the tent — where the last crew must see whatever is LEFT after earlier pickups, not any one delivery's original count. Pairwise matching also forced a special case for multiple pickups per delivery; the ledger makes that the normal path (a stop with no rows contributes 0 and needs no handling).
