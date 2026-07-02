@@ -1,5 +1,15 @@
 # Open Tasks — partytime-driver-app
 
+## July 2, 2026 — Driver App Bug Queue cleanup (ON `main`; no migration)
+
+Four May-17 items. Three fixed + shipped; one investigated then built as a follow-up build session.
+
+- [x] **BUG-001** Android Arcade Play button unreachable — `.screen` (`height:100svh; overflow:hidden`) clipped the last hub tile; made the tiles container the scroll region in `ArcadeHub.tsx`. Committed `ccff357` (v2.1.1→ rebased into 2.3.1). Lesson recorded in `tasks/lessons.md`.
+- [x] **BUG-002** Training badges wrongly "Live" → all 5 non-Arcade items set to "Coming Soon" (`TrainingScreen.tsx`). Committed `ccff357`.
+- [x] **BUG-003** Snow forecast year-round → `isSnowSeason()` gate (Oct 1–Apr 15) around `<SnowForecastCard>` (`WeatherScreen.tsx`). Committed `ccff357`.
+- [x] **INVESTIGATION-001** → **built** (`ad15703`, v2.4.0). Persistent route-level "From Dispatch" block on `DayRouteSelectorScreen` below the "The day, in N" eyebrow, gated `inspected === true` (no duplicate render vs the pre-inspection AVA card). Uses existing `routes.dispatcher_notes` — no fetch/column/migration.
+- [ ] **On-device smoke (all four):** Android — Arcade tiles scroll, Party Kong Play tappable; Training badges read "Coming Soon"; Weather snow section hidden now (July, out of season); a route WITH a dispatcher note shows the Home "From Dispatch" block after pre-trip, a route WITHOUT one shows nothing, and the note is not double-shown pre-inspection.
+
 ## July 2, 2026 — Equipment Return Tracking: reservation-scoped ledger revision (Migration 029; v2.3.0)
 
 Design correction over the initial ship: running ledger per `(reservation_id, equipment_key)` replaces pairwise pickup↔delivery matching. See CLAUDE.md → "Equipment Return Tracking (Driver App) → Ledger revision" + Known Landmines (ledger model).
