@@ -25,7 +25,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ keySet, keyHint, toOverride, fromOverride })
   }
 
-  const from = fromOverride || 'PTR Driver App <alerts@partytimerentals.com>'
+  const fromParam = req.nextUrl.searchParams.get('from')
+  const from = fromParam
+    ? `PTR Driver App <${fromParam}>`
+    : (fromOverride || 'PTR Driver App <alerts@partytimerentals.com>')
   const to = 'dmorizet15@gmail.com' // test goes to Darren, NOT dispatch
   try {
     const res = await fetch('https://api.resend.com/emails', {
