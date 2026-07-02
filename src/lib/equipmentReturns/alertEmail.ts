@@ -14,9 +14,14 @@
 import type { EquipmentBalance, LedgerTraceLine } from './ledger'
 import { ruleForKey } from './rules'
 
+// Domain is HYPHENATED partytime-rentals.com — that's the Resend-verified
+// domain (confirmed live 2026-07-02: un-hyphenated partytimerentals.com is
+// rejected 403 "not authorized to send"; alerts@partytime-rentals.com sends).
+// dispatch@partytime-rentals.com is the real dispatch inbox (matches the
+// dashboard's delivery-confirmation sender).
 const RESEND_ENDPOINT = 'https://api.resend.com/emails'
-const DEFAULT_TO   = 'dispatch@partytimerentals.com'
-const DEFAULT_FROM = 'PTR Driver App <alerts@partytimerentals.com>'
+const DEFAULT_TO   = 'dispatch@partytime-rentals.com'
+const DEFAULT_FROM = 'PTR Driver App <alerts@partytime-rentals.com>'
 
 export interface EquipmentAlertInput {
   reservationId: string

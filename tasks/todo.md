@@ -9,7 +9,7 @@ Design correction over the initial ship: running ledger per `(reservation_id, eq
 - [x] POST pickup-completion path: crew-gated upsert → live final-pickup check → discrepancy alert (insert-once, `retryAlert` keeps the queue retrying a failed send).
 - [x] `EquipmentPickupSection` (prefilled steppers, one-tap confirm, below-prefill inline note) + `runStopComplete` pickup wiring + queue kinds.
 - [x] Ledger smoke 12/12 (scenarios a–d) + live-DB round trip on a real 2-del/2-pickup reservation + build green.
-- [ ] **Darren: set `RESEND_API_KEY` in the driver app's Vercel env** (production + preview) — the discrepancy email is inert (loud log only) until then. Optional: `EQUIPMENT_ALERT_EMAIL_TO` (defaults dispatch@partytimerentals.com).
+- [x] **`RESEND_API_KEY` set + verified end-to-end (2026-07-02):** live test send from production delivered to Darren's inbox. Caught + fixed a domain bug in the defaults — the Resend-verified domain is HYPHENATED `partytime-rentals.com` (un-hyphenated 403s); defaults now from alerts@ / to dispatch@ on the hyphenated domain.
 - [ ] **On-device smoke (THE gate):** pickup stop shows pre-filled expected counts; one-tap confirm at prefill → completes, no alert; final pickup reporting a shortfall → dispatch email with per-stop trace; intermediate pickup below prefill → NO alert; offline pickup completion queues the POST + flushes.
 
 ## July 2, 2026 — Equipment Return Tracking (Migration 028; v2.2.0)
