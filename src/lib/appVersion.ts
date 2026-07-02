@@ -8,9 +8,10 @@
 //
 // Keep bullets short, plain-language, and driver-facing (no engineering terms).
 
-export const VERSION = '2.3.1'
+export const VERSION = '2.4.0'
 
 export const CHANGELOG: string[] = [
+  'Dispatch notes for your route now stay visible on Home after your pre-trip, right above your stops',
   'Arcade: the Play button is now reachable on every phone',
   'Weather: the snow forecast only shows during the winter months',
   'Training: sections that aren\'t ready yet now correctly read "Coming Soon"',

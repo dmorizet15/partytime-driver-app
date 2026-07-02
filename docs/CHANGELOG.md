@@ -4,6 +4,18 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-07-02 — Route-level dispatcher notes persist on Home post-inspection (INVESTIGATION-001; VERSION 2.4.0; no migration)
+
+Build session on the investigated INVESTIGATION-001 finding: Melissa's route-level `routes.dispatcher_notes` reached the client but only ever displayed inside the AvaMorningCard, which is gated `!inspected` — so the note vanished the moment the driver finished the pre-trip. Added a persistent "From Dispatch" block on the Home screen (`DayRouteSelectorScreen.tsx`) so the note stays visible while the driver works the route. Driver-app only; no new fetch, no column, no migration — `routes.dispatcher_notes` already flows through the existing `/api/routes` SELECT + `supabaseTransform` mapping.
+
+- **Placement:** directly below the "The day, in N" eyebrow header, above the stop-list container (per the investigation) — where the eyebrow + stop list already persist pre- AND post-inspection.
+- **Gating:** renders ONLY when `inspected === true` AND `primaryRoute.dispatcher_notes` is non-empty (`.trim().length > 0`). Pre-inspection the AvaMorningCard already speaks + shows the same note (gated `!inspected`), so there is **no duplicate render** of the note in the pre-trip window — this block picks up exactly where that card leaves off. Hidden entirely when the note is null/empty.
+- **Styling:** the AVA "From Dispatch" amber language adapted to the light Home surface — muted gold fill (`rgba(255,184,0,0.12)`), **no border**, `FONT_DISPLAY` uppercase gold-deep label, `pre-wrap` full text (`wordBreak:break-word`). No new component (a plain inline block, consistent with the RoutePreviewScreen route-level dispatch block and the AvaMorningCard treatment).
+- **Scope:** route-level only. Stop-level dispatcher notes already render on StopDetailScreen (out of scope).
+- **Verified:** `npx next build` green (38 pages, types valid). VERSION 2.3.1 → 2.4.0 (new visible surface → MINOR). **Pending: on-device confirm** — a route with a dispatcher note shows the block on Home after pre-trip; a route without one shows nothing; the note is not double-shown pre-inspection.
+
+---
+
 ## 2026-07-02 — Equipment Return Tracking — reservation-scoped ledger revision (**Migration 029** `equipment_return_alerts`; v2.3.0)
 
 Darren design correction, same day as the initial ship: the pairwise pickup↔linked-delivery resolution was wrong for jobs where delivery and pickup are split across stops for different equipment (tent delivered separately from inflatable; inflatable picked up before the tent). The tent crew must see whatever is LEFT after the inflatable crew's pickup — modeled as a running ledger per `(reservation_id, equipment_key)`, not a stop pair. Migration 028, the shared rules config, the delivery capture section, and the `runStopComplete` chokepoint were reused untouched.

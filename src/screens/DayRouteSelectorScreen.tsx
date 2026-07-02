@@ -1023,6 +1023,38 @@ export default function DayRouteSelectorScreen() {
               The day, in {customerStopCount}
             </div>
 
+            {/* FROM DISPATCH — route-level dispatcher note, persistent overview.
+                Post-inspection only: pre-inspection the AVA morning card already
+                speaks + shows this same note (gated !inspected above), so this
+                block picks up exactly where that card leaves off — no duplicate
+                render in the pre-trip window. Amber "From Dispatch" language from
+                the AVA card, adapted to the light Home surface (muted gold fill,
+                no border, pre-wrap full text). Hidden when the note is empty. */}
+            {inspected && primaryRoute?.dispatcher_notes
+              && primaryRoute.dispatcher_notes.trim().length > 0 && (
+              <div style={{ padding: '4px 22px 8px' }}>
+                <div style={{
+                  background: 'rgba(255,184,0,0.12)',
+                  borderRadius: 12,
+                  padding: '11px 14px',
+                }}>
+                  <div style={{
+                    fontFamily: FONT_DISPLAY,
+                    fontSize: 10.5, fontWeight: 900, letterSpacing: '0.18em',
+                    textTransform: 'uppercase', color: C.goldDeep,
+                  }}>
+                    From Dispatch
+                  </div>
+                  <p style={{
+                    margin: '6px 0 0', fontSize: 14, lineHeight: 1.45, color: C.ink,
+                    whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                  }}>
+                    {primaryRoute.dispatcher_notes.trim()}
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Day stop list — vertical line + numbered circles. Persists
                 pre- AND post-inspection (Fix 1): pre-inspection it's dimmed and
                 non-tappable; post-inspection it's the live route overview with
