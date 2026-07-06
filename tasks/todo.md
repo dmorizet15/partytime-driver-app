@@ -1,8 +1,8 @@
 # Open Tasks — partytime-driver-app
 
-## July 6, 2026 — Pickup Answer (Driver-Facing) — feature branch, NO push, NO migration
+## July 6, 2026 — Pickup Answer (Driver-Facing) — ON `main` (`e70e78c`); NO migration
 
-Spec: MBC Part 3 "📞 Pickup Answer (Driver-Facing)" (locked 2026-07-05). Read-only gold card on the delivery stop that answers "when are you picking up?" using the reservation's pickup stop(s). Built on branch `feat/pickup-answer` — do NOT push to `main` (Darren device smoke-test gate).
+Spec: MBC Part 3 "📞 Pickup Answer (Driver-Facing)" (locked 2026-07-05). Read-only gold card on the delivery stop that answers "when are you picking up?" using the reservation's pickup stop(s). Built on branch `feat/pickup-answer`; Darren merged to `main` accepting the low read-only risk (test opportunistically, quick-fix if needed). **Note:** the card is on the interactive StopDetailScreen only, so it needs a day WITH delivery stops to see (07-06 had 0 deliveries; nearest delivery days 07-07 and 07-10).
 
 **Session 1 — investigation + pure derivation (DONE):**
 - [x] Migrations head = **29** (`20260702029`). No migration needed — read-only confirmed.
