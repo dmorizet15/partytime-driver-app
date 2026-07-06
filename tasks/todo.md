@@ -1,5 +1,27 @@
 # Open Tasks — partytime-driver-app
 
+## July 6, 2026 — Pickup Answer (Driver-Facing) — feature branch, NO push, NO migration
+
+Spec: MBC Part 3 "📞 Pickup Answer (Driver-Facing)" (locked 2026-07-05). Read-only gold card on the delivery stop that answers "when are you picking up?" using the reservation's pickup stop(s). Built on branch `feat/pickup-answer` — do NOT push to `main` (Darren device smoke-test gate).
+
+**Session 1 — investigation + pure derivation (DONE):**
+- [x] Migrations head = **29** (`20260702029`). No migration needed — read-only confirmed.
+- [x] **GUARD FIELD CONFIRMED (blocking step):** the early-pickup guard's committed-time value is **`effectiveWindow(pickupStop).startsAt`** in `src/lib/stopConstraints.ts` = `COALESCE(dispatcher_time_override.must_pickup_after, pickup_window_start, notes_classification.extracted.must_pickup_after)`. StopDetailScreen's standby/countdown use exactly `pickupOpensAt = effectiveWindow(stop).startsAt` (+ `formatCountdown`/`formatLocalClock`). The card computes the SAME `effectiveWindow(pickupStop).startsAt` for its "No earlier than" floor → promise and block can never disagree. Narrowed `effectiveWindow`'s param to a structural `WindowResolvable` interface so the card's lighter pickup rows reuse the one resolver (Stop still satisfies it; every existing caller unaffected).
+- [x] **Live data facts (project fumprcyavpefyupurvsv, 2026-07-06):** pickups 454; `pickup_window_start/end` 426 (~94%); exact-time (start==end) 87 = inflatable floors; `calculated_eta` on 264 (routed); `linked_stop_id` 453/454 (**can chain pickup→pickup**, so group by `reservation_id`, not linked_stop_id); `dispatcher_time_override` **0%**, `scheduled_time` **0%** (COALESCE forward-compat); `no_pickup_needed` flag unused (0) → no-pickup = ABSENCE of pickup rows (7 deliveries). Multi-pickup reservations: 31 (18 phantom same-date, 13 genuine distinct-date). **scheduled_date DRIFTS from the floor** — verified `388e13ad` floor `2026-09-27T00:00Z` = 8 PM ET 09-26 while scheduled_date = 09-28 → never use scheduled_date for the inflatable time.
+- [x] **Inflatable classifier:** both repos' `inflatable.ts` is CATEGORY-ONLY. Live data proves that misses blank-category leaks (EMERALD ICE DRY SLIDE, CASTLE COMBO under blank cat) while name-only misses keyword-less INFLATABLES names (MECHANICAL BULL, JOUST CHALLENGE). Correct = **category OR name**. Built `src/lib/pickupAnswer/classify.ts` reusing `isInflatableCategory` VERBATIM (applied to BOTH category and name) + accessory-name exclusions (sand bag/weight). Tent = pure mirror of `isTentItem` (its module imports the supabase browser client → impure → can't be pulled into a pure module; mirrored with a lockstep note).
+- [x] **Pure derivation `src/lib/pickupAnswer/derive.ts`** (+ `types.ts`, `format.ts`): dedup phantom rows by scheduled_date, reservation-scoped, confidence-gated split labels (only when 2 distinct dates + cleanly-separable real inflatable + real tent, else neutral "First trip / Second trip"), ET/DST-safe formatters. **Smoke test 45/45 PASS** (inflatable exact-time, tent routed/unrouted, mixed, no-pickup, phantom-dup, split-both-mixed→neutral, clean-split→labels, TZ/DST EDT+EST, guard-parity, stray-reservation filter). `next build` green (38 pages).
+
+**Session 2 — UI card + wiring (see below, DONE this session):**
+- [x] Service-role `GET /api/stops/pickup-answer?stop_id=` (linked delivery↔pickup rows live on a different route → client RLS can't read them; mirrors `/api/stops/equipment-returns`).
+- [x] `PickupAnswerCard` on delivery StopDetail, below customer/address, above manifest; collapsed glanceable → tap expand; two-line time model; say-line; split/mixed trip rows; no-pickup copy; reuses the guard's `formatCountdown` for an imminent same-day floor.
+- [ ] **Darren device smoke (THE gate):** on a real route date with an inflatable, a tent, and a mixed order — card time equals the guard's enforced floor; ET display; Planned vs Scheduled; dedup; confidence labels; no-pickup copy. **Concrete delivery stop_ids (live, 2026-07-06):**
+  - Inflatable (near-term, exact floor) — `5ab4e402-56f9-4146-bb06-a22be35506cd` (EMILY CHAMBERS, deliver 07-07 → card should read "No earlier than 12:30 PM" + "Currently expected ~3:30 PM").
+  - Mixed, single pickup, exact — `5f01bcaf-3fb4-41d1-b652-48b193a4f72e` (Toniann Cortina, 08-19).
+  - Mixed, genuine split (2 dates) — `ed5aecaa-70de-461d-b363-4ecee060c206` (Jordan Hoener, 09-13) → expect two trip rows.
+  - Tent-only — `75a96ec5-eeef-47fb-aa2f-72bd586daa65` (CELINE MARTIN, 07-07; null pickup window → "Planned" + flexible window).
+  - No-pickup — pick any delivery whose reservation has zero pickup rows (7 live) → the "no pickup currently scheduled" copy.
+  - Open a stop via `/route/<routeId>/stop/<stopId>`; the card is delivery-only, sits under the customer card, above the manifest.
+
 ## July 2, 2026 — Driver App Bug Queue cleanup (ON `main`; no migration)
 
 Four May-17 items. Three fixed + shipped; one investigated then built as a follow-up build session.

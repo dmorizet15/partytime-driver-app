@@ -8,9 +8,11 @@
 //
 // Keep bullets short, plain-language, and driver-facing (no engineering terms).
 
-export const VERSION = '2.4.0'
+export const VERSION = '2.5.0'
 
 export const CHANGELOG: string[] = [
+  'Delivery stops now answer "when are you picking up?" at a glance — a gold card shows the committed pickup time (inflatables) or the day and window (tents), plus a live ETA when the pickup is routed',
+  'The pickup time on that card always matches the "you\'re early" cutoff, so what you tell the customer can never disagree with the app',
   'Dispatch notes for your route now stay visible on Home after your pre-trip, right above your stops',
   'Arcade: the Play button is now reachable on every phone',
   'Weather: the snow forecast only shows during the winter months',

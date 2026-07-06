@@ -50,6 +50,7 @@ import EquipmentReturnSection, {
 } from '@/components/equipment/EquipmentReturnSection'
 import EquipmentPickupSection from '@/components/equipment/EquipmentPickupSection'
 import EquipmentRetrieveCard from '@/components/equipment/EquipmentRetrieveCard'
+import PickupAnswerCard from '@/components/pickup/PickupAnswerCard'
 import { commitEquipmentReturns } from '@/lib/equipmentReturns/service'
 import {
   hasCheckoffRows,
@@ -1881,6 +1882,13 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
               )}
             </div>
           </div>
+        )}
+
+        {/* Pickup Answer — gold card directly under the customer/address block,
+            above the manifest. Delivery-only; reservation-scoped; self-contained
+            (renders nothing until a confirmed resolution). Spec: MBC Part 3. */}
+        {stop.stop_type === 'delivery' && (
+          <PickupAnswerCard stopId={stop.stop_id} />
         )}
 
         {/* Payment state cards — three exclusive states.

@@ -46,7 +46,22 @@ export interface EffectiveWindow {
   source:   'dispatcher_override' | 'structured' | 'notes' | null
 }
 
-export function effectiveWindow(stop: Stop): EffectiveWindow {
+// Structural subset of `Stop` carrying exactly the fields the window resolver
+// reads. `Stop` satisfies this, so every existing caller is unaffected — but a
+// lighter row shape (e.g. the Pickup Answer card's reservation-scoped pickup
+// rows, which aren't full driver `Stop`s) can reuse this ONE resolver so the
+// committed-time value can never drift from the early-pickup guard.
+export interface WindowResolvable {
+  stop_type?:                string | null
+  dispatcher_time_override?: DispatcherTimeOverride | null
+  notes_classification?:     NotesClassification | null
+  pickup_window_start?:      string | null
+  pickup_window_end?:        string | null
+  delivery_window_start?:    string | null
+  delivery_window_end?:      string | null
+}
+
+export function effectiveWindow(stop: WindowResolvable): EffectiveWindow {
   const isPickup = stop.stop_type === 'pickup'
   const override = stop.dispatcher_time_override
   if (override) {
