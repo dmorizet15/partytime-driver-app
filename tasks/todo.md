@@ -14,7 +14,7 @@ Spec: MBC Part 3 "📞 Pickup Answer (Driver-Facing)" (locked 2026-07-05). Read-
 **Session 2 — UI card + wiring (see below, DONE this session):**
 - [x] Service-role `GET /api/stops/pickup-answer?stop_id=` (linked delivery↔pickup rows live on a different route → client RLS can't read them; mirrors `/api/stops/equipment-returns`).
 - [x] `PickupAnswerCard` on delivery StopDetail, below customer/address, above manifest; collapsed glanceable → tap expand; two-line time model; say-line; split/mixed trip rows; no-pickup copy; reuses the guard's `formatCountdown` for an imminent same-day floor.
-- [ ] **Darren device smoke (THE gate):** on a real route date with an inflatable, a tent, and a mixed order — card time equals the guard's enforced floor; ET display; Planned vs Scheduled; dedup; confidence labels; no-pickup copy. **Concrete delivery stop_ids (live, 2026-07-06):**
+- [x] **Darren device smoke — PASSED 2026-07-07** (live delivery day, "looks good"). Feature complete. Concrete delivery stop_ids (live, 2026-07-06) retained below for reference:
   - Inflatable (near-term, exact floor) — `5ab4e402-56f9-4146-bb06-a22be35506cd` (EMILY CHAMBERS, deliver 07-07 → card should read "No earlier than 12:30 PM" + "Currently expected ~3:30 PM").
   - Mixed, single pickup, exact — `5f01bcaf-3fb4-41d1-b652-48b193a4f72e` (Toniann Cortina, 08-19).
   - Mixed, genuine split (2 dates) — `ed5aecaa-70de-461d-b363-4ecee060c206` (Jordan Hoener, 09-13) → expect two trip rows.
