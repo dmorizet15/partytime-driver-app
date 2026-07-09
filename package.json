@@ -7,7 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "check:version": "node scripts/check-version-bump.mjs"
+    "check:version": "node scripts/check-version-bump.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",
@@ -25,9 +28,11 @@
     "autoprefixer": "^10.0.1",
     "eslint": "^8",
     "eslint-config-next": "14.2.5",
+    "fake-indexeddb": "^6.2.5",
     "postcss": "^8",
     "serwist": "^9.5.11",
     "tailwindcss": "^3.4.1",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.10"
   }
 }
