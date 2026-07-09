@@ -14,6 +14,18 @@ Session-scoped, binding rules for the native RFID integration build (started 202
 - **Unknowns are logged, never guessed.** Any value that cannot be determined from code, the sandbox, or the SDK notes goes to `docs/ASSUMPTIONS.md` in the format: What I needed / What I did instead / How to verify / Risk if wrong. Then the build continues — never stall on an unknown, never silently pick a plausible value.
 - **Never mock a passing test.** A test that cannot pass honestly stays red and gets reported. A green suite that lies is worse than a red one.
 
+## RFID Native Integration — state (2026-07-09, branch `feat/rfid-native-integration`)
+
+**Done (all verified against MockScanner + fakes; 63/63 tests, tsc + lint + `next build` green):**
+- `src/modules/rfid/` self-contained module: six injected adapters (the ONLY host doorway), vendor-neutral ports (`TagBackendPort`/`OrderSystemPort`), HAL (`RfidScanner` + device-neutral `NativeBridge`; `Xr2Scanner` over the WebView bridge, `MockScanner` full impl, `C72Scanner` honest stub), boundary test enforcing all of it.
+- Offline core: IndexedDB replica (any-modality lookup: EPC/barcode/NFC → same record), durable idempotent write queue (restart-surviving, single-flight drain, crash recovery, backoff, body-checked rejections dead-letter immediately, N-unsynced always driver-visible), sync engine on reconnect.
+- Server layer: sandbox-guarded Easy RFID Pro client (`EASY_RFID_BASE_URL`, refuses non-sandbox writes without `EASY_RFID_ALLOW_PRODUCTION`; wrapped-401 + isWriteSuccess ports of the proven production contract), dry-run-locked TapGoods (`TAPGOODS_DRY_RUN` + composition-root `allowLive` double gate), route handlers mounted at `/api/rfid-module/*`.
+- Screens wired: Delivery Checkout + Pickup Return additively inside `StopDetailScreen` (launch card `RfidStopSection`; zero manual contract/client entry; ConflictInterrupt; six-status flagging + required Wash/Repair reasons + batch apply), Touch Scan standalone from Tools hub (Individual/Mass/Status, fully offline). Host adapters in `src/lib/rfid/hostAdapters.tsx` (kills the `ptr-driver` placeholder — identity from authCache).
+
+**Next:** live sandbox verification (needs credentials + sandbox API host — see `docs/ASSUMPTIONS.md`), physical XR2 smoke test, rfid_to_tapgoods_map join for `ExpectedItem.rentalClassId` + replica barcode/nfcUid enrichment, deferred flows (`src/modules/rfid/flows/deferred.ts` stubs → specs in partytime-rfid `docs/feature-specs/`).
+**Blocked:** live TapGoods verification (Darren, manually, labeled test order); locate tuning (hardware).
+**Merge note:** the eventual PR to `main` is driver-facing → MINOR `VERSION` bump + CHANGELOG bullets per the standing rule; feature-branch commits carry `[skip version]`.
+
 ## Compact Instructions
 
 When this session's context is summarized or compacted, ALWAYS preserve verbatim: (1) the RFID adapter interface definitions (`StopContextAdapter`, `IdentityAdapter`, `AuthAdapter`, `LocationAdapter`, `NavigationAdapter`, `ThemeAdapter` — `src/modules/rfid/adapters/types.ts`) and the port interfaces (`TagBackendPort`, `OrderSystemPort` — `src/modules/rfid/ports/`), (2) all five RFID Session Guardrails above, (3) the current full contents of `docs/ASSUMPTIONS.md`. These are load-bearing for every subsequent step; losing them from context causes guardrail violations.

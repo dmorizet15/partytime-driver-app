@@ -108,3 +108,65 @@ stop and count exceptions.
 Risk if wrong: medium — name matching will miss renamed items and produce
 noisy exceptions; it can never mis-write (writes key on scanned EPC, not on
 the match).
+
+## [Delivery] — Exact "delivered" status string
+
+What I needed: the exact free-text status value a delivery write should set
+(the six-status vocabulary is the PICKUP set; delivery is separate).
+What I did instead: `DELIVERY_STATUS = 'Delivered'` in
+`src/modules/rfid/flows/checkoutFlow.ts` — sourced from partytime-rfid
+CLAUDE.md doctrine ("Delivery write: status = 'Delivered'"), but the
+delivery-checkout spec itself warns the value must be confirmed against a
+live record (status is free text, not an enum).
+How to verify: GET one item that the legacy app marked delivered; read its
+`status` field verbatim.
+Risk if wrong: medium — a mismatched string forks the dataset (filters/
+conflict checks won't see legacy-delivered items as delivered). One-line fix.
+
+## [Pickup] — Default status for unflagged returned items
+
+What I needed: what the legacy app writes for a scanned-back item the driver
+did NOT flag.
+What I did instead: `DEFAULT_RETURN_STATUS = 'Needs to be Inspected'`
+(configurable constant, same file). Chosen because it is the safest member of
+the exact vocabulary (blocks re-rent until someone looks at it); not confirmed
+against the legacy app's behavior.
+How to verify: run one pickup in the legacy app without flagging; read the
+resulting status.
+Risk if wrong: low — worst case items land one inspection step earlier than
+legacy; never rentable-when-damaged.
+
+## [Touch Scan] — Quality dropdown vocabulary
+
+What I needed: the confirmed option list for the Quality dropdown.
+What I did instead: A/B/C/D + whatever value the record already carries
+(`TouchScanScreen.ItemDetailCard`). Existing fixture/replica data only shows
+single-letter grades.
+How to verify: check the legacy app's quality dropdown or distinct
+`quality` values across the live Item Master.
+Risk if wrong: low — free-text field upstream; wrong options just annoy.
+
+## [Device detect] — Bridge has no device-identity query
+
+What I needed: a way to ask the native wrapper WHICH device it is, for honest
+auto-detect once a second wrapper (C72) exists.
+What I did instead: bridge-present ⇒ XR2 (the only wrapper that injects
+window.rfidBridge today), manual override in Settings storage
+(`rfid_scanner_override`), dev-build Mock fallback, production explicit error
+(`selectScanner` — never silent).
+How to verify: n/a today; add `getDeviceModel()` to the Android bridge before
+shipping a second wrapper.
+Risk if wrong: none until a second native wrapper exists.
+
+## [Build env] — Container builds need placeholder Supabase env
+
+What I needed: `npx next build` green as the pre-push gate.
+What I did instead: the build container has no `.env.local`; existing app
+routes (e.g. /api/ava/route-weather) construct Supabase clients during page-
+data collection and throw without env. Verified my branch touches zero AVA
+files, then built with placeholder NEXT_PUBLIC_SUPABASE_URL/ANON_KEY +
+SUPABASE_URL/SERVICE_KEY values. Pre-existing condition, not introduced here.
+How to verify: build on a machine with the real .env.local — no placeholders
+needed.
+Risk if wrong: none at runtime (placeholders are build-time only, never
+committed).
