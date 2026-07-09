@@ -4,6 +4,22 @@ Next.js 14 PWA for the driver mobile workflow. Downstream of `partytime-dashboar
 
 ---
 
+## RFID Session Guardrails — `feat/rfid-native-integration` (read before ANY RFID work)
+
+Session-scoped, binding rules for the native RFID integration build (started 2026-07-09). Violating any of these fails the run:
+
+- **TapGoods is DRY-RUN ONLY this session.** No live TapGoods write may be sent, regardless of confidence. `TAPGOODS_DRY_RUN` defaults to `true` and is not flipped this session. Dry-run payloads are constructed and logged, never posted. Darren performs live TapGoods verification manually afterward against a clearly labeled test order.
+- **Easy RFID Pro writes go ONLY to the sandbox host** resolved from `EASY_RFID_BASE_URL` (default `https://sb-easyrfidpro.ptshome.com`). The client refuses to issue a write when the resolved base URL is not the sandbox, unless an explicit `EASY_RFID_ALLOW_PRODUCTION` flag is set — and that flag is not set this session. The resolved host is asserted and logged once at startup so every run states out loud where its writes are going. Never hardcode a host in the client.
+- **The RFID module (`src/modules/rfid/`) may not import from driver-app internals.** App data crosses the boundary only through the four injected adapters (`StopContextAdapter`, `IdentityAdapter`, `LocationAdapter`, `NavigationAdapter`). The driver app imports from the module, never the reverse. Enforced by an automated boundary test — a violation is a red suite, not a code-review note.
+- **Unknowns are logged, never guessed.** Any value that cannot be determined from code, the sandbox, or the SDK notes goes to `docs/ASSUMPTIONS.md` in the format: What I needed / What I did instead / How to verify / Risk if wrong. Then the build continues — never stall on an unknown, never silently pick a plausible value.
+- **Never mock a passing test.** A test that cannot pass honestly stays red and gets reported. A green suite that lies is worse than a red one.
+
+## Compact Instructions
+
+When this session's context is summarized or compacted, ALWAYS preserve verbatim: (1) the four RFID adapter interface definitions (`StopContextAdapter`, `IdentityAdapter`, `LocationAdapter`, `NavigationAdapter`) and the file paths where they live, (2) all five RFID Session Guardrails above, (3) the current full contents of `docs/ASSUMPTIONS.md`. These are load-bearing for every subsequent step; losing them from context causes guardrail violations.
+
+---
+
 ## Current build state
 
 | Item | Status |
