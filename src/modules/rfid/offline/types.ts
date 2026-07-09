@@ -15,6 +15,8 @@ export interface ReplicaItem {
   /** Canonical item record fields (flattened for IDB indexing). */
   epc: string
   tid: string | null
+  barcode: string | null
+  nfcUid: string | null
   rentalClassId: string
   commonName: string
   quality: string

@@ -67,6 +67,18 @@ export class ItemReplica {
     return all.filter((i) => i.rentalClassId === rentalClassId)
   }
 
+  /** Any-modality resolution — every lookup lands on the same item record. */
+  async getByBarcode(barcode: string): Promise<ReplicaItem | undefined> {
+    const all = await this.getAll()
+    return all.find((i) => i.barcode !== null && i.barcode === barcode)
+  }
+
+  async getByNfcUid(nfcUid: string): Promise<ReplicaItem | undefined> {
+    const normalized = nfcUid.toUpperCase()
+    const all = await this.getAll()
+    return all.find((i) => i.nfcUid !== null && i.nfcUid.toUpperCase() === normalized)
+  }
+
   /**
    * Apply a local mutation (status/quality/notes change) as an overlay:
    * visible to every read immediately, marked with the given sync state so

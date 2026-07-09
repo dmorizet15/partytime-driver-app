@@ -9,29 +9,10 @@
 
 import type { ItemRecord } from '../ports/tagBackend'
 
-/** Exact status vocabulary from the live app. */
-export const ITEM_STATUSES = [
-  'Needs to be Inspected',
-  'Ready to Rent',
-  'Repair',
-  'Staged',
-  'Wash',
-  'Wet',
-] as const
-export type ItemStatus = (typeof ITEM_STATUSES)[number]
-
-/** Statuses that block a delivery checkout (non-rentable). */
-export const NON_RENTABLE_STATUSES: ReadonlySet<string> = new Set([
-  'Wash',
-  'Repair',
-  'Wet',
-  'Needs to be Inspected',
-])
-
-/** Wash reason vocabulary (live app) + free-text Other. */
-export const WASH_REASONS = ['Dirty / Mud', 'Leaves', 'Oil', 'Mold', 'Stain', 'Oxidation', 'Wet'] as const
-/** Repair reason vocabulary (live app) + free-text Location of Repair. */
-export const REPAIR_REASONS = ['Rip or Tear', 'Sewing repair needed', 'Grommet', 'Rope', 'Buckle'] as const
+// Status/reason vocabulary lives in flows/statusVocabulary.ts (domain data,
+// not fixture data) — re-exported here so older test imports keep working.
+export { ITEM_STATUSES, NON_RENTABLE_STATUSES, REPAIR_REASONS, WASH_REASONS } from '../flows/statusVocabulary'
+export type { ItemStatus } from '../flows/statusVocabulary'
 
 /** Scanned in the field but present in no replica — the "never seen before" case. */
 export const UNKNOWN_EPC = 'E28011700000000000000099'
@@ -49,9 +30,15 @@ export const EPC = {
   wetItem: 'E28011700000000000000006',
 } as const
 
+/** Barcode + NFC identifiers for the multi-modal cases. */
+export const BARCODE = { rentable: 'PTR-100001', qualityA: 'PTR-200001' } as const
+export const NFC_UID = { rentable: '04:A1:B2:C3:D4:E5:F6' } as const
+
 function item(partial: Partial<ItemRecord> & Pick<ItemRecord, 'epc' | 'rentalClassId' | 'commonName' | 'currentStatus'>): ItemRecord {
   return {
     tid: null,
+    barcode: null,
+    nfcUid: null,
     quality: 'A',
     lastContractNum: '',
     lastScanBy: '',
@@ -74,6 +61,8 @@ export function fixtureItems(): ItemRecord[] {
       commonName: 'TENT 20X20 FRAME',
       currentStatus: 'Ready to Rent',
       quality: 'A',
+      barcode: BARCODE.rentable,
+      nfcUid: NFC_UID.rentable,
       serialNum: 'SN-1001',
       binLocation: 'A-01',
       lastContractNum: FIXTURE_PRIOR_CONTRACT,
@@ -109,6 +98,7 @@ export function fixtureItems(): ItemRecord[] {
       commonName: 'CHAIR WHITE PADDED GARDEN',
       currentStatus: 'Ready to Rent',
       quality: 'A',
+      barcode: BARCODE.qualityA,
       serialNum: 'SN-2001',
       binLocation: 'C-04',
     }),

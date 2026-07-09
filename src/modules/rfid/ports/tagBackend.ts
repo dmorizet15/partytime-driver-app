@@ -13,6 +13,14 @@
 export interface ItemRecord {
   epc: string
   tid: string | null
+  /**
+   * Cross-modality identifiers. The tag backend's item table doesn't store
+   * these natively — the identifier mapping is a separate concern the
+   * implementation joins in (PTR: Supabase tag_assignments). Null when the
+   * physical item has no chip/label of that kind.
+   */
+  barcode: string | null
+  nfcUid: string | null
   rentalClassId: string
   commonName: string
   quality: string
