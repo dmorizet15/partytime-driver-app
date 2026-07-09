@@ -39,6 +39,7 @@ export interface SupabaseRouteRow {
   label:            string
   truck_id:         string | null
   truck_id_2:       string | null
+  truck_id_3:       string | null
   break_blocks:     BreakBlock[] | null
   dispatcher_notes: string | null
   warehouse_notes:  string | null
@@ -49,6 +50,7 @@ export interface SupabaseRouteRow {
   transfer_pending_to: string | null
   truck:            SupabaseTruckRow | SupabaseTruckRow[] | null
   truck_2:          SupabaseTruckRow | SupabaseTruckRow[] | null
+  truck_3:          SupabaseTruckRow | SupabaseTruckRow[] | null
 }
 
 // ── Phase 2A — route_crew rows ───────────────────────────────────────────────
@@ -382,9 +384,15 @@ export function transformSupabase({ routes: routeRows, crew, myCrew, stops: stop
       ? ownTruck
       : firstRel(r.truck)
     const truck_2 = firstRel(r.truck_2)
+    // Route-level truck roster (display-only) — every truck on the ROUTE, in
+    // slot order, regardless of who (if anyone) holds it. Decoupled from the
+    // personal `truck` above so it never touches the inspection gate.
+    const route_trucks = [firstRel(r.truck), firstRel(r.truck_2), firstRel(r.truck_3)]
+      .filter((t): t is SupabaseTruckRow => !!t)
+      .map((t) => ({ name: t.name, plate: t.plate ?? undefined }))
     const drivers = driversByRoute.get(r.id) ?? []
     const crewRole: Route['crew_role'] =
-      mine?.role === 'primary_driver' || mine?.role === 'secondary_driver'
+      mine?.role === 'primary_driver' || mine?.role === 'secondary_driver' || mine?.role === 'helper'
         ? mine.role
         : undefined
     return {
@@ -402,6 +410,7 @@ export function transformSupabase({ routes: routeRows, crew, myCrew, stops: stop
       truck_dvir_requirement:      truck?.dvir_requirement      ?? undefined,
       truck_current_defect_status: truck?.current_defect_status ?? undefined,
       truck_2_name:                truck_2?.name,
+      route_trucks,
       crew_role:                   crewRole,
       is_primary:                  mine?.is_primary,
       primary_driver_name:         primaryNameByRoute.get(r.id),

@@ -306,9 +306,15 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   // handoff. The 2026-06-09 "transfer active → only the active driver
   // completes" decision and Rev 2 only conflicted because this gate couldn't
   // tell an ex-primary from a co-driver.
-  const canComplete = !route?.active_driver_id
+  // Helpers (2026-07-09) are VIEW-ONLY: they receive the route so they can see
+  // the day's trucks/stops, but must never complete a stop or check off items.
+  // crew_role distinguishes a helper from a co-driver (both is_primary === false),
+  // so the gate is: everything below AND not a helper. Also enforced server-side
+  // in /api/complete-stop.
+  const canComplete = (!route?.active_driver_id
     || isActiveDriver(route, authUser?.id)
-    || route?.is_primary === false
+    || route?.is_primary === false)
+    && route?.crew_role !== 'helper'
   // Original primary who just lost the route — drives the "Transferred" note.
   const transferredAwayName = isTransferredAway(route, authUser?.id)
     ? crewMemberName(route, route?.active_driver_id)

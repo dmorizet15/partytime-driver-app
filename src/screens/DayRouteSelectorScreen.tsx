@@ -373,6 +373,18 @@ export default function DayRouteSelectorScreen() {
   // Co-driver = explicitly not the primary. Undefined (soft-fail / no crew
   // row) is treated as NOT a co-driver so the badge never shows on bad data.
   const isCoDriver = primaryRoute?.is_primary === false
+  // Helper (2026-07-09) — a view-only ride-along. Shares is_primary === false
+  // with a co-driver, so crew_role is what tells them apart; drives the chip
+  // label. Completion/check-off is gated off for helpers in StopDetailScreen.
+  const isHelper  = primaryRoute?.crew_role === 'helper'
+  const roleLabel = isHelper ? 'Helper' : 'Co-driver'
+  // Route-level truck roster (display-only). Shown when this user has no truck
+  // of their own (no-truck co-driver / helper) OR the route runs more than one
+  // truck — so everyone can see what's rolling on the route. Never gates the
+  // pre-trip inspection (that keys on the personal truck_* fields).
+  const routeTrucks      = primaryRoute?.route_trucks ?? []
+  const routeTrucksLabel = routeTrucks.map((t) => t.name).join(' · ')
+  const showRouteTrucks  = routeTrucks.length > 0 && (!hasTruck || routeTrucks.length > 1)
   // ── Safety-net guard — truck not assigned (data gap) ─────────────────────
   // A primary/sole driver whose own route_crew row carries no truck (e.g. a
   // multi-truck route where dispatch never pinned a truck to the lone crew
@@ -686,7 +698,7 @@ export default function DayRouteSelectorScreen() {
                 </>
               )}
               {isCoDriver && (
-                <span style={{ fontWeight: 400, opacity: 0.85 }}> · Co-driver</span>
+                <span style={{ fontWeight: 400, opacity: 0.85 }}> · {roleLabel}</span>
               )}
             </span>
           </div>
@@ -710,12 +722,35 @@ export default function DayRouteSelectorScreen() {
             fontSize: 12.5, letterSpacing: '-0.005em',
             fontVariantNumeric: 'tabular-nums',
           }}>
-            <span style={{ fontWeight: 700 }}>Co-driver</span>
+            <span style={{ fontWeight: 700 }}>{roleLabel}</span>
             <span style={{ fontWeight: 400, opacity: 0.85 }}>
               {' · '}
               {primaryRoute?.route_number != null ? `Route ${primaryRoute.route_number}` : 'Route'}
               {primaryRoute?.primary_driver_name ? ` with ${primaryRoute.primary_driver_name}` : ''}
             </span>
+          </div>
+        )}
+
+        {/* Trucks on this route (2026-07-09) — display-only roster so a no-truck
+            co-driver / view-only helper can see what's running the route, and
+            the 2nd/3rd truck surfaces on multi-truck routes. Suppressed when the
+            only truck is already shown in this user's own truck pill above. */}
+        {!isEmpty && showRouteTrucks && (
+          <div style={{
+            marginTop: 12,
+            display: 'inline-flex', alignItems: 'center', gap: 8,
+            color: 'rgba(255,255,255,0.85)',
+            fontSize: 11.5, letterSpacing: '-0.005em',
+            fontVariantNumeric: 'tabular-nums',
+          }}>
+            <TruckIcon size={13} color={C.gold} />
+            <span style={{
+              fontWeight: 800, letterSpacing: '0.14em', textTransform: 'uppercase',
+              fontSize: 9.5, color: C.gold,
+            }}>
+              {routeTrucks.length > 1 ? 'Trucks on route' : 'Truck on route'}
+            </span>
+            <span style={{ fontWeight: 600, color: '#fff' }}>{routeTrucksLabel}</span>
           </div>
         )}
       </div>

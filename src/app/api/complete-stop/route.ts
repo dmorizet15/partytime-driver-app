@@ -68,6 +68,32 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Helpers are VIEW-ONLY (2026-07-09) — a helper receives the route so they
+    // can see the day's trucks/stops, but may never complete a stop. The UI
+    // hides every completion/check-off CTA for helpers (StopDetailScreen
+    // `canComplete`); this is the server-side backstop. Resolve the stop's route
+    // → the caller's crew role on it; only role 'helper' is blocked. A caller
+    // with no crew row on the route (e.g. super_admin) is NOT a helper → passes.
+    const { data: stopRow } = await supabase
+      .from('dispatch_stops')
+      .select('route_id')
+      .eq('id', stopId)
+      .maybeSingle()
+    if (stopRow?.route_id) {
+      const { data: crewRow } = await supabase
+        .from('route_crew')
+        .select('role')
+        .eq('route_id', stopRow.route_id)
+        .eq('user_id', user.id)
+        .maybeSingle()
+      if (crewRow?.role === 'helper') {
+        return NextResponse.json(
+          { success: false, error: 'Helpers are view-only' },
+          { status: 403 }
+        )
+      }
+    }
+
     // Single server timestamp for both columns — see Migration 033 design note.
     const now = new Date().toISOString()
 

@@ -326,7 +326,13 @@ export default function RouteListScreen({ routeId }: RouteListScreenProps) {
   const routeIndex = idx >= 0 ? idx + 1 : null
   const totalRoutes = dayRoutes.length
 
-  const trucksLabel = [route.truck_name, route.truck_2_name].filter(Boolean).join(' · ')
+  // Prefer the route-level roster (every truck on the route, incl. a 3rd) so a
+  // no-truck co-driver / helper sees the trucks too; fall back to the personal
+  // truck fields only on the soft-fail path where route_trucks is empty.
+  const trucksLabel = (route.route_trucks && route.route_trucks.length
+    ? route.route_trucks.map((t) => t.name)
+    : [route.truck_name, route.truck_2_name].filter(Boolean)
+  ).join(' · ')
   const subheadParts: string[] = [formatHeroDate(route.operating_date)]
   if (trucksLabel) subheadParts.push(trucksLabel)
 

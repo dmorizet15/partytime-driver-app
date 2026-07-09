@@ -27,6 +27,15 @@ export interface Route {
   truck_dvir_requirement?:      'always' | 'when_towing' | 'never'
   truck_current_defect_status?: 'ok' | 'non_oos_defect' | 'oos_defect'
   truck_2_name?: string
+  // ── Route-level truck roster (display-only) ───────────────────────────────
+  // Every truck assigned to the ROUTE (routes.truck_id / truck_id_2 / truck_id_3),
+  // independent of which — if any — is pinned to THIS user's crew row. Lets a
+  // no-truck co-driver or a (view-only) helper see what trucks are running the
+  // route, and surfaces the 2nd/3rd truck on multi-truck routes. Purely
+  // informational: it NEVER feeds the pre-trip inspection gate (that keys on the
+  // personal `truck_*` / `truck_is_own` fields above). Empty on the /api/routes
+  // soft-fail path (no route row context).
+  route_trucks?: { name: string; plate?: string }[]
   // Route-level dispatcher note (dashboard-owned). Surfaced in the AVA
   // morning brief "FROM DISPATCH" block. Read-only here.
   dispatcher_notes?: string
@@ -44,7 +53,11 @@ export interface Route {
   // Co-driver badge. All undefined in the /api/routes soft-fail fallback path
   // (no crew row resolved).
   route_number?: number
-  crew_role?: 'primary_driver' | 'secondary_driver'
+  // 'helper' added 2026-07-09: helpers now receive the route (view-only) so they
+  // can see the day's trucks. crew_role is what distinguishes a helper from a
+  // co-driver (both carry is_primary === false) — the "Helper" chip label and
+  // the view-only completion gate key on it.
+  crew_role?: 'primary_driver' | 'secondary_driver' | 'helper'
   is_primary?: boolean
   // Display name of this route's primary driver (the is_primary crew row),
   // resolved profiles.display_name ?? route_crew.wiw_user_name. Powers the

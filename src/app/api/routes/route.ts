@@ -5,8 +5,11 @@
 //
 // Driver-scope: the response is narrowed to the caller's `route_crew`
 // membership for the requested date (Phase 2A — was `route_assignments`).
-// Visibility = crew rows where role IN ('primary_driver','secondary_driver');
-// helpers and WIW-only rows (user_id NULL) are excluded. If the caller is
+// Visibility = crew rows where role IN ('primary_driver','secondary_driver',
+// 'helper'). Helpers were added 2026-07-09 so they can see the day's trucks;
+// they are VIEW-ONLY (the completion/check-off gate excludes crew_role
+// 'helper' — see StopDetailScreen `canComplete` + /api/complete-stop). WIW-only
+// rows (user_id NULL) are still excluded — no account to match. If the caller is
 // authenticated but on no crew today, the endpoint returns an empty result —
 // the driver app is the driver's tool, this day-view endpoint is always
 // crew-scoped for everyone including super_admin. An unassigned super_admin
@@ -108,7 +111,7 @@ export async function GET(req: NextRequest) {
       .from('route_crew')
       .select('route_id, role, is_primary, truck:trucks(id, name, plate, dvir_requirement, current_defect_status), routes!inner(route_date)')
       .eq('user_id', user.id)
-      .in('role', ['primary_driver', 'secondary_driver'])
+      .in('role', ['primary_driver', 'secondary_driver', 'helper'])
       .eq('routes.route_date', date)
 
     if (crewRes.error) {
@@ -148,10 +151,12 @@ export async function GET(req: NextRequest) {
       break_blocks,
       dispatcher_notes,
       warehouse_notes,
+      truck_id_3,
       active_driver_id,
       transfer_pending_to,
       truck:trucks!routes_truck_id_fkey(id, name, plate, dvir_requirement, current_defect_status),
-      truck_2:trucks!routes_truck_id_2_fkey(id, name, plate)
+      truck_2:trucks!routes_truck_id_2_fkey(id, name, plate),
+      truck_3:trucks!routes_truck_id_3_fkey(id, name, plate)
     `)
     .eq('route_date', date)
 
