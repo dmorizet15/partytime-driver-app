@@ -49,6 +49,7 @@ import EquipmentReturnSection, {
   type EquipmentReturnSectionHandle,
 } from '@/components/equipment/EquipmentReturnSection'
 import EquipmentPickupSection from '@/components/equipment/EquipmentPickupSection'
+import RfidStopSection from '@/components/rfid/RfidStopSection'
 import EquipmentRetrieveCard from '@/components/equipment/EquipmentRetrieveCard'
 import PickupAnswerCard from '@/components/pickup/PickupAnswerCard'
 import { commitEquipmentReturns } from '@/lib/equipmentReturns/service'
@@ -2716,6 +2717,16 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
           && stop.latitude  != null
           && stop.longitude != null && (
           <StopWeatherModule lat={stop.latitude} lng={stop.longitude} />
+        )}
+
+        {/* RFID SCAN (feat/rfid-native-integration) — additive: native
+            multi-modal scanning for delivery/pickup stops. The module lives
+            behind injected adapters (src/lib/rfid/hostAdapters.tsx); the
+            existing manifest/check-off flows below are untouched. */}
+        {(stop.stop_type === 'delivery' || stop.stop_type === 'pickup') && (
+          <div style={{ padding: '18px 18px 0' }}>
+            <RfidStopSection stop={stop} />
+          </div>
         )}
 
         {/* MANIFEST — when the inline check-off is active (Rev 1), the

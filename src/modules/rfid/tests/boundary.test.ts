@@ -21,13 +21,17 @@ const ALLOWED_BARE = new Set([
   'vitest',
   'fake-indexeddb',
   'fake-indexeddb/auto',
+  '@testing-library/react', // tests only
 ])
 const ALLOWED_BARE_PREFIXES = ['node:']
 
 // Vendor implementations may be imported only from these module-relative
-// directories (implementations, composition root, fakes, tests).
+// locations: implementations, composition root, fakes, tests, and the public
+// entry barrel (the host composes vendor impls from there). Business logic
+// (flows/, screens/, components/, offline/, hal/) must stay port-only.
 const VENDOR_IMPORT_PATTERN = /tapgoods|easyrfid|ezrfid/i
 const VENDOR_ALLOWED_DIRS = ['server', 'provider', 'testing', 'tests']
+const VENDOR_ALLOWED_FILES = ['index.ts']
 
 function walk(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
@@ -86,7 +90,7 @@ describe('module boundary', () => {
     for (const file of files) {
       const rel = path.relative(MODULE_ROOT, file)
       const topDir = rel.split(path.sep)[0]
-      if (VENDOR_ALLOWED_DIRS.includes(topDir)) continue
+      if (VENDOR_ALLOWED_DIRS.includes(topDir) || VENDOR_ALLOWED_FILES.includes(rel)) continue
       for (const spec of importSpecifiers(readFileSync(file, 'utf8'))) {
         if (VENDOR_IMPORT_PATTERN.test(spec)) violations.push(`${rel} → ${spec}`)
       }

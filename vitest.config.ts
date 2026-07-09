@@ -1,10 +1,14 @@
 import { defineConfig } from 'vitest/config'
+import react from '@vitejs/plugin-react'
 import path from 'node:path'
 
 // Test runner for the RFID module (src/modules/rfid). The driver app itself
 // has no unit-test suite; keep this config scoped to the module so `npm test`
 // stays fast and never picks up app files by accident.
 export default defineConfig({
+  // tsconfig sets jsx:preserve for Next (which vite honors over an esbuild
+  // override) — plugin-react does the JSX transform for test files instead.
+  plugins: [react()],
   resolve: {
     alias: { '@': path.resolve(__dirname, 'src') },
   },
