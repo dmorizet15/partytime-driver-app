@@ -155,7 +155,7 @@ export class WriteQueue {
 
   private async doDrain(deps: DrainDeps): Promise<DrainReport> {
     const report: DrainReport = { sent: 0, failed: 0, skippedNotDue: 0 }
-    {
+    try {
       const due = (await this.entries()).filter((e) => e.state === 'pending')
       for (const entry of due) {
         if (entry.nextAttemptAt > this.now()) {
@@ -200,6 +200,11 @@ export class WriteQueue {
         }
         this.notify()
       }
+    } catch (err) {
+      // Storage failure mid-drain (e.g. the DB handle closed during app
+      // teardown). Stop quietly: any entry left in 'syncing' is reconciled
+      // by recover() on next startup, and payloads are idempotent.
+      console.warn('[rfid] drain stopped early (storage unavailable)', err)
     }
     return report
   }

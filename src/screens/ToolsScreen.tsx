@@ -456,6 +456,51 @@ function ReportIssueCard({ onTap }: { onTap: () => void }) {
   )
 }
 
+// ─── Touch Scan card — ungated ───────────────────────────────────────────────
+// RFID module surface (feat/rfid-native-integration): identify any tag by any
+// modality, quick status update. Replica reads + queued writes — fully
+// offline. Mirrors ReportIssueCard's ungated card treatment.
+function TouchScanCard({ onTap }: { onTap: () => void }) {
+  return (
+    <div style={{ padding: '12px 18px 0' }}>
+      <button
+        onClick={onTap}
+        aria-label="Touch Scan"
+        style={{
+          background: C.card,
+          border: `0.5px solid ${C.cardBorder}`,
+          borderRadius: 14,
+          padding: '16px 14px',
+          cursor: 'pointer', fontFamily: 'inherit',
+          textAlign: 'left',
+          display: 'flex', alignItems: 'center', gap: 14,
+          color: C.white,
+          width: '100%',
+        }}
+      >
+        <IconWrap bg="rgba(0,0,255,0.18)">
+          <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="#7A8CFF"
+               strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M4 7V5a1 1 0 0 1 1-1h2M17 4h2a1 1 0 0 1 1 1v2M20 17v2a1 1 0 0 1-1 1h-2M7 20H5a1 1 0 0 1-1-1v-2"/>
+            <line x1="7" y1="12" x2="17" y2="12"/>
+          </svg>
+        </IconWrap>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontFamily: FONT_DISPLAY, fontSize: 16, fontWeight: 800,
+            color: C.white, letterSpacing: '-0.01em', lineHeight: 1.2,
+          }}>
+            Touch Scan
+          </div>
+          <div style={{ marginTop: 4, fontSize: 12, color: C.muted, lineHeight: 1.4 }}>
+            Identify any tag · update status · works offline
+          </div>
+        </div>
+      </button>
+    </div>
+  )
+}
+
 // ─── Work Orders card — technician-only ─────────────────────────────────────
 // Mirrors FleetMaintenanceCard. Renders null without work_order_technician;
 // red pill surfaces the open + in_progress count (hidden at zero).
@@ -670,6 +715,9 @@ export default function ToolsScreen() {
 
         {/* Report an Issue — ungated; any signed-in user can file */}
         <ReportIssueCard onTap={() => router.push('/tools/report-issue')} />
+
+        {/* Touch Scan — ungated; RFID module surface, works fully offline */}
+        <TouchScanCard onTap={() => router.push('/tools/rfid/touch-scan')} />
 
         {/* Work Orders — technician-only; renders null without access */}
         <WorkOrdersCard onTap={() => router.push('/tools/work-orders')} />
