@@ -2,14 +2,14 @@
 // AVA Phase 2 — Session 2. Real Haiku-backed conversation behind the home-screen
 // "Ask Ava about today" button (and, later, the AvaChip drawer).
 //
-// Context model (a deliberate deviation from the Phase 2 spec's "read context
-// from Supabase here"): the Home screen has ALREADY computed today's route
-// context — stop count, COD count, dispatcher notes, manifest, and the weather
-// flags from POST /api/ava/route-weather (live Tomorrow.io calls). Re-deriving
-// that here would re-run the external weather fan-out per question. So the client
-// PRE-SEEDS the context (per tasks/todo.md's step plan) and we build the system
-// prompt from it. The route still derives the driver identity + logs the row
-// authoritatively server-side (driver_id = auth.uid(), never client-trusted).
+// Context model: the ROUTE is loaded SERVER-SIDE (loadRouteDateContext) for both
+// today and preview dates — it carries per-stop names, drive-order numbering, and
+// full manifests, none of which the client seed can express. WEATHER stays
+// client-seeded: Home has already computed the flags via POST /api/ava/route-weather
+// (live Tomorrow.io calls) and re-deriving them here would re-run that fan-out on
+// every question. The old client-seeded route context survives only as a fallback
+// when the server load returns nothing. Driver identity + the audit row are always
+// derived server-side (driver_id = auth.uid(), never client-trusted).
 //
 // Model: claude-haiku-4-5-20251001 — fast + cheap, answer is read aloud via TTS.
 // No effort / adaptive thinking (unsupported on Haiku 4.5; would 400).
@@ -24,7 +24,8 @@ import { createClient }              from '@supabase/supabase-js'
 import Anthropic                     from '@anthropic-ai/sdk'
 import { isDriverVisibleSop }        from '@/lib/ava/sopVisibility'
 import { isElevatedRole }            from '@/lib/ava/access'
-import { resolveCategory }           from '@/lib/itemCategories'
+import { renderRouteContext }        from '@/lib/ava/routeContext'
+import type { RawItem, RouteStop }   from '@/lib/ava/routeContext'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -149,6 +150,11 @@ function buildKnowledgeBlock(
     "answer. Never invent stop names, totals, notes, or procedure steps; if",
     "something isn't in the procedures or today's route below, say you don't have",
     "that detail and suggest they check with dispatch.",
+    "",
+    "Exception to the length rule: when the driver asks what is on a stop, or what",
+    "they are delivering or picking up, read out the actual items and quantities in",
+    "full. Still plain spoken sentences — no bullets — but do not summarize the",
+    "manifest down to a couple of examples. They are using it to load the truck.",
   ]
 
   if (sops.length > 0) {
@@ -209,9 +215,17 @@ function buildKnowledgeBlock(
   lines.push(
     "",
     "If you cannot answer confidently from the PTR Terminology, SOPs, or " +
-    "Knowledge Base above, begin your response with exactly 'UNKNOWN:' and " +
-    "nothing else before that prefix. This is a system signal only — never " +
-    "explain it to the user.",
+    "Knowledge Base above, OR from the driver's route context that follows " +
+    "below, begin your response with exactly 'UNKNOWN:' and nothing else " +
+    "before that prefix. This is a system signal only — never explain it to " +
+    "the user.",
+    "",
+    "NEVER use the UNKNOWN: signal for a question about the driver's own route: " +
+    "their stops, stop order, customers, addresses, order refs, or the equipment " +
+    "on those stops. All of that is in the route section below. If the driver " +
+    "names a customer, company, or place that is not on their route, tell them " +
+    "so directly and say which stops they do have. An unrecognized stop name is " +
+    "not a knowledge gap.",
   )
 
   return lines.join('\n')
@@ -265,96 +279,29 @@ function buildRouteContextBlock(ctx: AskContext): string {
   return lines.join('\n')
 }
 
-// ── Block 1 — the driver's route, loaded server-side (stop-type aware) ────────
-// Loads the caller's route for `routeDate` (crew-scoped, service-role, same data
-// shape + crew scope as /api/routes) and emits a block that SEPARATES delivery
-// from pickup/return so AVA can answer directional questions ("how many chairs
-// am I PICKING UP today?") without conflating them. Used for BOTH today and the
-// Next Day Route Preview's upcoming date — the only difference is the heading
-// and whether weather (client-seeded, today-only) gets appended by the caller.
+// ── Block 1 — the driver's route, loaded server-side ──────────────────────────
+// Fetches the caller's route for `routeDate` (crew-scoped, service-role, same
+// data shape + crew scope as /api/routes) and hands it to renderRouteContext,
+// which owns the formatting (pure + smoke-tested — see lib/ava/routeContext.ts).
+// Used for BOTH today and the Next Day Route Preview's upcoming date; the only
+// difference is the heading and whether weather (client-seeded, today-only) gets
+// appended by the caller.
 //
 // Why server-side for today too: the today client seed lumps delivery + pickup
 // items into one top-8 manifest string, so direction was unknowable and low-qty
-// items were dropped (the root cause of both reported bugs). Returns null on
-// no-route / error → caller falls back to the client seed or the no-route copy.
-function humanDate(iso: string): string {
-  const [y, m, d] = iso.split('-').map(Number)
-  if (!y || !m || !d) return iso
-  return new Date(y, m - 1, d).toLocaleDateString('en-US', {
-    weekday: 'long', month: 'long', day: 'numeric',
-  })
-}
-
-type RawItem = { qty?: number | null; name?: string | null; category?: string | null }
-interface RouteStop {
-  stop_type:        string | null
-  items:            RawItem[]
-  payment_state:    string | null
-  customer_name:    string | null
-  address:          string | null
-  reservation_id:   string | null
-  dispatcher_notes: string | null
-}
-
-// Tent count uses the app's vetted definition (countTentItems): category
-// contains 'tent' AND the name is an actual tent/canopy/marquee. A bare category
-// match wrongly pulls in TENTS-filed accessories like "CAFE LIGHTS" (qty 200).
-function isTentItem(it: RawItem): boolean {
-  const nameL = (it.name ?? '').toLowerCase()
-  return (it.category ?? '').toLowerCase().includes('tent')
-    && (nameL.includes('tent') || nameL.includes('canopy') || nameL.includes('marquee'))
-}
-
-// Per-name qty aggregate across a set of stops, qty-desc → [name, qty][].
-function aggregateItems(stops: RouteStop[]): Array<[string, number]> {
-  const byName = new Map<string, number>()
-  for (const s of stops) {
-    for (const it of s.items) {
-      const name = (it.name ?? '').trim()
-      if (!name) continue
-      byName.set(name, (byName.get(name) ?? 0) + (it.qty ?? 1))
-    }
-  }
-  return Array.from(byName.entries()).sort((a, b) => b[1] - a[1])
-}
-
-function categoryTotals(stops: RouteStop[]): { tents: number; chairs: number; tables: number } {
-  let tents = 0, chairs = 0, tables = 0
-  for (const s of stops) {
-    for (const it of s.items) {
-      const qty = it.qty ?? 1
-      if (isTentItem(it)) tents += qty
-      const bucket = resolveCategory(it.category, it.name ?? '')
-      if (bucket === 'Chairs') chairs += qty
-      else if (bucket === 'Tables') tables += qty
-    }
-  }
-  return { tents, chairs, tables }
-}
-
-function itemsList(stops: RouteStop[]): string {
-  const agg = aggregateItems(stops)
-  return agg.length ? agg.map(([name, qty]) => `${qty}× ${name}`).join(', ') : 'nothing'
-}
-
-function stopLines(stops: RouteStop[]): string[] {
-  if (stops.length === 0) return ['  - none']
-  return stops.map((s) => {
-    const who   = s.customer_name?.trim() || 'Customer'
-    const where = s.address?.trim() ? `, ${s.address.trim()}` : ''
-    const ord   = s.reservation_id?.trim() ? ` (order ${s.reservation_id.trim()})` : ''
-    const items = aggregateItems([s])
-      .map(([name, qty]) => `${qty}× ${name}`)
-      .join(', ') || 'no items listed'
-    return `  - ${who}${where}${ord}: ${items}`
-  })
-}
-
+// items were dropped. Returns null on no-route / error → caller falls back to
+// the client seed or the no-route copy.
+//
+// `scopeRouteId` is the route the driver is asking about, sent by the client and
+// re-validated here against their own crew rows — it narrows the context, it is
+// NEVER an authorization input. Null (a multi-route day asked from Home) renders
+// every route the driver has, each numbered independently.
 async function loadRouteDateContext(
   admin: ReturnType<typeof getAdminClient>,
   userId: string,
   routeDate: string,
   isToday: boolean,
+  scopeRouteId: string | null,
 ): Promise<string | null> {
   try {
     // Crew-scope: the caller's own driver rows on that date → route ids.
@@ -379,12 +326,27 @@ async function loadRouteDateContext(
     const firstRel = <T,>(v: T | T[] | null | undefined): T | null =>
       Array.isArray(v) ? (v[0] ?? null) : (v ?? null)
 
-    const routeIds = Array.from(new Set(rows.map((r) => r.route_id).filter(Boolean)))
-    if (routeIds.length === 0) return null
+    const crewRouteIds = Array.from(new Set(rows.map((r) => r.route_id).filter(Boolean)))
+    if (crewRouteIds.length === 0) return null
+
+    // Scope to the route the driver is asking about, but only after confirming
+    // they're crewed on it — the client-supplied routeId is never trusted as an
+    // authorization input. An unrecognized id falls back to every route the
+    // driver has that day rather than erroring.
+    const routeIds = (scopeRouteId && crewRouteIds.includes(scopeRouteId))
+      ? [scopeRouteId]
+      : crewRouteIds
+
+    const routeNumberById = new Map<string, number | null>()
+    for (const r of rows) routeNumberById.set(r.route_id, firstRel(r.routes)?.route_number ?? null)
 
     const stopsRes = await admin
       .from('dispatch_stops')
-      .select('stop_type, items, payment_state, customer_name, address, reservation_id, dispatcher_notes')
+      .select(
+        'route_id, route_position, stop_type, items, payment_state, ' +
+        'customer_name, company_name, client_company, address, reservation_id, ' +
+        'dispatcher_notes, completed_at, stop_status'
+      )
       .in('route_id', routeIds)
       .eq('scheduled_date', routeDate)
       .order('route_position', { ascending: true })
@@ -393,97 +355,20 @@ async function loadRouteDateContext(
       return null
     }
 
-    type StopRow = {
-      stop_type:        string | null
-      items:            unknown
-      payment_state:    string | null
-      customer_name:    string | null
-      address:          string | null
-      reservation_id:   string | null
-      dispatcher_notes: string | null
-    }
-    const stops: RouteStop[] = ((stopsRes.data ?? []) as StopRow[]).map((s) => ({
-      stop_type:        s.stop_type,
-      items:            Array.isArray(s.items) ? (s.items as RawItem[]) : [],
-      payment_state:    s.payment_state,
-      customer_name:    s.customer_name,
-      address:          s.address,
-      reservation_id:   s.reservation_id,
-      dispatcher_notes: s.dispatcher_notes,
+    // The select list is a concatenated string, so PostgREST can't infer the row
+    // shape — cast through unknown, same as the crew query above.
+    type StopRow = Omit<RouteStop, 'items'> & { items: unknown }
+    const stops: RouteStop[] = ((stopsRes.data ?? []) as unknown as StopRow[]).map((s) => ({
+      ...s,
+      items: Array.isArray(s.items) ? (s.items as RawItem[]) : [],
     }))
 
-    // Depot legs never carry customer equipment — exclude them.
-    const customerStops = stops.filter(
-      (s) => s.stop_type !== 'warehouse' && s.stop_type !== 'warehouse_return'
-    )
-    if (customerStops.length === 0) return null
+    const routeDispatcherNotes = rows
+      .filter((r) => routeIds.includes(r.route_id))
+      .map((r) => firstRel(r.routes)?.dispatcher_notes)
+      .filter((n): n is string => !!n)
 
-    // Split by direction. Deliveries DROP equipment at the customer; pickups (and
-    // any return) RETRIEVE it. These totals must never be conflated. Any other
-    // customer stop type (e.g. 'service') is listed separately and excluded from
-    // both directional totals.
-    const deliveryStops = customerStops.filter((s) => s.stop_type === 'delivery')
-    const pickupStops   = customerStops.filter((s) => s.stop_type === 'pickup')
-    const otherStops    = customerStops.filter(
-      (s) => s.stop_type !== 'delivery' && s.stop_type !== 'pickup'
-    )
-
-    const delCat = categoryTotals(deliveryStops)
-    const picCat = categoryTotals(pickupStops)
-
-    const codCount = customerStops.filter(
-      (s) => s.stop_type === 'delivery' && (s.payment_state ?? '') === 'cod'
-    ).length
-
-    const routeNumbers = rows
-      .map((r) => firstRel(r.routes)?.route_number)
-      .filter((n): n is number => n != null)
-    const dispatcherNotes = [
-      ...rows.map((r) => firstRel(r.routes)?.dispatcher_notes),
-      ...customerStops.map((s) => s.dispatcher_notes),
-    ].filter((n): n is string => !!n && n.trim().length > 0)
-
-    const heading = isToday
-      ? `ROUTE SUMMARY FOR TODAY (${humanDate(routeDate)}):`
-      : `ROUTE SUMMARY FOR ${humanDate(routeDate)} (this is the driver's UPCOMING route — NOT today):`
-
-    const lines: string[] = [heading]
-    if (routeNumbers.length) lines.push(`Route ${routeNumbers.join(' & ')}.`)
-
-    lines.push('')
-    lines.push(`DELIVERY STOPS — equipment being DROPPED OFF (${deliveryStops.length} stops):`)
-    lines.push(...stopLines(deliveryStops))
-
-    lines.push('')
-    lines.push(`PICKUP/RETURN STOPS — equipment being PICKED UP / RETRIEVED (${pickupStops.length} stops):`)
-    lines.push(...stopLines(pickupStops))
-
-    if (otherStops.length > 0) {
-      lines.push('')
-      lines.push(`OTHER STOPS (${otherStops.length} stops):`)
-      lines.push(...stopLines(otherStops))
-    }
-
-    lines.push('')
-    lines.push('ITEM TOTALS (delivery vs pickup are separate — never add them together):')
-    lines.push(`DELIVERING: ${itemsList(deliveryStops)}`)
-    lines.push(`PICKING UP / RETURNING: ${itemsList(pickupStops)}`)
-    lines.push(
-      `Category totals — DELIVERING: ${delCat.tents} tents, ${delCat.chairs} chairs, ${delCat.tables} tables. ` +
-      `PICKING UP: ${picCat.tents} tents, ${picCat.chairs} chairs, ${picCat.tables} tables.`
-    )
-
-    lines.push(
-      codCount > 0
-        ? `Cash-on-delivery (COD) stops: ${codCount} — collect payment on arrival.`
-        : `No cash-on-delivery stops on this route.`
-    )
-    if (dispatcherNotes.length) {
-      lines.push('Dispatch notes:')
-      for (const n of dispatcherNotes) lines.push(`- ${n.trim()}`)
-    }
-
-    return lines.join('\n')
+    return renderRouteContext({ stops, routeNumberById, routeDispatcherNotes, routeDate, isToday })
   } catch (e) {
     console.warn('[/api/ava/ask] route-date context load failed (non-fatal):',
       e instanceof Error ? e.message : String(e))
@@ -632,7 +517,7 @@ export async function POST(request: NextRequest) {
   //      coarse client seed (no regression vs the old behavior)
   //   3. nothing at all → the no-route fallback copy
   let routeContextText: string
-  const serverBlock = await loadRouteDateContext(admin, user.id, targetDate, isToday)
+  const serverBlock = await loadRouteDateContext(admin, user.id, targetDate, isToday, routeId)
   if (serverBlock) {
     const extra: string[] = []
     if (ctx.driverName) extra.push(`Driver: ${ctx.driverName}.`)

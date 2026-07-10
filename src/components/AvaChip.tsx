@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useParams } from 'next/navigation'
 import { useAppState } from '@/context/AppStateContext'
 import AvaConversationSheet from '@/components/ava/AvaConversationSheet'
 
@@ -25,9 +26,15 @@ interface AvaChipProps {
 export default function AvaChip({ ariaLabel = 'Open AVA' }: AvaChipProps) {
   const [open, setOpen] = useState(false)
   const { routes } = useAppState()
+  const params = useParams<{ routeId?: string }>()
 
-  // Only unambiguous when exactly one route is loaded for the day.
-  const routeId = routes.length === 1 ? routes[0].route_id : null
+  // The route the driver is asking about, when it's genuinely unambiguous:
+  // the URL segment on /route/[routeId] and /route/[routeId]/stop/[stopId],
+  // else a single-route day. On a multi-route day from a non-route screen we
+  // send null and the server lists every route, each numbered from 1 — better
+  // than silently picking one and answering ordinals against the wrong route.
+  const urlRouteId = typeof params?.routeId === 'string' ? params.routeId : null
+  const routeId = urlRouteId ?? (routes.length === 1 ? routes[0].route_id : null)
 
   return (
     <>

@@ -4,6 +4,30 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-07-10 — AVA stop addressing: by name, by number, by what's next (VERSION 2.6.0; no migration)
+
+**Reported:** a driver can't ask "what am I delivering to Camp Kinder Ring?" — AVA replies "I'm logging your question." The stop-progression lock (later stops locked until the current one completes) is intentional and stays; drivers ask AVA to prep for stops they can't yet open.
+
+**Root cause — AVA was the only surface in the app that didn't know the stop's name.** Live reservation `fe7a606c`: `customer_name` = "Gabby x" (the on-site contact), `company_name` = "Camp Kinder Ring - 7/12/2026" (TapGoods order name), `client_company` = "CAMP KINDER RING". Every driver-facing screen already renders `company_name || customer_name` (`DayRouteSelectorScreen:897`, `StopDetailScreen:802`) and `/api/routes` selects both columns. `/api/ava/ask`'s own stop SELECT pulled only `customer_name`. The driver reads "Camp Kinder Ring" off their stop card, asks about it, and AVA has never heard the name. **407 of 958 live delivery/pickup stops have a `client_company` whose text appears nowhere in `customer_name`.**
+
+**Three defects the investigation surfaced alongside it:**
+1. **Route questions were polluting the knowledge-gap queue.** The `UNKNOWN:` instruction enumerated only "PTR Terminology, SOPs, or Knowledge Base **above**" — the route block is Block 1, physically *below* it, and was never named as an authorized source. So an unmatched stop name emitted `UNKNOWN:`, the driver got the "I'm logging your question" copy, and a junk row landed in `ava_knowledge_gaps` (both Camp Kindering rows deleted this session).
+2. **Ordinals were silently wrong on mixed routes.** The block emitted deliveries and pickups as two separate, unnumbered lists. Live route 3 on 2026-07-10 is `delivery ×4, PICKUP, delivery`; the 5th entry of the delivery-only list is route position 5, but the driver's actual 5th stop is the pickup. Both stops are named "EMILY CHAMBERS" — so the wrong answer read as correct. (Route 1 is all-delivery, which is why "what am I delivering today?" answered ordinals correctly at 12:48 UTC and masked this.)
+3. **Multi-route days interleaved.** `.in('route_id', routeIds).order('route_position')` sorted across every route the driver had, yielding 0,0,1,2,3. Live: Lucas Morizet is primary on routes 1 and 4 on 2026-07-10. The client already sent `routeId`; the server parsed it and used it **only** for the audit log's `context_id` and the gap `context` blob — never to scope the query.
+
+**Fix:**
+- **New pure module `src/lib/ava/routeContext.ts`** (pattern: `equipmentReturns/ledger.ts`, `pickupAnswer/derive.ts` — pure, no I/O, no `now`, smoke-tested). Owns all Block-1 formatting. `/api/ava/ask` keeps only the DB reads. **Smoke 29/29 PASS against real production rows** (routes 1/3/4, 2026-07-10).
+- **Every stop carries every handle it might be called by:** display name (`company_name`, trailing bare date stripped) + `[contact: …]` (`customer_name`) + `[company: …]` (`client_company`), deduped case-insensitively. `TRAILING_DATE_RE` strips only a **trailing** ` - M/D/YYYY`; a date **mid-string** must survive — it is the only thing separating route 3's "NYACK CAMP- JULY 10TH, 9AM-12:30PM" from "NYACK CAMP- 7/11/2026, 12PM -6PM, FAMILY DAY".
+- **Stops numbered `Stop N of M` in true drive order, deliveries and pickups in ONE sequence**, grouped per route, each route numbered independently. `✓ COMPLETED` / `← NEXT STOP` markers make "what's next" and "three stops away" answerable (`completed_at` / `stop_status` were never selected before).
+- **`ROUTE_USAGE_RULES`** in the volatile block tells the model that ordinals, contact names, and company names all resolve to the same stop, and to read manifests out in full.
+- **`routeId` now scopes the load**, re-validated server-side against the caller's own `route_crew` rows — it narrows context, never authorizes. Home (`DayRouteSelectorScreen`) sends `routeId` only on a single-route day (it previously sent `routes[0]`, which once honored would have silently hidden route 4 from Lucas); `AvaChip` reads the `[routeId]` URL segment when on a route/stop screen. Null → every route rendered, each numbered from 1, plus an explicit "ask which route" note.
+- **`UNKNOWN:` rewritten** to name the route block as an authorized source and to forbid the signal outright for route/stop/customer/equipment questions. Unrecognized stop name → say so and list the real stops. **The 1–3 sentence style rule gained a carve-out** for manifest reads (a driver loading a truck needs the whole list, not two examples).
+- Directional `DELIVERING:` / `PICKING UP:` totals and the vetted `isTentItem` rule preserved byte-for-byte (the June 28 fix; smoke asserts CAFE LIGHTS still excluded → route 1 delivers 2 tents, not 102).
+
+**Verified:** smoke 29/29 vs live rows; `tsc --noEmit` clean; `npx next build` green (38 pages); two junk `ava_knowledge_gaps` rows deleted. **Pending: on-device smoke** — `ANTHROPIC_API_KEY` lives only in Vercel, so the model-behavior check (ask by name / by ordinal / "what's next" / a name not on the route) must run on the device.
+
+---
+
 ## 2026-07-06 — Pickup Answer (Driver-Facing) — gold card on the delivery stop (driver `e70e78c`, on `main`; VERSION 2.5.0; no migration)
 
 Two-session build (investigation + pure derivation, then UI + wiring) on the MBC Part 3 spec (locked 2026-07-05). A read-only gold card on the DELIVERY stop that instantly answers "when are you picking up?" from the reservation's pickup stop(s). Built on branch `feat/pickup-answer`; Darren accepted the low read-only risk and merged to `main`. The card lives only on the interactive StopDetailScreen (delivery, today's route), so it needs a day WITH delivery stops to exercise (07-06 had none). **Device smoke PASSED 2026-07-07** on a live delivery day ("looks good") — feature complete.

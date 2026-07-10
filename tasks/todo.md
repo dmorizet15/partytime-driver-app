@@ -1,5 +1,31 @@
 # Open Tasks — partytime-driver-app
 
+## July 10, 2026 — AVA stop addressing (by name / by number / what's next) — ON `main`; NO migration; VERSION 2.6.0
+
+Darren: drivers can't see a later stop until the current one completes (intentional, stays) — so they ask AVA to prep. "What am I delivering to Camp Kinder Ring?" returned the knowledge-gap copy.
+
+**Investigation + fix (DONE):**
+- [x] Root cause: `/api/ava/ask` stop SELECT pulled `customer_name` only. The stop card shows `company_name` ("Camp Kinder Ring - 7/12/2026"); `customer_name` is the contact ("Gabby x"). 407/958 live stops have a `client_company` absent from `customer_name`.
+- [x] `UNKNOWN:` instruction never named the route block (Block 1, below it) → route questions logged false knowledge gaps. Both Camp Kindering rows deleted.
+- [x] Ordinals: delivery/pickup rendered as two unnumbered lists → "my fifth stop" on route 3 (del×4, PICKUP, del) returns the 6th stop. Both named "EMILY CHAMBERS".
+- [x] Multi-route days interleaved (`.in(route_id).order(route_position)`); client `routeId` was parsed but only used for logging. Lucas is primary on routes 1 + 4 today.
+- [x] New pure `src/lib/ava/routeContext.ts` (numbering, name aliases, completion markers, usage rules). Smoke **29/29 PASS** against real production rows.
+- [x] `routeId` now scopes the load, re-validated vs the caller's `route_crew` rows. Home sends it only on single-route days; `AvaChip` reads the `[routeId]` URL segment.
+- [x] `tsc` clean; `npx next build` green (38 pages); VERSION 2.6.0 + CHANGELOG bullets.
+
+**Pending — ON-DEVICE SMOKE (the gate).** `ANTHROPIC_API_KEY` is Vercel-only, so model behavior could not be exercised locally. On a live route, open AVA and verify:
+- [ ] **By name:** "What am I delivering to Camp Kinder Ring?" → the 44 stage skirts + 15 stage decks. (Route 1 stop 2 today.)
+- [ ] **By contact name:** "What's on Gabby's stop?" → same stop.
+- [ ] **By number:** "What's on my second stop?" and "What's on stop two?" → same stop.
+- [ ] **Mixed route (route 3):** "What's on my fifth stop?" → the **pickup** (Pirate Battle Combo + 2 generators + fuel), NOT the Tsunami Water Slide.
+- [ ] **Relative:** "What's next?" after completing stop 1 → stop 2. "How many stops away is the pickup?"
+- [ ] **Not on route:** "What am I delivering to Beacon High School?" → "that's not on your route today, your stops are …" and **NO new row in `ava_knowledge_gaps`**.
+- [ ] **Multi-route driver (Lucas):** from Home, ordinal question → AVA asks which route, or answers per-route. From inside `/route/[routeId]`, ordinals resolve to that route only.
+- [ ] **No regression:** "How many chairs am I picking up today?" still answers from the PICKING UP total.
+
+**Note:** `29551b1` labelled itself `(v2.6.0)` but never bumped `appVersion.ts` and never used `[skip version]` — drivers never saw a What's New for the route-truck roster + helper view-only work. Those bullets are folded into this 2.6.0 CHANGELOG.
+
+
 ## July 6, 2026 — Pickup Answer (Driver-Facing) — ON `main` (`e70e78c`); NO migration
 
 Spec: MBC Part 3 "📞 Pickup Answer (Driver-Facing)" (locked 2026-07-05). Read-only gold card on the delivery stop that answers "when are you picking up?" using the reservation's pickup stop(s). Built on branch `feat/pickup-answer`; Darren merged to `main` accepting the low read-only risk (test opportunistically, quick-fix if needed). **Note:** the card is on the interactive StopDetailScreen only, so it needs a day WITH delivery stops to see (07-06 had 0 deliveries; nearest delivery days 07-07 and 07-10).

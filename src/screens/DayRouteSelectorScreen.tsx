@@ -236,6 +236,12 @@ export default function DayRouteSelectorScreen() {
   const primaryTruckId = routes[0]?.truck_id
   const inspection = useInspectionStatus(primaryRouteId, primaryTruckId)
 
+  // AVA route scoping — NOT primaryRouteId. On a multi-route day routes[0] is
+  // just whichever route sorted first; scoping AVA to it would hide the driver's
+  // other route and make "my second stop" answer against the wrong one. Null
+  // here means "list every route I'm on", which is the honest answer from Home.
+  const avaRouteId = routes.length === 1 ? routes[0].route_id : null
+
   // Aggregate stops across today's routes — the day list renders stops, not
   // routes. Composes existing context methods only; no hook/context edits.
   const dayStops = useMemo(
@@ -1344,7 +1350,7 @@ export default function DayRouteSelectorScreen() {
                 UI only for now; the Haiku-backed conversation sheet pre-seeded
                 with route context lands in a later session. Pre-pre-trip only,
                 alongside the Inspect CTA. */}
-            {!inspected && <AskAvaButton seedContext={seedContext} routeId={primaryRouteId ?? null} />}
+            {!inspected && <AskAvaButton seedContext={seedContext} routeId={avaRouteId ?? null} />}
 
             {/* Phase 2B — route handoff controls (below the stop list). One of
                 three states on the primary route:
