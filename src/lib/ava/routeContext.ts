@@ -25,9 +25,10 @@
 import { resolveCategory } from '@/lib/itemCategories'
 
 export type RawItem = {
-  qty?:      number | null
-  name?:     string | null
-  category?: string | null
+  qty?:         number | null
+  name?:        string | null
+  category?:    string | null
+  bundle_name?: string | null
 }
 
 export interface RouteStop {
@@ -137,6 +138,30 @@ function itemsList(stops: RouteStop[]): string {
   return agg.length ? agg.map(([name, qty]) => `${qty}× ${name}`).join(', ') : 'nothing'
 }
 
+// Per-stop manifest, bundle-aware. Deck items carry a parent bundle
+// (15× "STAGE 4'X4'" → "STAGE 12'X20'") — the bundle is what the crew is
+// actually building, and the loose piece count alone cannot answer "what size
+// stage?". Keyed by name+bundle so the same piece under two different bundles
+// never collapses into one line. Kept separate from aggregateItems() so the
+// DELIVERING / PICKING UP totals stay byte-for-byte unchanged.
+function stopItemsList(s: RouteStop): string {
+  const byKey = new Map<string, { name: string; bundle: string; qty: number }>()
+  for (const it of s.items) {
+    const name = (it.name ?? '').trim()
+    if (!name) continue
+    const bundle = (it.bundle_name ?? '').trim()
+    const key = `${name}::${bundle}`
+    const cur = byKey.get(key)
+    if (cur) cur.qty += it.qty ?? 1
+    else byKey.set(key, { name, bundle, qty: it.qty ?? 1 })
+  }
+  const rows = Array.from(byKey.values()).sort((a, b) => b.qty - a.qty)
+  if (!rows.length) return 'no items listed'
+  return rows
+    .map((r) => (r.bundle ? `${r.qty}× ${r.name} (assembles into ${r.bundle})` : `${r.qty}× ${r.name}`))
+    .join(', ')
+}
+
 function humanDate(iso: string): string {
   const [y, m, d] = iso.split('-').map(Number)
   if (!y || !m || !d) return iso
@@ -158,7 +183,7 @@ export function numberedStopLines(stops: RouteStop[]): string[] {
     const alias = aliases.length ? `  [${aliases.join('] [')}]` : ''
     const where = (s.address ?? '').trim()
     const ord   = (s.reservation_id ?? '').trim()
-    const items = aggregateItems([s]).map(([name, qty]) => `${qty}× ${name}`).join(', ') || 'no items listed'
+    const items = stopItemsList(s)
 
     return [
       `  Stop ${i + 1} of ${total} · ${typeLabel(s.stop_type)}${state}`,
@@ -184,6 +209,9 @@ export const ROUTE_USAGE_RULES = [
   '  marked ← NEXT STOP. Stops marked ✓ COMPLETED are already done.',
   '- When the driver asks what is on a stop, or what they are delivering or picking',
   '  up, read out the actual items and quantities.',
+  '- "(assembles into X)" means those loose pieces build X. X is what the crew is',
+  '  actually setting up, so lead with it: 15 4-by-4 stage decks that assemble into',
+  '  a 12-by-20 stage is "a 12 by 20 stage, built from fifteen 4 by 4 decks".',
   '- If the driver names a place that is NOT on the route below, say so plainly and',
   '  tell them which stops are on the route. Never claim you are logging their',
   '  question — you have the route right here.',

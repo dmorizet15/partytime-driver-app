@@ -29,6 +29,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from 'react'
 import { useRouter } from 'next/navigation'
 import type { Stop } from '@/types'
@@ -147,6 +148,38 @@ const ItemCheckoffPanel = forwardRef<CheckoffPanelHandle, ItemCheckoffPanelProps
   const damagedCount = lines.filter((l) => l.damaged).length
   const hasExceptions = shortUnits > 0 || damagedCount > 0
 
+  // Bundle grouping — mirrors the static manifest on StopDetailScreen. Deck
+  // items carry a parent bundle (STAGE 4'X4' ×15 → "STAGE 12'X20'"), which is
+  // the thing the driver is actually building; without it they see loose
+  // pieces and no size. Grouped by first appearance, so an un-bundled item
+  // keeps its original position. Rows are built from `lines`, NOT `items` —
+  // every row carries its own `line.index` into `items`, so grouping can
+  // reorder the display without ever remapping a check-off line onto the
+  // wrong item (accept/short-count/damage all key off line.index).
+  const entries = useMemo(() => {
+    type Entry =
+      | { kind: 'bundle'; bundleName: string; lines: CheckoffLineDraft[] }
+      | { kind: 'line'; line: CheckoffLineDraft }
+    const out: Entry[] = []
+    const bundleAt = new Map<string, number>()
+    lines.forEach((line) => {
+      const bn = (items[line.index]?.bundle_name ?? '').trim()
+      if (!bn) {
+        out.push({ kind: 'line', line })
+        return
+      }
+      const at = bundleAt.get(bn)
+      if (at === undefined) {
+        bundleAt.set(bn, out.length)
+        out.push({ kind: 'bundle', bundleName: bn, lines: [line] })
+      } else {
+        const existing = out[at]
+        if (existing.kind === 'bundle') existing.lines.push(line)
+      }
+    })
+    return out
+  }, [lines, items])
+
   function patchLine(index: number, patch: Partial<CheckoffLineDraft>) {
     setLines((prev) => prev.map((l) => (l.index === index ? { ...l, ...patch } : l)))
   }
@@ -243,14 +276,22 @@ const ItemCheckoffPanel = forwardRef<CheckoffPanelHandle, ItemCheckoffPanelProps
           background: C.paper, border: `1.5px solid ${C.ink}`, borderRadius: 16,
           overflow: 'hidden',
         }}>
-          {lines.map((line, i) => {
+          {(() => {
+          // A top border separates rows and groups, but never sits between a
+          // bundle header and its first item — that item belongs to the header.
+          let rendered = false
+          const rows: ReactNode[] = []
+          const renderLine = (line: CheckoffLineDraft, indented: boolean, topBorder: boolean) => {
             const item = items[line.index]
             const ordered = orderedQty(line.index)
             const isShort = line.accepted && line.confirmedQty < ordered
             const drawerOpen = issueOpenIdx === line.index
             return (
-              <div key={line.index} style={{ borderTop: i === 0 ? 'none' : `1px solid ${C.off}` }}>
-                <div style={{ display: 'flex', alignItems: 'center', padding: '8px 12px', gap: 10 }}>
+              <div key={line.index} style={{ borderTop: topBorder ? `1px solid ${C.off}` : 'none' }}>
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  padding: indented ? '8px 12px 8px 28px' : '8px 12px',
+                }}>
                   {/* Accept circle — check (green full), corrected number
                       (amber short), or empty outline (pending). */}
                   <button
@@ -452,7 +493,33 @@ const ItemCheckoffPanel = forwardRef<CheckoffPanelHandle, ItemCheckoffPanelProps
                 )}
               </div>
             )
-          })}
+          }
+
+          for (const entry of entries) {
+            if (entry.kind === 'line') {
+              rows.push(renderLine(entry.line, false, rendered))
+              rendered = true
+              continue
+            }
+            rows.push(
+              <div
+                key={`bundle-${entry.bundleName}`}
+                style={{
+                  padding: '10px 12px 6px',
+                  borderTop: rendered ? `1px solid ${C.off}` : 'none',
+                  fontFamily: FONT_DISPLAY,
+                  fontSize: 11, fontWeight: 900, letterSpacing: '0.16em',
+                  textTransform: 'uppercase', color: C.muted,
+                }}
+              >
+                {entry.bundleName}
+              </div>
+            )
+            rendered = true
+            entry.lines.forEach((line, li) => rows.push(renderLine(line, true, li !== 0)))
+          }
+          return rows
+          })()}
         </div>
 
         {/* ── Pre-commit summary strip — billing consequence made visible ── */}

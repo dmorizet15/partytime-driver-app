@@ -8,9 +8,11 @@
 //
 // Keep bullets short, plain-language, and driver-facing (no engineering terms).
 
-export const VERSION = '2.6.0'
+export const VERSION = '2.6.1'
 
 export const CHANGELOG: string[] = [
+  'Stage and deck pieces now show the size you\'re actually building — "STAGE 12\'X20\'" sits above its 15 loose 4x4 decks while you check the stop off, not just after',
+  'Ask Ava what size stage you\'re building and she\'ll tell you the finished size, not just the piece count',
   'Ask Ava about a stop by name — "what am I delivering to Camp Kinder Ring?" now works even when the order is booked under a contact\'s name',
   'Ask Ava by stop number too — "what\'s on my second stop?", "what\'s next?", "how many stops away is the pickup?"',
   'Ava counts your stops in the order you actually drive them, so her stop numbers always match your route list — pickups included',
