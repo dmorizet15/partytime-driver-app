@@ -5,10 +5,17 @@ name: Version guard
 # from going stale: it only re-shows on a VERSION change, so every driver-facing
 # deploy needs a bump + changelog entry. See scripts/check-version-bump.mjs.
 #
+# THIS WORKFLOW IS A BACKSTOP, NOT THE GATE. The blocking check is the pre-push
+# hook (.githooks/pre-push, install via `npm run hooks:install`) — it runs the same
+# script before the push leaves the machine, which is the only point where it can
+# actually refuse. By the time this workflow runs on a push, the commit is already
+# on main and Vercel has already deployed it.
+#
 # • On pull requests: a failure blocks the merge (if marked a required check).
-# • On direct pushes to main (this repo's normal flow): a failure shows a red ✗
-#   on the commit as a loud reminder — it does not roll back the deploy, so add
-#   the bump in a follow-up commit (or [skip version] if nothing is driver-facing).
+# • On direct pushes to main (this repo's normal flow): a failure is only a red ✗
+#   on the commit — it does NOT roll back the deploy. 29551b1 shipped titled
+#   "(v2.6.0)" with no bump this way: CI caught it, CI could not stop it, and the
+#   red ✗ went unread. Fix forward with a bump commit (or [skip version]).
 
 on:
   pull_request:

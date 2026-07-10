@@ -8,28 +8,47 @@
 // — exactly the regression that left VERSION frozen at 2.0.0 from 2026-06-14
 // through 2026-06-28 across many deploys.
 //
-// Usage:  node scripts/check-version-bump.mjs <baseRef> [headRef]
-//   baseRef  — commit/ref the change is measured FROM (e.g. the previous main)
+// Usage:  node scripts/check-version-bump.mjs [baseRef] [headRef]
+//   baseRef  — commit/ref the change is measured FROM. Defaults to origin/main
+//              (then HEAD~1), so `npm run check:version` works with no args and
+//              answers "would this push need a bump?"
 //   headRef  — commit/ref the change is measured TO  (default: HEAD)
 //
 // Escape hatch: put [skip version] in any commit message in the range when a
 // change genuinely has nothing a driver would notice (API-only, CI, docs, etc.).
+//
+// Enforcement: the CI workflow (.github/workflows/version-guard.yml) runs this on
+// pushes to main, but a push has ALREADY deployed by then — there it is only a red
+// ✗ reminder. The blocking check is the pre-push hook (.githooks/pre-push,
+// installed via `npm run hooks:install`). See tasks/lessons.md.
 //
 // Exit codes: 0 = ok / not required / skipped · 1 = needs a version bump
 //             2 = bad invocation (never blocks on internal errors)
 
 import { execSync } from 'node:child_process'
 
-const base = process.argv[2] || process.env.BASE_REF
-const head = process.argv[3] || process.env.HEAD_REF || 'HEAD'
-
 function sh(cmd) {
-  return execSync(cmd, { encoding: 'utf8' }).trim()
+  return execSync(cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
 }
 
+function revExists(ref) {
+  try { sh(`git rev-parse --verify --quiet ${ref}^{commit}`); return true }
+  catch { return false }
+}
+
+// Resolve the comparison base when none was supplied: what we're about to push
+// against (origin/main), falling back to the previous commit.
+function defaultBase() {
+  for (const ref of ['origin/main', 'HEAD~1']) if (revExists(ref)) return ref
+  return null
+}
+
+const base = process.argv[2] || process.env.BASE_REF || defaultBase()
+const head = process.argv[3] || process.env.HEAD_REF || 'HEAD'
+
 if (!base) {
-  console.error('Usage: node scripts/check-version-bump.mjs <baseRef> [headRef]')
-  process.exit(2)
+  console.error('version-guard: no base ref (no origin/main, no HEAD~1); skipping.')
+  process.exit(0)
 }
 
 // Paths whose changes drivers actually run (the app surface).

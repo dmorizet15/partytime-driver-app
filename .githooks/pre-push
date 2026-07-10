@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Pre-push version guard — the BLOCKING enforcement point.
+#
+# Why this exists: .github/workflows/version-guard.yml runs the same check, but it
+# fires on `push: branches: [main]` — i.e. after the commit is already on main and
+# Vercel has already deployed it. On a direct push (this repo's normal flow) a
+# failed check is just a red ✗ nobody reads. That is exactly how 29551b1 shipped
+# titled "(v2.6.0)" without ever bumping appVersion.ts: CI caught it, CI could not
+# stop it, and drivers never saw a What's New sheet for that release.
+#
+# This hook runs BEFORE the push leaves the machine, so it can actually refuse.
+#
+# Install:  npm run hooks:install   (sets core.hooksPath to .githooks)
+# Bypass :  git push --no-verify    (or add [skip version] to a commit message)
+#
+# Only guards pushes to main — feature branches are free until they merge.
+
+set -uo pipefail
+
+ZERO='0000000000000000000000000000000000000000'
+status=0
+
+# git feeds one line per ref being pushed:
+#   <local ref> <local sha> <remote ref> <remote sha>
+while read -r _local_ref local_sha remote_ref remote_sha; do
+  # Branch deletion — nothing to check.
+  [ "$local_sha" = "$ZERO" ] && continue
+  # Only main is guarded.
+  [ "$remote_ref" = "refs/heads/main" ] || continue
+
+  # New remote branch (or a remote sha we don't have) → compare against the
+  # previous commit rather than the whole history.
+  if [ "$remote_sha" = "$ZERO" ] || ! git cat-file -e "${remote_sha}^{commit}" 2>/dev/null; then
+    base="$(git rev-parse --verify --quiet 'HEAD~1' || echo '')"
+  else
+    base="$remote_sha"
+  fi
+
+  if [ -z "$base" ]; then
+    echo "version-guard: no comparable base; skipping." >&2
+    continue
+  fi
+
+  node scripts/check-version-bump.mjs "$base" "$local_sha" || status=1
+done
+
+if [ "$status" -ne 0 ]; then
+  echo "  Push blocked by the pre-push version guard." >&2
+  echo "  Bump VERSION + CHANGELOG in src/lib/appVersion.ts, or push with --no-verify." >&2
+fi
+
+exit "$status"
