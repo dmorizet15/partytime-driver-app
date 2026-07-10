@@ -4,6 +4,21 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-07-10 — Version guard: make it actually block (`fa1215f`; no migration; `[skip version]`)
+
+**Found while investigating a version drift**, not reported. `29551b1` shipped titled `feat(routes): … (v2.6.0)` but never bumped `src/lib/appVersion.ts` and never used `[skip version]` — so drivers never got a What's New sheet for the route-truck roster + helper view-only work.
+
+**The guard was never broken.** Replaying `node scripts/check-version-bump.mjs 29551b1^ 29551b1` exits 1 and names all four driver-facing files; the GitHub run for that push is recorded as `failure` (`29037705774`, 2026-07-09). The defect was *when* it runs: `.github/workflows/version-guard.yml` fires on `push: branches:[main]`, evaluating the commit **after** it is on `main` and Vercel has deployed. Its only blocking path is `pull_request` — and this repo's doctrine is push straight to `main`, no branches. The single enforcement path it had was the one path we never use, so it degraded to a red ✗ nobody read. `CLAUDE.md` compounded it by claiming the guard *"fails the push if you forget"*, which it cannot do.
+
+- **`.githooks/pre-push`** — the real gate. Runs `check-version-bump.mjs` against `origin/main..HEAD` before the push leaves the machine. Guards `refs/heads/main` only (feature branches free). Escape hatches unchanged: `[skip version]` in a commit message, or `git push --no-verify`.
+- **`npm run hooks:install`** → `git config core.hooksPath .githooks`. Git does not clone hooks, so this is now a **session-start ritual step** in `CLAUDE.md`.
+- **`scripts/check-version-bump.mjs`** — base ref defaults to `origin/main` (then `HEAD~1`), so `npm run check:version` works bare instead of printing `Usage:` and exiting 2.
+- **Docs corrected** — `CLAUDE.md` + the workflow header now name the hook as the gate and CI as a backstop.
+
+**Verified — all five paths:** driver-facing change without a bump → blocks (exit 1); same + `[skip version]` → passes; docs-only → passes; driver-facing + bump → passes; push to a feature branch → unguarded. Decisive check: replayed against `29551b1` → exit 1, i.e. it would not have left the machine. The hook then ran on its own push (`fa1215f`) and passed.
+
+---
+
 ## 2026-07-10 — AVA stop addressing: by name, by number, by what's next (VERSION 2.6.0; no migration)
 
 **Reported:** a driver can't ask "what am I delivering to Camp Kinder Ring?" — AVA replies "I'm logging your question." The stop-progression lock (later stops locked until the current one completes) is intentional and stays; drivers ask AVA to prep for stops they can't yet open.
