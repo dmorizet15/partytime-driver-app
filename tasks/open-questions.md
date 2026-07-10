@@ -142,3 +142,26 @@ surface), extract `ALL_CATEGORIES`, `CATEGORY_LABELS`, `CFR_SECTIONS`,
 (from `/api/inspection/submit/route.ts`) into a single shared module. Three
 copies today: InspectionScreen.tsx, PostTripDefectCard.tsx, and the submit
 route handler.
+
+## Bundle sync extension — for chat-Claude → Notion / dashboard (flagged 2026-07-10)
+
+Driver-app v2.6.1 (`7faf460`) made the check-off panel AND AVA read
+`dispatch_stops.items[].bundle_name` — so a driver at Camp Kinder Ring now
+sees "STAGE 12'X20'" above its 15 loose 4x4 decks, and AVA answers "what size
+stage am I building?" with the finished size. **The driver side is fully
+generic** — it renders/reads a bundle header for ANY item that carries
+`bundle_name`, not just stages.
+
+The remaining lever is **dashboard-side (the TapGoods sync)**: today the sync
+only writes `bundle_name` onto FLOORING & STAGING deck items. Every other
+TapGoods bundle (multi-piece tent kits, dance-floor tiles, staging accessory
+kits, etc.) arrives WITHOUT `bundle_name`, so the driver sees loose pieces
+with no assembled-size label — the exact problem we just fixed for stages,
+still live for those types.
+
+**Ask for Darren / dashboard session:** should the TapGoods sync tag
+`bundle_name` on all bundle-backed items (tents, dance floors, any TapGoods
+"bundle"/kit), not just stage decks? If yes, it's a dashboard-repo change to
+the sync's item-mapping — zero driver-app work required; the feature lights
+up automatically the next sync cycle. Low risk (additive field on the items
+JSONB, already flowing through untouched).
