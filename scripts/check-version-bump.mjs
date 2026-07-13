@@ -102,12 +102,18 @@ if (/\[skip[ -]version\]/i.test(messages)) {
   process.exit(0)
 }
 
-// Read the VERSION literal at both ends of the range.
+// Read the live version at both ends of the range. Two shapes to support:
+// current — RELEASES[0].version is the live version (VERSION is derived from
+// it, so there is no VERSION literal to grep); pre-2.7.1 — a literal
+// `export const VERSION = 'x.y.z'`. The base ref of a range often predates the
+// restructure, so BOTH must keep working or the guard fails every push.
 function versionAt(ref) {
   try {
     const src = sh(`git show ${ref}:src/lib/appVersion.ts`)
-    const m = src.match(/VERSION\s*=\s*['"]([^'"]+)['"]/)
-    return m ? m[1] : null
+    const release = src.match(/version:\s*['"]([^'"]+)['"]/)   // first = newest
+    if (release) return release[1]
+    const literal = src.match(/VERSION\s*=\s*['"]([^'"]+)['"]/)
+    return literal ? literal[1] : null
   } catch {
     return null
   }
@@ -137,8 +143,9 @@ console.error('')
 console.error('  Before drivers receive this, update src/lib/appVersion.ts so the')
 console.error('  "What\'s New" sheet shows them what changed:')
 console.error('')
-console.error('    1. bump VERSION   (current: ' + (after ?? 'unknown') + ')')
-console.error('    2. prepend new driver-facing bullets to CHANGELOG')
+console.error('    add ONE new entry at the TOP of RELEASES (current: ' + (after ?? 'unknown') + ')')
+console.error('    with the new version + only THIS release\'s driver-facing bullets.')
+console.error('    VERSION derives from it. Do NOT add bullets to an existing release.')
 console.error('')
 console.error('  If this change has nothing a driver would notice, add [skip version]')
 console.error('  to a commit message in this push.')
