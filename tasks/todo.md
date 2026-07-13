@@ -1,5 +1,31 @@
 # Open Tasks — partytime-driver-app
 
+## July 13, 2026 — Equipment returns: pickup crews never reached the confirm card + What's New dumped the whole history — ON `main`; NO migration; VERSION 2.7.0 → 2.7.2
+
+Darren: first live pickup day. Crews said they had no way to check off the cords/chair carts the delivery crew left; Melissa was emailed that the items were left on site when the crews had actually brought them all back.
+
+**Investigation (DONE):**
+- [x] Ruled out a render bug: prod was on HEAD, `stop_type` maps to `'pickup'`, reservation linkage intact. Runtime logs show `GET /api/stops/equipment-returns` → **200 with the correct balance** at the moment each pickup stop opened. Amy Goetz (route 1 / stop 4, the one Darren flagged) mounted 14:54:39, completed 15:49 — **55 minutes with the card on screen and zero rows written.**
+- [x] Real cause is structural, not a bug in any function: a pickup finishes in **two taps** — `ItemCheckoffPanel`'s "✓ Confirm all" is at the panel's TOP and the Complete CTA is **pinned to the viewport** — so the equipment cards, which lived *below the entire item list*, were unreachable on the happy path.
+- [x] Compounding: the ledger could not tell "crew confirmed nothing retrieved" from "crew never answered" — both are `retrieved: 0` → false "left on site" email.
+
+**Fix (DONE — v2.7.0 `bf87408`, v2.7.2 `d189d3b`):**
+- [x] Retrieve card + confirm section moved **ABOVE** the manifest on pickup stops (delivery-side capture stays below — it demonstrably works).
+- [x] Completion **ASKS and KEEPS ASKING** (`equipmentGateBlocks()`), re-firing on every Complete tap until every expected item is answered. Never a hard gate: "Yes — got everything" is one tap; one tap on any stepper records what they found (**a zero IS an answer**).
+- [x] Runs at the TOP of each completion path, before `handle.commit()` / `setCheckoffCommitting(true)` — **the TapGoods manifest check-off is untouched** (explicit Darren requirement, verified).
+- [x] Alert has three honest outcomes: crew reported short → **"Equipment LEFT ON SITE — reported by the pickup crew"**; never answered → **NOT CONFIRMED** ("may well be back on the truck"); everything retrieved → **no email**.
+- [x] 8s `AbortController` on the balance fetch (iOS stalls fetches on signal loss → `expected` stayed `null` → card would never render).
+- [x] Data repaired (`supabase/data-patches/20260713_equipment_returns_false_alert_repair.sql`): both false alerts deleted, retrieval rows written, both reservations balance to zero.
+- [x] **What's New (v2.7.1 `751bbf7`):** `appVersion.ts` flat `CHANGELOG` → `RELEASES[]` by version+date; `VERSION` derives from `RELEASES[0]`; sheet shows only releases newer than the driver's `ptr_last_seen_version`, capped 3 releases / 10 bullets. `check-version-bump.mjs` reads both file shapes (the base ref of any range still has the old one).
+
+**Pending — ON-DEVICE (the gate). Cards + prompt already smoke-tested PASS by Darren on 2.7.0.** Remaining to watch on the next live pickup day:
+- [ ] **Sean Johnston pickup (`0f192328`, res `b4ab406b`) is still incomplete** — 1 chair cart + 1 extension cord outstanding. It is the first stop that will exercise the v2.7.2 keep-asking gate for real. Confirm the crew gets the prompt and that the resulting email matches what they answered.
+- [ ] Confirm the re-ask loop feels right in the field (tap Complete → prompt → dismiss → tap Complete → prompt again) and that nobody feels trapped.
+- [ ] Confirm What's New on a driver device shows ONLY the new release's bullets.
+
+**Note:** drivers must accept the update banner to get 2.7.2 — worth a morning heads-up.
+
+
 ## July 10, 2026 — AVA stop addressing (by name / by number / what's next) — ON `main`; NO migration; VERSION 2.6.0
 
 Darren: drivers can't see a later stop until the current one completes (intentional, stays) — so they ask AVA to prep. "What am I delivering to Camp Kinder Ring?" returned the knowledge-gap copy.
