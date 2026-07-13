@@ -1,5 +1,17 @@
 # Open Tasks — partytime-driver-app
 
+## July 13, 2026 — RFID scan-model correction — branch `feat/rfid-native-integration` (`2f974bc`); NO migration
+
+Corrected per Darren: status-first arming, press-and-hold triggers (Individual = first tag + Clear/re-pull; Mass = accumulate + commit), instant replica resolution, no default return status (unscanned retain 'Delivered'), non-RFID lines manual-only (`ExpectedItem.taggable`). 68/68 tests + `next build` green — mock-verified only.
+
+- [ ] Live sandbox verification: delivery + pickup flows against the Easy RFID Pro sandbox; confirm batch write `success_count == N` on one multi-row pickup (credentials: `~/partytime-rfid/.env.local`; sandbox API/auth hosts still unknown — ASSUMPTIONS.md).
+- [ ] XR2 device test: press-and-hold trigger feel (on-screen + hardware trigger), first-tag capture latency, Clear/re-pull within the 500ms window in the field.
+- [ ] GPS against a REAL permission grant (grant → lat/long on the queued write; deny → coordinate-less write proceeds) — currently UNCONFIRMED, mock adapters only.
+- [ ] Merge-time: host StopContext sets `ExpectedItem.taggable` from the rfid_to_tapgoods_map join; decide serialized-asset picker vs free entry (ask Darren whether untagged serialized assets exist in Item Master).
+- [ ] Confirm the exact live 'Delivered' status string against a legacy-delivered record before any live write (ASSUMPTIONS.md, unchanged).
+- [ ] Merge-to-main session: VERSION bump (MINOR) + What's New entry — deliberately NOT done on the branch.
+
+
 ## July 6, 2026 — Pickup Answer (Driver-Facing) — ON `main` (`e70e78c`); NO migration
 
 Spec: MBC Part 3 "📞 Pickup Answer (Driver-Facing)" (locked 2026-07-05). Read-only gold card on the delivery stop that answers "when are you picking up?" using the reservation's pickup stop(s). Built on branch `feat/pickup-answer`; Darren merged to `main` accepting the low read-only risk (test opportunistically, quick-fix if needed). **Note:** the card is on the interactive StopDetailScreen only, so it needs a day WITH delivery stops to see (07-06 had 0 deliveries; nearest delivery days 07-07 and 07-10).
