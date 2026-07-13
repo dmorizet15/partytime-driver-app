@@ -4,6 +4,23 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-07-13 (c) — Equipment gate: keep asking until answered + plain "left on site" alert (no migration; v2.7.2)
+
+**Darren, after the v2.7.0 on-device smoke test** (which passed — the cards and the prompt appear correctly): the equipment question must not be tap-past-able, and answering "no" must tell Melissa the items were left behind.
+
+**Before:** the gate fired once. "Some left behind" set `equipGateDone`, and a second Complete tap went through with nothing recorded — as did a stray tap on the modal backdrop (`ConfirmationModal` wires the backdrop to `onCancel`). The driver always SAW the question, but could complete without answering it.
+
+**Now:** `equipGateDone` is gone. Every Complete tap re-asks until `getUnconfirmed()` is empty, so the backdrop hole closes itself — the question just comes back. It still cannot strand anyone: **"Yes — got everything" is always one tap**, and a single tap on any stepper row records what they actually found. **A zero IS an answer** (an explicit "we left it") and fires the alert. Deliberately still NOT a disabled-CTA hard gate — a driver in a dead spot can always close the stop, they just can't do it silently.
+
+**Does not touch the TapGoods manifest flow** (explicit requirement). `equipmentGateBlocks()` is called at the TOP of each pickup completion path — *before* `handle.commit()` and *before* `setCheckoffCommitting(true)` — so re-asking can never double-commit the check-off, strand its spinner, or disturb its confirmed rows. It is a pure pre-flight question.
+
+**Alert copy now has three honest outcomes** (all four cases verified end-to-end):
+- Crew answered short → **"Equipment LEFT ON SITE — reported by the pickup crew … They are still at the site."** Previously this said "unaccounted for (shortfall)", which reads as a paperwork mismatch and buried a real report.
+- Crew never answered → keeps the distinct **NOT CONFIRMED** copy ("may well be back on the truck"). Should now be rare.
+- Crew got everything → **no email at all.**
+
+---
+
 ## 2026-07-13 (b) — What's New showed the entire product history on every update (no migration; v2.7.1)
 
 **Reported by Darren** right after the v2.7.0 push: hitting Update listed ~26 bullets going back to "Staging and flooring pieces now group together on the stop manifest" — all of it under the "Version 2.7.0" header. Three new equipment bullets presented themselves as twenty-six new features.
