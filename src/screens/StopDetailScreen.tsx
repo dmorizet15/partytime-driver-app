@@ -48,10 +48,13 @@ import ItemCheckoffPanel, {
 import EquipmentReturnSection, {
   type EquipmentReturnSectionHandle,
 } from '@/components/equipment/EquipmentReturnSection'
-import EquipmentPickupSection from '@/components/equipment/EquipmentPickupSection'
+import EquipmentPickupSection, {
+  type EquipmentPickupSectionHandle,
+} from '@/components/equipment/EquipmentPickupSection'
 import EquipmentRetrieveCard from '@/components/equipment/EquipmentRetrieveCard'
 import PickupAnswerCard from '@/components/pickup/PickupAnswerCard'
-import { commitEquipmentReturns } from '@/lib/equipmentReturns/service'
+import { commitEquipmentReturns, type EquipmentReturnEntry } from '@/lib/equipmentReturns/service'
+import { retrieveLabel } from '@/lib/equipmentReturns/rules'
 import {
   hasCheckoffRows,
   isCheckoffCommittedLocal,
@@ -86,6 +89,9 @@ const C = {
 
 const FONT_DISPLAY = "var(--font-archivo), 'Archivo', 'Inter', system-ui, -apple-system, sans-serif"
 const FONT_BODY    = "var(--font-inter), 'Inter', system-ui, -apple-system, sans-serif"
+
+// Scroll target for the "some left behind" branch of the equipment gate.
+const EQUIPMENT_PICKUP_ANCHOR = 'equipment-pickup-confirm'
 
 // ─── Stop type pill colors ────────────────────────────────────────────────────
 // Keep in lockstep with TYPE_PILL in DayRouteSelectorScreen — both depot
@@ -367,9 +373,23 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   // own stepper state (sessionStorage draft); runStopComplete reads the
   // touched counts through this ref and upserts them fire-and-forget.
   const equipmentReturnRef = useRef<EquipmentReturnSectionHandle>(null)
-  // Pickup-side confirm (reservation ledger) — same handle shape; completion
+  // Pickup-side confirm (reservation ledger) — superset handle; completion
   // POSTs the confirmed counts + runs the final-pickup discrepancy check.
-  const equipmentPickupRef = useRef<EquipmentReturnSectionHandle>(null)
+  const equipmentPickupRef = useRef<EquipmentPickupSectionHandle>(null)
+
+  // ── Equipment retrieval gate (2026-07-13) ─────────────────────────────────
+  // A pickup crew can finish a stop in two taps ("Confirm all" at the top of
+  // the check-off panel, then the pinned CTA) without ever scrolling to the
+  // equipment card — so the card alone shipped ZERO pickup rows on its first
+  // live day and told dispatch the equipment was left on site. When the
+  // delivery crew logged equipment for this reservation, completion now asks.
+  // Only fires on a positive expected balance, so ordinary pickups (the vast
+  // majority) see no extra step. Answering "some left behind" dismisses the
+  // gate for the rest of the stop — the driver is never trapped by paperwork.
+  const [equipGateItems, setEquipGateItems] = useState<EquipmentReturnEntry[]>([])
+  const [equipGateOpen, setEquipGateOpen]   = useState(false)
+  const [equipGateDone, setEquipGateDone]   = useState(false)
+  const resumeCompleteRef = useRef<(() => void) | null>(null)
 
   // Dispatcher note (NEW-D) — read-only modal that pops on stop open when
   // the dashboard has saved a dispatcher_notes value. "Got it" dismisses
@@ -1160,12 +1180,51 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   // 2. Everything else → standard yes/no confirmation modal.
   function handleMarkCompleteTap() {
     if (!stop) return
+    if (equipmentGateBlocks(() => handleMarkCompleteTap())) return
     const isCodDelivery = stop.payment_state === 'cod' && stop.stop_type === 'delivery'
     if (isCodDelivery && cashConfirmed === false) {
       openCashModal()
       return
     }
     setShowCompleteModal(true)
+  }
+
+  // Equipment retrieval gate — returns true (and opens the sheet) when this is
+  // a pickup whose reservation still has equipment the crew hasn't answered
+  // for. `resume` re-enters the completion path the driver originally tapped,
+  // so "Got everything" flows straight through to the normal funnel.
+  function equipmentGateBlocks(resume: () => void): boolean {
+    if (!stop || stop.stop_type !== 'pickup' || equipGateDone) return false
+    const outstanding = equipmentPickupRef.current?.getUnconfirmed() ?? []
+    if (outstanding.length === 0) return false
+    setEquipGateItems(outstanding)
+    resumeCompleteRef.current = resume
+    setEquipGateOpen(true)
+    return true
+  }
+
+  // "Yes — got everything": accept every expected count at its prefilled value,
+  // then continue. The section's handle writes through a synchronous mirror, so
+  // runStopComplete reads the just-confirmed rows in this same tick.
+  function handleEquipmentGotEverything() {
+    equipmentPickupRef.current?.confirmAllExpected()
+    setEquipGateOpen(false)
+    setEquipGateDone(true)
+    const resume = resumeCompleteRef.current
+    resumeCompleteRef.current = null
+    resume?.()
+  }
+
+  // "Some left behind": drop the driver on the steppers to enter real counts.
+  // The gate does not re-fire — whatever they enter (or don't) stands.
+  function handleEquipmentSomeLeft() {
+    setEquipGateOpen(false)
+    setEquipGateDone(true)
+    resumeCompleteRef.current = null
+    setTimeout(() => {
+      document.getElementById(EQUIPMENT_PICKUP_ANCHOR)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 60)
   }
 
   // The single gated bottom CTA (Rev 1) — "Complete Stop → Next" does the
@@ -1175,6 +1234,7 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   // LOCAL — a TapGoods outage never traps the driver here.
   async function handleInlineCheckoffComplete() {
     if (!stop || checkoffCommitting || !checkoffProgress.allResolved) return
+    if (equipmentGateBlocks(() => void handleInlineCheckoffComplete())) return
     const handle = checkoffPanelRef.current
     if (!handle) return
     setCheckoffCommitting(true)
@@ -2718,6 +2778,30 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
           <StopWeatherModule lat={stop.latitude} lng={stop.longitude} />
         )}
 
+        {/* EQUIPMENT — PICKUP SIDE. Sits ABOVE the manifest deliberately
+            (moved 2026-07-13): below it, these two cards live past the end of
+            an item list the crew never has to scroll — ItemCheckoffPanel's
+            "Confirm all" is at its top and the Complete CTA is pinned to the
+            viewport — so on their first live day the pickup crews never saw
+            them and dispatch got a false "left on site" alert. First thing
+            they see now, before the items. */}
+        {stop.stop_type === 'pickup' && (
+          <div style={{ padding: '14px 18px 0' }}>
+            <EquipmentRetrieveCard stopId={stop.stop_id} />
+          </div>
+        )}
+
+        {/* CONFIRM EQUIPMENT RETRIEVED — pickup-side capture, pre-filled with
+            the reservation's running balance. Confirmed counts are written at
+            completion (runStopComplete → POST). Still a soft prompt inline;
+            the completion gate (equipmentGateBlocks) is what guarantees the
+            question actually gets asked. */}
+        {stop.stop_type === 'pickup' && !isCompleted && (
+          <div id={EQUIPMENT_PICKUP_ANCHOR}>
+            <EquipmentPickupSection ref={equipmentPickupRef} stop={stop} />
+          </div>
+        )}
+
         {/* MANIFEST — when the inline check-off is active (Rev 1), the
             interactive panel IS the item list (confirm-all + per-line
             controls in the manifest slot); otherwise the static list. */}
@@ -2860,23 +2944,6 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
             runStopComplete reads the touched counts through the ref. */}
         {stop.stop_type === 'delivery' && !isCompleted && (
           <EquipmentReturnSection ref={equipmentReturnRef} stop={stop} />
-        )}
-
-        {/* RETRIEVE FROM THIS SITE (Equipment Return Tracking) — pickup-side
-            reminder. Self-contained: reads the reservation's running balance
-            server-side (ledger across ALL delivery/pickup stops) and renders
-            null when nothing remains to retrieve. */}
-        {stop.stop_type === 'pickup' && (
-          <div style={{ padding: '14px 18px 0' }}>
-            <EquipmentRetrieveCard stopId={stop.stop_id} />
-          </div>
-        )}
-
-        {/* CONFIRM EQUIPMENT RETRIEVED — pickup-side capture, pre-filled with
-            the same running balance. Confirmed counts are written at
-            completion (runStopComplete → POST); soft prompt, never gates. */}
-        {stop.stop_type === 'pickup' && !isCompleted && (
-          <EquipmentPickupSection ref={equipmentPickupRef} stop={stop} />
         )}
 
         {/* Same-job indicator (Next Day Route Preview Session 3) — below the
@@ -3068,6 +3135,23 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
       )}
 
       <BottomNav/>
+
+      {/* Equipment retrieval gate — the delivery crew logged equipment for this
+          reservation and this crew hasn't answered for it. Asked at completion
+          so it cannot be scrolled past. "Some left behind" always lets them
+          through to the steppers: this reminds, it never traps. */}
+      {equipGateOpen && equipGateItems.length > 0 && (
+        <ConfirmationModal
+          title="Did you get the equipment?"
+          message={`The delivery crew left ${equipGateItems
+            .map((e) => retrieveLabel(e.equipment_key, e.quantity).replace(/^Retrieve /, ''))
+            .join(' and ')} at this site.`}
+          confirmLabel="Yes — got everything"
+          cancelLabel="Some left behind"
+          onConfirm={handleEquipmentGotEverything}
+          onCancel={handleEquipmentSomeLeft}
+        />
+      )}
 
       {showCompleteModal && (
         <ConfirmationModal

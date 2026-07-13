@@ -38,18 +38,44 @@ function keyLabel(key: string, count = 2): string {
   return count === 1 ? rule.noun.one : rule.noun.many
 }
 
+// A shortfall the crew never answered (no pickup row at all for the key) is
+// NOT evidence the equipment was left behind — it means the prompt went
+// unanswered. Saying "left on site" in that case sends dispatch chasing
+// equipment that is already back on the truck (live false alarm 2026-07-13).
+// A crew that answers "we got none" writes a quantity-0 row and still lands in
+// the shortfall bucket below — that one IS a real report.
+function isUnconfirmed(d: EquipmentBalance): boolean {
+  return d.balance > 0 && d.pickup_rows === 0
+}
+
 export function buildAlertEmail(input: EquipmentAlertInput): { subject: string; text: string; html: string } {
   const who = input.customerName?.trim() || 'Unknown customer'
-  const shortfalls = input.discrepancies.filter((d) => d.balance > 0)
-  const overs      = input.discrepancies.filter((d) => d.balance < 0)
+  const shortfalls  = input.discrepancies.filter((d) => d.balance > 0 && !isUnconfirmed(d))
+  const unconfirmed = input.discrepancies.filter(isUnconfirmed)
+  const overs       = input.discrepancies.filter((d) => d.balance < 0)
 
-  const subject = `Equipment return discrepancy — ${who}${
-    shortfalls.length ? ` — ${shortfalls.map((d) => `${d.balance} ${keyLabel(d.equipment_key, d.balance)}`).join(', ')} unaccounted` : ''
-  }`
+  // Nothing was actually reported short — the crew just never confirmed. Lead
+  // with that, and never use the word "unaccounted" in the subject.
+  const onlyUnconfirmed = shortfalls.length === 0 && overs.length === 0 && unconfirmed.length > 0
+
+  const subject = onlyUnconfirmed
+    ? `Equipment retrieval not confirmed — ${who} — ${
+        unconfirmed.map((d) => `${d.balance} ${keyLabel(d.equipment_key, d.balance)}`).join(', ')
+      }`
+    : `Equipment return discrepancy — ${who}${
+        shortfalls.length ? ` — ${shortfalls.map((d) => `${d.balance} ${keyLabel(d.equipment_key, d.balance)}`).join(', ')} unaccounted` : ''
+      }`
 
   const lines: string[] = []
-  lines.push(`Equipment return discrepancy — final pickup completed`)
+  lines.push(onlyUnconfirmed
+    ? `Equipment retrieval NOT CONFIRMED — final pickup completed`
+    : `Equipment return discrepancy — final pickup completed`)
   lines.push('')
+  if (onlyUnconfirmed) {
+    lines.push('The pickup crew completed the stop without confirming these items either way.')
+    lines.push('They may well be back on the truck — check with the crew before chasing the site.')
+    lines.push('')
+  }
   lines.push(`Customer: ${who}`)
   if (input.address) lines.push(`Address: ${input.address}`)
   if (input.finalPickupDate) lines.push(`Final pickup date: ${input.finalPickupDate}`)
@@ -57,9 +83,11 @@ export function buildAlertEmail(input: EquipmentAlertInput): { subject: string; 
   lines.push('')
   for (const d of input.discrepancies) {
     const label = keyLabel(d.equipment_key)
-    const net = d.balance > 0
-      ? `${d.balance} unaccounted for (shortfall)`
-      : `${-d.balance} over-reported (more retrieved than logged as delivered)`
+    const net = isUnconfirmed(d)
+      ? `${d.balance} NOT CONFIRMED by the pickup crew (no retrieval logged either way)`
+      : d.balance > 0
+        ? `${d.balance} unaccounted for (shortfall)`
+        : `${-d.balance} over-reported (more retrieved than logged as delivered)`
     lines.push(`${label.toUpperCase()}: delivered ${d.delivered}, retrieved ${d.retrieved} → ${net}`)
     for (const t of input.trace.filter((t) => t.equipment_key === d.equipment_key)) {
       lines.push(`  · ${t.stop_type === 'delivery' ? 'Left at delivery' : 'Retrieved at pickup'} ${t.scheduled_date ?? '(no date)'}: ${t.quantity} (stop ${t.stop_id})`)
@@ -68,6 +96,9 @@ export function buildAlertEmail(input: EquipmentAlertInput): { subject: string; 
   }
   if (overs.length === 0 && shortfalls.length > 0) {
     lines.push('Crews logged less retrieved than delivered — equipment may still be on-site or lost in transit.')
+  }
+  if (unconfirmed.length > 0 && !onlyUnconfirmed) {
+    lines.push('Items marked NOT CONFIRMED were never answered by the pickup crew — confirm with them before treating those as missing.')
   }
   const text = lines.join('\n')
 

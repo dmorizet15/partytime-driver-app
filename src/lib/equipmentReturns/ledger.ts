@@ -34,6 +34,12 @@ export interface EquipmentBalance {
   delivered: number
   retrieved: number
   balance: number
+  // How many PICKUP rows exist for this key across the reservation. ZERO means
+  // no crew ever answered the question — which is NOT the same as a crew
+  // answering "we retrieved none" (that writes a row with quantity 0). The
+  // final-pickup alert leans on this to avoid telling dispatch equipment was
+  // left behind when the truth is nobody confirmed either way (2026-07-13).
+  pickup_rows: number
 }
 
 export interface ComputeBalancesOptions {
@@ -52,7 +58,7 @@ export function computeBalances(rows: LedgerRow[], opts: ComputeBalancesOptions)
   const get = (key: string): EquipmentBalance => {
     let b = byKey.get(key)
     if (!b) {
-      b = { equipment_key: key, delivered: 0, retrieved: 0, balance: 0 }
+      b = { equipment_key: key, delivered: 0, retrieved: 0, balance: 0, pickup_rows: 0 }
       byKey.set(key, b)
     }
     return b
@@ -67,7 +73,9 @@ export function computeBalances(rows: LedgerRow[], opts: ComputeBalancesOptions)
     } else if (stop.stop_type === 'pickup') {
       if (opts.excludeStopId && stop.id === opts.excludeStopId) continue
       if (opts.completedPickupsOnly && !stop.completed_at) continue
-      get(row.equipment_key).retrieved += qty
+      const b = get(row.equipment_key)
+      b.retrieved += qty
+      b.pickup_rows += 1
     }
     // Any other stop type carries no ledger meaning — ignored.
   }

@@ -4,6 +4,27 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-07-13 — Equipment returns: the pickup crew never reached the confirm card (no migration; v2.7.0)
+
+**Reported, not found by us.** First day the equipment-return feature saw a live *pickup* crew. Two things went wrong at once: the crews said they had no way to check off the cords / chair carts the delivery crew had left on site, and Melissa was emailed that the equipment WAS left on site — when the crews had in fact brought it all back.
+
+**The card was rendering. Nobody ever got to it.** Ruled out the obvious suspects first: production is on HEAD (`d4afbce`), `stop_type` maps to `'pickup'` correctly, the reservation linkage is intact, and the runtime logs show `GET /api/stops/equipment-returns` returning **200** at the moment each pickup stop was opened — Amy Goetz (route 1, stop 4 — the stop Darren flagged) mounted at 14:54:39 with a balance of 1 chair cart + 1 extension cord and was completed 55 minutes later with **zero** equipment entries. Every row in `stop_equipment_returns` was a delivery row; not one pickup row existed.
+
+The reason is structural, and it is a UX fact rather than a bug in any single function: **a pickup crew can finish a stop in two taps.** `ItemCheckoffPanel`'s "✓ Confirm all — all good" button sits at the **top** of the panel, and the gold "Complete Stop → Next" CTA is **pinned to the viewport**. Both equipment cards lived *below the entire item list*. The happy path never scrolls, so the cards were unreachable in normal use. The delivery-side section works precisely because it needs no fetch and crews were told to look for it.
+
+**Compounding it: silence was read as a negative.** The final-pickup ledger could not distinguish *"the crew confirmed they retrieved nothing"* from *"the crew never answered."* Both surface as `retrieved: 0` → nonzero balance → "equipment left on site" email. That is the false alarm.
+
+**Fix (three parts).**
+1. **Placement** — the retrieve card + confirm section now render **above** the manifest on pickup stops (`StopDetailScreen`), so they are seen before the item list. Delivery-side capture stays below the manifest; it demonstrably works and moving it would be churn.
+2. **Completion asks** — `equipmentGateBlocks()` intercepts *every* pickup completion path (inline check-off CTA + the plain Mark-Complete tap) when `getUnconfirmed()` is non-empty: *"Did you get the equipment?"* → **[Yes — got everything]** writes the full expected balance and flows straight through the normal funnel, **[Some left behind]** scrolls to the steppers. Only fires on a positive expected balance, so ordinary pickups see no extra step, and "some left behind" dismisses the gate for the stop — this reminds, it never traps. `EquipmentPickupSectionHandle` gained `getUnconfirmed()` / `confirmAllExpected()`, reading through a **synchronous `latest` ref**: a handle closed over React state would hand `runStopComplete` the pre-tap values and the just-confirmed rows would silently never be written.
+3. **Honest alert** — `EquipmentBalance.pickup_rows` now counts pickup rows per key. `pickup_rows === 0` on a positive balance is reported as **NOT CONFIRMED** ("may well be back on the truck — check with the crew before chasing the site"), not as a shortfall. A crew that answers "we got none" writes a quantity-**0** row, which is a real answer and still reads as a shortfall.
+
+Also hardened: the balance fetch now carries an 8s `AbortController`. iOS stalls (never rejects) in-flight fetches on connection loss, which would leave `expected === null` and the card would never render at all — the documented offline-freeze landmine, unguarded on this path.
+
+**Data repaired** — `supabase/data-patches/20260713_equipment_returns_false_alert_repair.sql`: wrote the retrieval rows the crews would have confirmed (Amy Goetz 1 cart + 1 cord, Tyler Cross 2 carts) and deleted the two false `equipment_return_alerts` rows. Both reservations now balance to zero. The still-open Sean Johnston pickup (1 cart + 1 cord outstanding) will get the new prompt.
+
+---
+
 ## 2026-07-10 — Version guard: make it actually block (`fa1215f`; no migration; `[skip version]`)
 
 **Found while investigating a version drift**, not reported. `29551b1` shipped titled `feat(routes): … (v2.6.0)` but never bumped `src/lib/appVersion.ts` and never used `[skip version]` — so drivers never got a What's New sheet for the route-truck roster + helper view-only work.

@@ -18,7 +18,7 @@
 // Below-prefill entries get a non-blocking inline note ("fewer than
 // expected") so typos get caught in the moment, not after the fact.
 
-import { forwardRef, useEffect, useImperativeHandle, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import type { Stop } from '@/types'
 import {
   EQUIPMENT_RETURN_GROUPS,
@@ -60,22 +60,53 @@ interface BalanceRow {
   balance: number
 }
 
+// The screen drives the completion gate through this handle (2026-07-13). The
+// card alone is not enough: a pickup crew can tap "Confirm all" at the TOP of
+// the check-off panel and then the pinned Complete CTA without ever scrolling
+// far enough to see this card — which is exactly how a live job shipped zero
+// pickup rows and false-alarmed dispatch. StopDetailScreen asks getUnconfirmed()
+// before completing and puts anything outstanding in front of the driver.
+export interface EquipmentPickupSectionHandle extends EquipmentReturnSectionHandle {
+  // Expected keys (positive balance) the crew has NOT resolved yet.
+  getUnconfirmed: () => EquipmentReturnEntry[]
+  // "Got everything" — accept every expected key at its prefilled balance.
+  confirmAllExpected: () => void
+}
+
+// Fetch budget. iOS STALLS (never rejects) in-flight fetches when the
+// connection drops, so a bare await here can leave `expected` null forever and
+// the card would never render — the documented offline-freeze landmine. Bound
+// it: on abort we settle to "nothing expected" and the steppers still appear.
+const BALANCE_FETCH_TIMEOUT_MS = 8_000
+
 function titleLabel(rule: EquipmentReturnRule): string {
   const noun = rule.noun.many
   return noun.charAt(0).toUpperCase() + noun.slice(1)
 }
 
-const EquipmentPickupSection = forwardRef<EquipmentReturnSectionHandle, EquipmentPickupSectionProps>(
+const EquipmentPickupSection = forwardRef<EquipmentPickupSectionHandle, EquipmentPickupSectionProps>(
   function EquipmentPickupSection({ stop }, ref) {
   const [expected, setExpected] = useState<Record<string, number> | null>(null)
   const [counts, setCounts]     = useState<Record<string, number>>({})
   const [accepted, setAccepted] = useState<Set<string>>(new Set())
 
+  // Mirror of the live state, readable synchronously. The completion gate calls
+  // confirmAllExpected() and then reads getTouchedEntries() in the SAME tick —
+  // a handle closed over React state would still be showing the pre-tap values
+  // and the confirmed rows would silently never be written.
+  const latest = useRef<{
+    expected: Record<string, number>
+    counts:   Record<string, number>
+    accepted: Set<string>
+  }>({ expected: {}, counts: {}, accepted: new Set() })
+
   // Load the running balance, then seed counts (draft wins over prefill —
   // the crew's in-progress numbers survive a back-out or WO round trip).
   useEffect(() => {
     let cancelled = false
-    fetch(`/api/stops/equipment-returns?stop_id=${encodeURIComponent(stop.stop_id)}`)
+    const ctrl = new AbortController()
+    const tid  = setTimeout(() => ctrl.abort(), BALANCE_FETCH_TIMEOUT_MS)
+    fetch(`/api/stops/equipment-returns?stop_id=${encodeURIComponent(stop.stop_id)}`, { signal: ctrl.signal })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then((json) => {
         if (cancelled) return
@@ -88,24 +119,51 @@ const EquipmentPickupSection = forwardRef<EquipmentReturnSectionHandle, Equipmen
         console.warn('[EquipmentPickupSection] balance fetch failed (non-fatal):', err instanceof Error ? err.message : err)
         if (!cancelled) finish({})
       })
+      .finally(() => clearTimeout(tid))
     function finish(exp: Record<string, number>) {
       const draft = loadEquipmentReturnDraft(stop.stop_id)
+      const nextCounts   = draft?.counts ?? { ...exp }
+      const nextAccepted = new Set(draft?.accepted ?? [])
+      latest.current = { expected: exp, counts: nextCounts, accepted: nextAccepted }
       setExpected(exp)
-      setCounts(draft?.counts ?? { ...exp })
-      setAccepted(new Set(draft?.accepted ?? []))
+      setCounts(nextCounts)
+      setAccepted(nextAccepted)
     }
-    return () => { cancelled = true }
+    return () => { cancelled = true; clearTimeout(tid) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stop.stop_id])
 
   useImperativeHandle(ref, () => ({
     getTouchedEntries(): EquipmentReturnEntry[] {
-      return Array.from(accepted)
-        .map((key) => ({ equipment_key: key, quantity: Math.max(0, counts[key] ?? 0) }))
+      const { counts: c, accepted: a } = latest.current
+      return Array.from(a)
+        .map((key) => ({ equipment_key: key, quantity: Math.max(0, c[key] ?? 0) }))
     },
-  }), [accepted, counts])
+    getUnconfirmed(): EquipmentReturnEntry[] {
+      const { expected: e, accepted: a } = latest.current
+      return Object.entries(e)
+        .filter(([key, qty]) => qty > 0 && !a.has(key))
+        .map(([key, qty]) => ({ equipment_key: key, quantity: qty }))
+    },
+    confirmAllExpected(): void {
+      const { expected: e, counts: c, accepted: a } = latest.current
+      const nextCounts   = { ...c }
+      const nextAccepted = new Set(a)
+      for (const [key, qty] of Object.entries(e)) {
+        if (qty <= 0) continue
+        nextCounts[key] = qty
+        nextAccepted.add(key)
+      }
+      commit(nextCounts, nextAccepted)
+    },
+  }), [])
 
-  function persist(nextCounts: Record<string, number>, nextAccepted: Set<string>) {
+  // Single write path — keeps the synchronous mirror, React state and the
+  // sessionStorage draft from ever disagreeing.
+  function commit(nextCounts: Record<string, number>, nextAccepted: Set<string>) {
+    latest.current = { ...latest.current, counts: nextCounts, accepted: nextAccepted }
+    setCounts(nextCounts)
+    setAccepted(nextAccepted)
     saveEquipmentReturnDraft(stop.stop_id, nextCounts, Array.from(nextAccepted))
   }
 
@@ -115,17 +173,14 @@ const EquipmentPickupSection = forwardRef<EquipmentReturnSectionHandle, Equipmen
     const nextCounts = { ...counts, [key]: Math.max(0, (counts[key] ?? 0) + delta) }
     const nextAccepted = new Set(accepted)
     nextAccepted.add(key) // any stepper interaction resolves the row
-    setCounts(nextCounts)
-    setAccepted(nextAccepted)
-    persist(nextCounts, nextAccepted)
+    commit(nextCounts, nextAccepted)
   }
 
   function toggleAccept(key: string) {
     const next = new Set(accepted)
     if (next.has(key)) next.delete(key)
     else next.add(key)
-    setAccepted(next)
-    persist(counts, next)
+    commit(counts, next)
   }
 
   if (expected === null) return null // balance still loading — avoid a wrong prefill flash

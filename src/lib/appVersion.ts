@@ -8,9 +8,12 @@
 //
 // Keep bullets short, plain-language, and driver-facing (no engineering terms).
 
-export const VERSION = '2.6.1'
+export const VERSION = '2.7.0'
 
 export const CHANGELOG: string[] = [
+  'Equipment to bring back now sits at the TOP of a pickup stop, above the item list — no more scrolling to find it',
+  'If the delivery crew left cords, racks or chair carts on site, completing the pickup now asks you straight out: "Did you get the equipment?" — one tap for "got everything"',
+  'Dispatch is no longer told equipment was left behind just because nobody tapped the confirm button',
   'Stage and deck pieces now show the size you\'re actually building — "STAGE 12\'X20\'" sits above its 15 loose 4x4 decks while you check the stop off, not just after',
   'Ask Ava what size stage you\'re building and she\'ll tell you the finished size, not just the piece count',
   'Ask Ava about a stop by name — "what am I delivering to Camp Kinder Ring?" now works even when the order is booked under a contact\'s name',
