@@ -58,22 +58,37 @@ export function buildAlertEmail(input: EquipmentAlertInput): { subject: string; 
   // with that, and never use the word "unaccounted" in the subject.
   const onlyUnconfirmed = shortfalls.length === 0 && overs.length === 0 && unconfirmed.length > 0
 
+  // The crew ANSWERED and reported fewer than were delivered — they told us the
+  // equipment is still on site. Say exactly that; "unaccounted for" reads as a
+  // paperwork mismatch and buries a real report.
+  const reportedLeft = shortfalls.length > 0 && overs.length === 0
+
   const subject = onlyUnconfirmed
     ? `Equipment retrieval not confirmed — ${who} — ${
         unconfirmed.map((d) => `${d.balance} ${keyLabel(d.equipment_key, d.balance)}`).join(', ')
       }`
-    : `Equipment return discrepancy — ${who}${
-        shortfalls.length ? ` — ${shortfalls.map((d) => `${d.balance} ${keyLabel(d.equipment_key, d.balance)}`).join(', ')} unaccounted` : ''
-      }`
+    : reportedLeft
+      ? `Equipment LEFT ON SITE — ${who} — ${
+          shortfalls.map((d) => `${d.balance} ${keyLabel(d.equipment_key, d.balance)}`).join(', ')
+        }`
+      : `Equipment return discrepancy — ${who}${
+          shortfalls.length ? ` — ${shortfalls.map((d) => `${d.balance} ${keyLabel(d.equipment_key, d.balance)}`).join(', ')} unaccounted` : ''
+        }`
 
   const lines: string[] = []
   lines.push(onlyUnconfirmed
     ? `Equipment retrieval NOT CONFIRMED — final pickup completed`
-    : `Equipment return discrepancy — final pickup completed`)
+    : reportedLeft
+      ? `Equipment LEFT ON SITE — reported by the pickup crew`
+      : `Equipment return discrepancy — final pickup completed`)
   lines.push('')
   if (onlyUnconfirmed) {
     lines.push('The pickup crew completed the stop without confirming these items either way.')
     lines.push('They may well be back on the truck — check with the crew before chasing the site.')
+    lines.push('')
+  }
+  if (reportedLeft) {
+    lines.push('The pickup crew confirmed they did NOT bring these back. They are still at the site.')
     lines.push('')
   }
   lines.push(`Customer: ${who}`)
@@ -86,7 +101,7 @@ export function buildAlertEmail(input: EquipmentAlertInput): { subject: string; 
     const net = isUnconfirmed(d)
       ? `${d.balance} NOT CONFIRMED by the pickup crew (no retrieval logged either way)`
       : d.balance > 0
-        ? `${d.balance} unaccounted for (shortfall)`
+        ? `${d.balance} LEFT ON SITE (the pickup crew logged what they brought back)`
         : `${-d.balance} over-reported (more retrieved than logged as delivered)`
     lines.push(`${label.toUpperCase()}: delivered ${d.delivered}, retrieved ${d.retrieved} → ${net}`)
     for (const t of input.trace.filter((t) => t.equipment_key === d.equipment_key)) {
@@ -94,7 +109,7 @@ export function buildAlertEmail(input: EquipmentAlertInput): { subject: string; 
     }
     lines.push('')
   }
-  if (overs.length === 0 && shortfalls.length > 0) {
+  if (overs.length > 0 && shortfalls.length > 0) {
     lines.push('Crews logged less retrieved than delivered — equipment may still be on-site or lost in transit.')
   }
   if (unconfirmed.length > 0 && !onlyUnconfirmed) {

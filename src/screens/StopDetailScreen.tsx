@@ -382,13 +382,18 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   // the check-off panel, then the pinned CTA) without ever scrolling to the
   // equipment card — so the card alone shipped ZERO pickup rows on its first
   // live day and told dispatch the equipment was left on site. When the
-  // delivery crew logged equipment for this reservation, completion now asks.
-  // Only fires on a positive expected balance, so ordinary pickups (the vast
-  // majority) see no extra step. Answering "some left behind" dismisses the
-  // gate for the rest of the stop — the driver is never trapped by paperwork.
+  // delivery crew logged equipment for this reservation, completion ASKS, and
+  // it KEEPS asking on every Complete tap until every expected item has an
+  // answer (Darren, 2026-07-13). Only fires on a positive expected balance, so
+  // ordinary pickups see no extra step.
+  //
+  // This can't strand anyone: "Yes — got everything" is always one tap, and a
+  // single tap on any stepper row records what they actually found (zero
+  // included — a zero IS an answer, and it fires the left-behind alert). So the
+  // question cannot be tapped past, but completion is never permanently blocked.
+  // Deliberately NOT a disabled-CTA hard gate.
   const [equipGateItems, setEquipGateItems] = useState<EquipmentReturnEntry[]>([])
   const [equipGateOpen, setEquipGateOpen]   = useState(false)
-  const [equipGateDone, setEquipGateDone]   = useState(false)
   const resumeCompleteRef = useRef<(() => void) | null>(null)
 
   // Dispatcher note (NEW-D) — read-only modal that pops on stop open when
@@ -1193,10 +1198,15 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   // a pickup whose reservation still has equipment the crew hasn't answered
   // for. `resume` re-enters the completion path the driver originally tapped,
   // so "Got everything" flows straight through to the normal funnel.
+  //
+  // Called at the TOP of every pickup completion path, BEFORE the check-off
+  // commits and before its spinner starts — so re-asking can never commit the
+  // TapGoods manifest twice, strand the CTA mid-commit, or disturb the panel's
+  // confirmed rows. It is a pure pre-flight question.
   function equipmentGateBlocks(resume: () => void): boolean {
-    if (!stop || stop.stop_type !== 'pickup' || equipGateDone) return false
+    if (!stop || stop.stop_type !== 'pickup') return false
     const outstanding = equipmentPickupRef.current?.getUnconfirmed() ?? []
-    if (outstanding.length === 0) return false
+    if (outstanding.length === 0) return false   // every expected item answered
     setEquipGateItems(outstanding)
     resumeCompleteRef.current = resume
     setEquipGateOpen(true)
@@ -1205,21 +1215,24 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
 
   // "Yes — got everything": accept every expected count at its prefilled value,
   // then continue. The section's handle writes through a synchronous mirror, so
-  // runStopComplete reads the just-confirmed rows in this same tick.
+  // runStopComplete reads the just-confirmed rows in this same tick — and
+  // getUnconfirmed() is now empty, so the re-entered path sails through.
   function handleEquipmentGotEverything() {
     equipmentPickupRef.current?.confirmAllExpected()
     setEquipGateOpen(false)
-    setEquipGateDone(true)
     const resume = resumeCompleteRef.current
     resumeCompleteRef.current = null
     resume?.()
   }
 
-  // "Some left behind": drop the driver on the steppers to enter real counts.
-  // The gate does not re-fire — whatever they enter (or don't) stands.
+  // "No — some left behind": drop the driver on the steppers to enter what they
+  // actually brought back. The gate deliberately does NOT clear itself — tapping
+  // Complete again re-asks until every expected row is resolved. One tap on a
+  // row records it (zero included: an explicit "we left it" → dispatch alert),
+  // so answering always takes exactly one more tap. Dismissing the sheet by
+  // tapping outside is therefore harmless — the question simply comes back.
   function handleEquipmentSomeLeft() {
     setEquipGateOpen(false)
-    setEquipGateDone(true)
     resumeCompleteRef.current = null
     setTimeout(() => {
       document.getElementById(EQUIPMENT_PICKUP_ANCHOR)
@@ -3138,16 +3151,17 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
 
       {/* Equipment retrieval gate — the delivery crew logged equipment for this
           reservation and this crew hasn't answered for it. Asked at completion
-          so it cannot be scrolled past. "Some left behind" always lets them
-          through to the steppers: this reminds, it never traps. */}
+          so it cannot be scrolled past, and re-asked on every Complete tap
+          until answered. "No" sends them to the steppers to record what came
+          back; whatever they log short of the expected count alerts dispatch. */}
       {equipGateOpen && equipGateItems.length > 0 && (
         <ConfirmationModal
           title="Did you get the equipment?"
           message={`The delivery crew left ${equipGateItems
             .map((e) => retrieveLabel(e.equipment_key, e.quantity).replace(/^Retrieve /, ''))
-            .join(' and ')} at this site.`}
+            .join(' and ')} at this site. Tap Yes if it's all on the truck — otherwise enter what you brought back and dispatch is told what's still there.`}
           confirmLabel="Yes — got everything"
-          cancelLabel="Some left behind"
+          cancelLabel="No — enter counts"
           onConfirm={handleEquipmentGotEverything}
           onCancel={handleEquipmentSomeLeft}
         />

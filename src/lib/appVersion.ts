@@ -24,6 +24,14 @@ export interface Release {
 // Newest FIRST. RELEASES[0] is the live version.
 export const RELEASES: readonly Release[] = [
   {
+    version: '2.7.2',
+    date: '2026-07-13',
+    bullets: [
+      `The equipment question on a pickup now keeps asking until you answer it — tap "Yes, got everything", or enter what you actually brought back`,
+      `If you report equipment left at the site, dispatch is told straight away exactly what's still there`,
+    ],
+  },
+  {
     version: '2.7.1',
     date: '2026-07-13',
     bullets: [
