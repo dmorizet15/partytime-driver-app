@@ -6,6 +6,14 @@ Format: one lesson per block. Lead with the rule, then **Why** and **How to appl
 
 ---
 
+## An append-only list that a UI renders in full is a slow-motion bug. If entries belong to a version/date/user, MODEL that — don't flatten and hope the reader filters.
+
+**Why:** 2026-07-13. `appVersion.ts` kept every driver-facing changelog bullet in one flat array, and the "What's New" sheet rendered all of it under the newest version's header. Every release quietly made it worse until a 3-bullet bugfix release announced 26 features. The key detail: the app ALREADY stored the answer — `ptr_last_seen_version` — but used it only to decide *whether* to show the sheet, never *what* to show. The data to scope the view existed; the model didn't. Note also that the file's own instructions ("prepend the new bullets to CHANGELOG") faithfully produced the bug, so every author, human and AI, did the wrong thing correctly.
+
+**How to apply:** when a list is append-only and rendered wholesale, ask "what scopes an entry?" (a release, a date, a user, a session) and put that in the type — `Release[]` with bullets, not `string[]`. Then derive the singleton from the structure (`VERSION = RELEASES[0].version`) so the label and its contents cannot drift; a derived value is one less invariant to remember. Cap the view for the reader who has been away (N groups / M items + "plus N earlier"), because "show everything since last seen" is unbounded by definition. And when you change the SHAPE of a file that tooling greps, check the tooling: `check-version-bump.mjs` compares a *range*, so the base ref still holds the OLD shape — the parser must read both or the guard fails every push. Finally, fix the instructions in the file itself, or the next author rebuilds the bug on purpose.
+
+---
+
 ## A soft prompt whose ABSENCE is read as a signal is not a soft prompt — it's a silent default. Put the question in the path the user actually walks, and make "no answer" distinguishable from "answered zero".
 
 **Why:** 2026-07-13, first live pickup day for equipment returns. The confirm card rendered correctly (verified: prod on HEAD, API 200 with the right balance at stop-open) and was still never used by a single crew — because it sat *below* the item list, and the pickup happy path never scrolls: `ItemCheckoffPanel`'s "Confirm all" is at the panel's TOP and the Complete CTA is pinned to the viewport. Two taps and the stop is done. Worse, the server read the resulting zero rows as "the crew retrieved nothing" and emailed dispatch that equipment was left on site — when the crews had brought it all back. The design treated an unanswered question as a negative answer, so being un-scrolled-to was indistinguishable from being answered "none".

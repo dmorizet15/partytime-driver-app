@@ -4,6 +4,22 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-07-13 (b) — What's New showed the entire product history on every update (no migration; v2.7.1)
+
+**Reported by Darren** right after the v2.7.0 push: hitting Update listed ~26 bullets going back to "Staging and flooring pieces now group together on the stop manifest" — all of it under the "Version 2.7.0" header. Three new equipment bullets presented themselves as twenty-six new features.
+
+**Cause.** `src/lib/appVersion.ts` held ONE flat `CHANGELOG: string[]`, and the file's own instructions said to *prepend* each release's bullets to it. `WhatsNewSheet` then rendered the whole thing — `{CHANGELOG.map(...)}`, no filter, no grouping. The array grows forever; the sheet dumps it. `ptr_last_seen_version` already recorded where each driver left off, but it was only ever used to decide **whether** to show the sheet, never **what** to show. Nothing was "broken" — it had simply been getting worse every release, and 2.7.0 (a 3-bullet fix) made it obvious.
+
+**Fix.**
+- `appVersion.ts`: flat array → **`RELEASES[]`**, keyed by `version` + `date`, newest first. **`VERSION` now derives from `RELEASES[0].version`** — the number and its bullets can no longer drift apart, and you can't bump one while forgetting the other. The 26 existing bullets were split back into the releases they actually shipped in, reconstructed from the git history of the file itself (2.0.0's four PWA bullets, silently dropped from the array at some point, are restored).
+- **`releasesSince(lastSeen)`**: every release newer than the driver's acknowledged version, newest first, capped at **3 releases / 10 bullets** with a muted "plus improvements from N earlier updates you missed" — so a driver back from a month off gets the recent work, not a rebuilt wall. Numeric semver compare (a string compare sorts `2.10.0` *below* `2.9.0`). An unknown, absent, or downgraded last-seen value falls back to the current release — never an empty sheet.
+- `WhatsNewSheet`: renders the groups with a `version · date` subhead, shown only when there's more than one. Reads last-seen **at mount** — `dismiss()` writes `VERSION` to that same key, so any later read would report "up to date" and show nothing.
+- `scripts/check-version-bump.mjs`: `versionAt()` reads `RELEASES[0]` first and **falls back to the old `VERSION` literal**. This is load-bearing, not defensive: the guard compares a *range*, and the base ref of any range still predates the restructure — parse only the new shape and the guard fails every driver-facing push.
+
+Verified across the real cases: on 2.7.0 → 1 bullet; on 2.6.1 → 2 releases / 4 bullets; on 2.1.0 → 3 releases / 6 bullets + "6 earlier updates"; fresh install → current release only. Guard replayed across the shape boundary (`base=bf87408` literal → `head` RELEASES): `✓ VERSION bumped 2.7.0 → 2.7.1`.
+
+---
+
 ## 2026-07-13 — Equipment returns: the pickup crew never reached the confirm card (no migration; v2.7.0)
 
 **Reported, not found by us.** First day the equipment-return feature saw a live *pickup* crew. Two things went wrong at once: the crews said they had no way to check off the cords / chair carts the delivery crew had left on site, and Melissa was emailed that the equipment WAS left on site — when the crews had in fact brought it all back.
