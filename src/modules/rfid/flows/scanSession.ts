@@ -43,6 +43,7 @@ export class ScanSession {
   private readonly lastSeenAt = new Map<string, number>()
   private readonly subscriptions: Array<() => void> = []
   private rfidActive = false
+  private rfidSubscribed = false
   private barcodeActive = false
   private nfcActive = false
   private disposed = false
@@ -57,9 +58,14 @@ export class ScanSession {
     // Power doctrine: the radio comes up only when scanning is wanted.
     // initialize() is idempotent per the HAL contract.
     await this.opts.scanner.initialize()
-    this.subscriptions.push(
-      this.opts.scanner.onTagRead((read) => void this.ingest('rfid', read.epc, read.timestamp)),
-    )
+    // Subscribe ONCE per session: press-and-hold triggers start/stop many
+    // times, and a per-start subscription would multiply every read.
+    if (!this.rfidSubscribed) {
+      this.rfidSubscribed = true
+      this.subscriptions.push(
+        this.opts.scanner.onTagRead((read) => void this.ingest('rfid', read.epc, read.timestamp)),
+      )
+    }
     await this.opts.scanner.startInventory()
     this.rfidActive = true
   }
@@ -70,12 +76,17 @@ export class ScanSession {
     this.rfidActive = false
   }
 
+  private barcodeSubscribed = false
+
   startBarcode(): void {
     this.assertLive()
     if (this.barcodeActive) return
-    this.subscriptions.push(
-      this.opts.bridge.on('barcode-scan', (d) => void this.ingest('barcode', d.value, d.timestamp)),
-    )
+    if (!this.barcodeSubscribed) {
+      this.barcodeSubscribed = true
+      this.subscriptions.push(
+        this.opts.bridge.on('barcode-scan', (d) => void this.ingest('barcode', d.value, d.timestamp)),
+      )
+    }
     this.opts.bridge.startBarcode()
     this.barcodeActive = true
   }
@@ -86,13 +97,18 @@ export class ScanSession {
     this.barcodeActive = false
   }
 
+  private nfcSubscribed = false
+
   /** NFC foreground dispatch is armed ONLY while a screen wants taps (doctrine). */
   enableNfc(): void {
     this.assertLive()
     if (this.nfcActive) return
-    this.subscriptions.push(
-      this.opts.bridge.on('nfc-scan', (d) => void this.ingest('nfc', d.uid, d.timestamp)),
-    )
+    if (!this.nfcSubscribed) {
+      this.nfcSubscribed = true
+      this.subscriptions.push(
+        this.opts.bridge.on('nfc-scan', (d) => void this.ingest('nfc', d.uid, d.timestamp)),
+      )
+    }
     this.opts.bridge.enableNfc()
     this.nfcActive = true
   }

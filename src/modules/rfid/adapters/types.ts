@@ -35,6 +35,14 @@ export interface ExpectedItem {
   rentalClassId: string | null
   name: string
   quantity: number
+  /**
+   * Whether units of this line carry RFID tags. Non-RFID lines NEVER enter
+   * the scan path — they are completed manually (individual serialized assets
+   * or bulk quantity). PTR derives this from the rfid_to_tapgoods_map join at
+   * merge time (see docs/ASSUMPTIONS.md). Default when omitted:
+   * `rentalClassId !== null`.
+   */
+  taggable?: boolean
 }
 
 /** Everything the module needs to know about the stop the driver is on. */

@@ -4,6 +4,21 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-07-13 — RFID scan model corrected: status-first, press-and-hold, no default return status (branch `feat/rfid-native-integration`; no migration; mock-verified)
+
+The RFID module's scan model was built wrong (status flagged AFTER scanning, toggle-style triggers, 'Needs to be Inspected' default for unflagged returns). Corrected per Darren to match the legacy Easy RFID Pro model plus one deliberate improvement:
+
+- **Status chosen BEFORE scanning.** Delivery arms `'Delivered'` implicitly (the mode IS the status). Pickup requires arming one of the six vocabulary statuses before the trigger works — Wash/Repair collect their required reasons AT ARM TIME via DamageDetailForm; every counted scan is stamped with the armed status (`CheckoutFlow.armStatus`/`armedStatus`; `flagStatus`/`batchFlagStatus` removed).
+- **`DEFAULT_RETURN_STATUS` ('Needs to be Inspected') removed entirely.** An item never scanned back gets NO write — it retains 'Delivered' upstream; the summary shows the short line. ASSUMPTIONS.md entry marked RESOLVED.
+- **Press-and-hold trigger** (`ScanControls` — pointer down starts inventory, up/leave/cancel stops; barcode/NFC stay armed toggles). **Individual pull** = first tag only, radio drops on capture, Clear discards and re-pulls on the same screen. **Mass pull** = accumulate every distinct tag while held, then commit. Staging in `usePendingPulls` + `ScanTray`.
+- **Instant resolution** (deliberate improvement over legacy): every captured tag resolves against the local IndexedDB replica the moment it lands — name + current status visible in the tray/grid BEFORE commit, fully offline.
+- **Non-RFID items never enter the scan path.** New `ExpectedItem.taggable` adapter field (default heuristic `rentalClassId !== null`); `matchLine` only matches taggable lines; non-taggable lines render in a Manual items section (`ManualItemRow`) completed as bulk qty OR individual serialized units (mutually exclusive; `manualUnits` on the line).
+- **Touch Scan modes reworked:** Individual = hold/first-tag/Clear (detail card remains the record editor); Mass = hold-accumulate + Clear list; Status = arm first (trigger gated with "Choose a status first"), accumulate, then "Commit N as X".
+- **ScanSession fix:** one tag-read/barcode/NFC subscription per session — press-and-hold start/stop cycles previously stacked subscriptions and would have multiplied every read. Checkout screens moved to `dedupeMode: 'window'` so Clear-and-re-pull re-fires.
+- **Verified:** full module vitest suite 68/68 green (mock stack only — no live Easy RFID writes, TapGoods dry-run locked, production guard on). Device testing on the XR2 follows. New ASSUMPTIONS entries: taggable-line derivation (rfid_to_tapgoods_map join at merge), serialized-asset source, GPS capture NOT confirmed against a real permission grant.
+
+---
+
 ## 2026-07-06 — Pickup Answer (Driver-Facing) — gold card on the delivery stop (driver `e70e78c`, on `main`; VERSION 2.5.0; no migration)
 
 Two-session build (investigation + pure derivation, then UI + wiring) on the MBC Part 3 spec (locked 2026-07-05). A read-only gold card on the DELIVERY stop that instantly answers "when are you picking up?" from the reservation's pickup stop(s). Built on branch `feat/pickup-answer`; Darren accepted the low read-only risk and merged to `main`. The card lives only on the interactive StopDetailScreen (delivery, today's route), so it needs a day WITH delivery stops to exercise (07-06 had none). **Device smoke PASSED 2026-07-07** on a live delivery day ("looks good") — feature complete.

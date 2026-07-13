@@ -3,32 +3,34 @@
 // ─── Pickup Return — lives inside the host's stop detail flow ────────────────
 // Same native stop context as delivery (nothing typed). Expected items:
 // the stop's lines PLUS the replica's view of what's still out on this
-// contract (pre-fetch by last_contract_num — works fully offline). Driver
-// scans items back in; swipe-left (or the Flag button) opens per-item status
-// flagging with the exact six-status vocabulary; Wash/Repair require reasons
-// via DamageDetailForm; batch-apply flags a whole selection at once.
+// contract (pre-fetch by last_contract_num — works fully offline).
+//
+// Scan model (corrected 2026-07-13): the driver chooses the return status
+// FIRST — one of the exact six-status vocabulary; Wash/Repair collect their
+// required reasons at arm time via DamageDetailForm. Scanning is disabled
+// until a status is armed. Then press-and-hold: Individual = first tag only
+// with Clear to re-pull; Mass = accumulate, then commit. Every committed
+// unit is stamped with the status armed at that moment. There is NO default
+// status: an item never scanned back gets NO write and stays 'Delivered'
+// upstream — the summary shows it as short.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAdapters, useTheme } from '../provider/RfidModuleProvider'
 import { useModuleRuntime } from '../provider/useModuleRuntime'
+import { usePendingPulls } from '../provider/usePendingPulls'
 import { ScanSession, type ScanHit } from '../flows/scanSession'
 import { CheckoutFlow, type CheckoutSummary } from '../flows/checkoutFlow'
 import { ITEM_STATUSES, REASON_REQUIRED_STATUSES } from '../flows/statusVocabulary'
 import { ItemRowRFID } from '../components/ItemRowRFID'
 import { ScanControls, UnsyncedBadge } from '../components/ScanControls'
+import { ScanTray } from '../components/ScanTray'
 import { DamageDetailForm } from '../components/DamageDetailForm'
-import { Message, SummaryView } from './DeliveryCheckoutScreen'
+import { Message, ScanModeSwitch, SummaryView, type ScanPullMode } from './DeliveryCheckoutScreen'
 import type { ReplicaItem } from '../offline/types'
 
 export interface PickupReturnScreenProps {
   defaultPower?: number
   onDone?: () => void
-}
-
-interface FlagTarget {
-  epcs: string[]
-  label: string
-  status?: 'Wash' | 'Repair'
 }
 
 export function PickupReturnScreen({ defaultPower = 25, onDone }: PickupReturnScreenProps) {
@@ -38,15 +40,14 @@ export function PickupReturnScreen({ defaultPower = 25, onDone }: PickupReturnSc
   const [, bump] = useState(0)
   const rerender = useCallback(() => bump((n) => n + 1), [])
   const [power, setPower] = useState(defaultPower)
+  const [scanMode, setScanMode] = useState<ScanPullMode>('individual')
   const [phase, setPhase] = useState<'scanning' | 'summary' | 'done'>('scanning')
   const [summary, setSummary] = useState<CheckoutSummary | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [active, setActive] = useState({ rfid: false, barcode: false, nfc: false })
   const [expectedBack, setExpectedBack] = useState<ReplicaItem[]>([])
   const [scanned, setScanned] = useState<ReplicaItem[]>([])
-  const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [flagTarget, setFlagTarget] = useState<FlagTarget | null>(null)
-  const [statusPickFor, setStatusPickFor] = useState<FlagTarget | null>(null)
+  const [reasonsFor, setReasonsFor] = useState<'Wash' | 'Repair' | null>(null)
 
   // Captured once per adapter instance (see DeliveryCheckoutScreen note).
   const stop = useMemo(() => adapters.stopContext.getCurrentStop(), [adapters.stopContext])
@@ -56,16 +57,17 @@ export function PickupReturnScreen({ defaultPower = 25, onDone }: PickupReturnSc
   )
   const sessionRef = useRef<ScanSession | null>(null)
 
-  const onHit = useCallback(
-    (hit: ScanHit) => {
-      if (!flow) return
-      void flow.ingest(hit).then((outcome) => {
-        if (outcome === 'matched' && hit.item) setScanned((prev) => [...prev, hit.item as ReplicaItem])
-        rerender()
-      })
+  const pulls = usePendingPulls({
+    mode: scanMode,
+    reject: (hit: ScanHit) => {
+      const epc = hit.item?.epc ?? (hit.modality === 'rfid' ? hit.identifier : null)
+      return epc !== null && flow !== null && flow.isScanned(epc)
     },
-    [flow, rerender],
-  )
+    onIndividualCapture: () => {
+      void sessionRef.current?.stopRfid()
+      setActive((a) => ({ ...a, rfid: false }))
+    },
+  })
 
   useEffect(() => {
     if (runtime.status !== 'ready' || !flow || !stop) return
@@ -75,15 +77,16 @@ export function PickupReturnScreen({ defaultPower = 25, onDone }: PickupReturnSc
       scanner: runtime.runtime.scanner,
       bridge: runtime.runtime.bridge,
       replica: runtime.runtime.replica,
-      onHit,
-      dedupeMode: 'session',
+      onHit: pulls.capture,
+      // Window dedupe: Clear-and-re-pull must re-fire (see delivery screen).
+      dedupeMode: 'window',
     })
     sessionRef.current = session
     return () => {
       sessionRef.current = null
       void session.dispose()
     }
-  }, [runtime, flow, stop, onHit])
+  }, [runtime, flow, stop, pulls.capture])
 
   if (!stop) return <Message text="No stop context — open this screen from a stop." tone="error" />
   if (runtime.status === 'starting') return <Message text="Starting scanner…" tone="muted" />
@@ -91,20 +94,34 @@ export function PickupReturnScreen({ defaultPower = 25, onDone }: PickupReturnSc
   if (!flow) return null
 
   const { scanner, queue, replica, syncEngine } = runtime.runtime
+  const armed = flow.armedStatus
 
   // Read the ref inside handlers — see DeliveryCheckoutScreen note on the
   // render-before-effect null capture.
-  const toggle = async (kind: 'rfid' | 'barcode' | 'nfc') => {
+  const scanStart = async () => {
+    const session = sessionRef.current
+    if (!session || !flow.armedStatus) return
+    try {
+      await session.startRfid()
+      await scanner.setOutputPower(power)
+      setActive({ ...session.active })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  const scanEnd = async () => {
     const session = sessionRef.current
     if (!session) return
+    await session.stopRfid()
+    setActive({ ...session.active })
+  }
+
+  const toggle = (kind: 'barcode' | 'nfc') => {
+    const session = sessionRef.current
+    if (!session || !flow.armedStatus) return
     try {
-      if (kind === 'rfid') {
-        if (session.active.rfid) await session.stopRfid()
-        else {
-          await session.startRfid()
-          await scanner.setOutputPower(power)
-        }
-      } else if (kind === 'barcode') {
+      if (kind === 'barcode') {
         session.active.barcode ? session.stopBarcode() : session.startBarcode()
       } else {
         session.active.nfc ? session.disableNfc() : session.enableNfc()
@@ -115,25 +132,35 @@ export function PickupReturnScreen({ defaultPower = 25, onDone }: PickupReturnSc
     }
   }
 
-  const applyFlag = (target: FlagTarget, status: string, reasons: string[] = [], freeText: string | null = null) => {
+  const arm = (status: string, reasons: string[] = [], freeText: string | null = null) => {
     try {
-      flow.batchFlagStatus(target.epcs, status, reasons, freeText)
-      setFlagTarget(null)
-      setStatusPickFor(null)
-      setSelected(new Set())
+      flow.armStatus(status, reasons, freeText)
+      setReasonsFor(null)
       rerender()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
   }
 
-  const pickStatus = (target: FlagTarget, status: string) => {
+  const pickStatus = (status: string) => {
     if (REASON_REQUIRED_STATUSES.has(status)) {
-      setStatusPickFor(null)
-      setFlagTarget({ ...target, status: status as 'Wash' | 'Repair' })
+      setReasonsFor(status as 'Wash' | 'Repair')
     } else {
-      applyFlag(target, status)
+      arm(status)
     }
+  }
+
+  const commitPulls = async () => {
+    for (const hit of pulls.drain()) {
+      const outcome = await flow.ingest(hit)
+      if (outcome === 'matched' && hit.item) setScanned((prev) => [...prev, hit.item as ReplicaItem])
+    }
+    rerender()
+  }
+
+  const changeScanMode = (next: ScanPullMode) => {
+    setScanMode(next)
+    pulls.clear()
   }
 
   const complete = async () => {
@@ -156,14 +183,6 @@ export function PickupReturnScreen({ defaultPower = 25, onDone }: PickupReturnSc
     void syncEngine.kick()
     setPhase('done')
   }
-
-  const toggleSelect = (epc: string) =>
-    setSelected((prev) => {
-      const next = new Set(prev)
-      if (next.has(epc)) next.delete(epc)
-      else next.add(epc)
-      return next
-    })
 
   return (
     <div
@@ -192,17 +211,77 @@ export function PickupReturnScreen({ defaultPower = 25, onDone }: PickupReturnSc
 
       {phase === 'scanning' ? (
         <>
+          <section data-testid="status-arm" style={{ display: 'grid', gap: 8 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: theme.colors.ink }}>
+              1 · Choose the status, then scan — everything you scan gets it
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {ITEM_STATUSES.map((status) => {
+                const isArmed = armed?.status === status
+                return (
+                  <button
+                    key={status}
+                    onClick={() => pickStatus(status)}
+                    aria-pressed={isArmed}
+                    style={{
+                      minHeight: 44,
+                      padding: '0 14px',
+                      borderRadius: 999,
+                      border: `2px solid ${isArmed ? theme.colors.success : theme.colors.surfaceMuted}`,
+                      background: isArmed ? theme.colors.success : theme.colors.surface,
+                      color: isArmed ? theme.colors.surface : theme.colors.ink,
+                      fontWeight: 700,
+                      fontSize: 13,
+                    }}
+                  >
+                    {status}
+                    {REASON_REQUIRED_STATUSES.has(status) ? ' *' : ''}
+                  </button>
+                )
+              })}
+            </div>
+            {armed ? (
+              <div data-testid="armed-status" style={{ fontSize: 13, color: theme.colors.success, fontWeight: 700 }}>
+                Armed: {armed.status}
+                {armed.reasons.length > 0 ? ` — ${armed.reasons.join(', ')}` : ''}
+                {armed.freeText ? ` (${armed.freeText})` : ''}
+              </div>
+            ) : (
+              <div style={{ fontSize: 13, color: theme.colors.muted }}>
+                No status armed — scanning is off until you choose one.
+              </div>
+            )}
+          </section>
+
+          <ScanModeSwitch mode={scanMode} onChange={changeScanMode} />
           <ScanControls
             active={active}
-            onToggleRfid={() => void toggle('rfid')}
-            onToggleBarcode={() => void toggle('barcode')}
-            onToggleNfc={() => void toggle('nfc')}
+            onScanStart={() => void scanStart()}
+            onScanEnd={() => void scanEnd()}
+            onToggleBarcode={() => toggle('barcode')}
+            onToggleNfc={() => toggle('nfc')}
             power={power}
             onPower={(v) => {
               setPower(v)
               if (sessionRef.current?.active.rfid) void scanner.setOutputPower(v)
             }}
             maxPower={scanner.capabilities.powerRange.max}
+            scanDisabled={!armed}
+            disabledLabel="Choose a status first"
+          />
+
+          <ScanTray
+            mode={scanMode}
+            pending={pulls.pending}
+            onClear={pulls.clear}
+            onCommit={() => void commitPulls()}
+            commitLabel={
+              armed
+                ? scanMode === 'individual'
+                  ? `Commit as ${armed.status}`
+                  : `Commit ${pulls.pending.length} as ${armed.status}`
+                : 'Commit'
+            }
           />
 
           <section style={{ borderRadius: 12, overflow: 'hidden', border: `1px solid ${theme.colors.surfaceMuted}` }}>
@@ -214,24 +293,14 @@ export function PickupReturnScreen({ defaultPower = 25, onDone }: PickupReturnSc
           {scanned.length > 0 ? (
             <section style={{ display: 'grid', gap: 6 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: theme.colors.ink }}>
-                Scanned back — swipe left or tap Flag to set status
+                Scanned back — status was set when each item was scanned
               </div>
               {scanned.map((item) => {
                 const flag = flow.flags.get(item.epc)
-                const isSelected = selected.has(item.epc)
                 return (
                   <div
                     key={item.epc}
                     data-testid={`scanned-${item.epc}`}
-                    onTouchStart={(e) => {
-                      ;(e.currentTarget as HTMLElement).dataset.x = String(e.touches[0].clientX)
-                    }}
-                    onTouchEnd={(e) => {
-                      const start = Number((e.currentTarget as HTMLElement).dataset.x ?? 0)
-                      if (start - e.changedTouches[0].clientX > 60) {
-                        setStatusPickFor({ epcs: [item.epc], label: item.commonName })
-                      }
-                    }}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -239,59 +308,28 @@ export function PickupReturnScreen({ defaultPower = 25, onDone }: PickupReturnSc
                       background: theme.colors.surface,
                       borderRadius: 10,
                       padding: '8px 12px',
-                      border: `1px solid ${isSelected ? theme.colors.primary : theme.colors.surfaceMuted}`,
+                      border: `1px solid ${theme.colors.surfaceMuted}`,
                     }}
                   >
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => toggleSelect(item.epc)}
-                      aria-label={`Select ${item.commonName}`}
-                    />
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: 14, fontWeight: 600, color: theme.colors.ink }}>
                         {item.commonName}
                       </div>
-                      <div style={{ fontSize: 12, color: flag ? theme.colors.danger : theme.colors.muted }}>
-                        {flag ? `→ ${flag.status}${flag.reasons.length ? `: ${flag.reasons.join(', ')}` : ''}` : 'No flag (defaults to Needs to be Inspected)'}
+                      <div style={{ fontSize: 12, color: theme.colors.muted }}>
+                        {flag
+                          ? `→ ${flag.status}${flag.reasons.length ? `: ${flag.reasons.join(', ')}` : ''}`
+                          : '→ (status missing — re-scan)'}
                       </div>
                     </div>
-                    <button
-                      onClick={() => setStatusPickFor({ epcs: [item.epc], label: item.commonName })}
-                      style={{
-                        minHeight: 44,
-                        padding: '0 14px',
-                        borderRadius: 10,
-                        border: `1px solid ${theme.colors.surfaceMuted}`,
-                        background: theme.colors.surface,
-                        color: theme.colors.ink,
-                        fontWeight: 600,
-                      }}
-                    >
-                      Flag
-                    </button>
                   </div>
                 )
               })}
-              {selected.size > 0 ? (
-                <button
-                  onClick={() =>
-                    setStatusPickFor({ epcs: Array.from(selected), label: `${selected.size} selected item(s)` })
-                  }
-                  style={{
-                    minHeight: theme.touchTargetPx,
-                    borderRadius: 12,
-                    border: `2px solid ${theme.colors.primary}`,
-                    background: theme.colors.surface,
-                    color: theme.colors.primary,
-                    fontWeight: 700,
-                  }}
-                >
-                  Batch-apply status to {selected.size} selected
-                </button>
-              ) : null}
             </section>
           ) : null}
+
+          <div style={{ fontSize: 12, color: theme.colors.muted }}>
+            Items never scanned back get no write — they stay {`"Delivered"`} in the system.
+          </div>
 
           <button
             onClick={() => {
@@ -326,69 +364,12 @@ export function PickupReturnScreen({ defaultPower = 25, onDone }: PickupReturnSc
         />
       ) : null}
 
-      {statusPickFor ? (
-        <div
-          role="dialog"
-          aria-label="Pick status"
-          style={{
-            position: 'fixed',
-            left: 0,
-            right: 0,
-            bottom: 0,
-            zIndex: 70,
-            background: theme.colors.surface,
-            borderRadius: '16px 16px 0 0',
-            boxShadow: '0 -8px 32px rgba(0,0,0,0.25)',
-            padding: 20,
-          }}
-        >
-          <h3 style={{ fontFamily: theme.fonts.display, margin: '0 0 12px', color: theme.colors.ink }}>
-            Status for {statusPickFor.label}
-          </h3>
-          <div style={{ display: 'grid', gap: 8 }}>
-            {ITEM_STATUSES.map((status) => (
-              <button
-                key={status}
-                onClick={() => pickStatus(statusPickFor, status)}
-                style={{
-                  minHeight: theme.touchTargetPx,
-                  borderRadius: 12,
-                  border: `1px solid ${theme.colors.surfaceMuted}`,
-                  background: theme.colors.surface,
-                  color: theme.colors.ink,
-                  fontSize: 15,
-                  fontWeight: 600,
-                  textAlign: 'left',
-                  paddingLeft: 16,
-                }}
-              >
-                {status}
-                {REASON_REQUIRED_STATUSES.has(status) ? ' — reasons required' : ''}
-              </button>
-            ))}
-            <button
-              onClick={() => setStatusPickFor(null)}
-              style={{
-                minHeight: 44,
-                borderRadius: 10,
-                border: 'none',
-                background: theme.colors.surfaceMuted,
-                color: theme.colors.muted,
-                fontWeight: 600,
-              }}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      {flagTarget?.status ? (
+      {reasonsFor ? (
         <DamageDetailForm
-          status={flagTarget.status}
-          itemName={flagTarget.label}
-          onCancel={() => setFlagTarget(null)}
-          onSubmit={(reasons, freeText) => applyFlag(flagTarget, flagTarget.status as string, reasons, freeText)}
+          status={reasonsFor}
+          itemName={`everything scanned while ${reasonsFor} is armed`}
+          onCancel={() => setReasonsFor(null)}
+          onSubmit={(reasons, freeText) => arm(reasonsFor, reasons, freeText)}
         />
       ) : null}
     </div>

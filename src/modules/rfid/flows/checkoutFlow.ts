@@ -2,9 +2,16 @@
 // Owns the business state both stop flows share: expected lines from the
 // injected stop context (NO manual contract/client entry — the host already
 // knows both), scan-vs-expectation matching, exceptions, delivery conflict
-// checks against the replica, pickup status flagging with the required
-// Wash/Repair reason tree, and completion writes (status batch + order
+// checks against the replica, and completion writes (status batch + order
 // completion) into the offline queue.
+//
+// SCAN MODEL (corrected 2026-07-13): the status is chosen BEFORE scanning,
+// never flagged after. Delivery arms 'Delivered' implicitly (the mode IS the
+// status); pickup requires the driver to arm one of the six vocabulary
+// statuses (Wash/Repair collect their required reasons AT ARM TIME) before
+// any scan can be ingested. Every counted scan is stamped with the status
+// armed at that moment. There is NO default return status: an item never
+// scanned back gets NO write and therefore retains 'Delivered' upstream.
 //
 // Status vocabulary is the EXACT live-app set (fixtures.ITEM_STATUSES).
 // The delivery status string is doctrine ("Delivered", partytime-rfid
@@ -23,8 +30,6 @@ export type CheckoutMode = 'delivery' | 'pickup'
 
 /** Doctrine value (partytime-rfid CLAUDE.md); free text upstream — see ASSUMPTIONS.md. */
 export const DELIVERY_STATUS = 'Delivered'
-/** Default status for items scanned back in unflagged — configurable; see ASSUMPTIONS.md. */
-export const DEFAULT_RETURN_STATUS = 'Needs to be Inspected'
 
 export interface ExpectedLine {
   key: string
@@ -32,10 +37,14 @@ export interface ExpectedLine {
   lineId: string | null
   rentalClassId: string | null
   expectedQty: number
-  /** Units auto-confirmed by scans. */
+  /** RFID-taggable line? Non-taggable lines never enter the scan path. */
+  taggable: boolean
+  /** Units auto-confirmed by scans (taggable lines only). */
   scannedEpcs: string[]
-  /** Manual quantity for non-taggable lines (null = untouched). */
+  /** Bulk manual quantity for non-taggable lines (null = untouched). */
   manualQty: number | null
+  /** Individually selected serialized assets for non-taggable lines (serial or unit label). */
+  manualUnits: string[]
 }
 
 export type UnexpectedReason = 'unknown-tag' | 'not-on-order' | 'overscan'
@@ -83,11 +92,12 @@ export class CheckoutFlow {
   readonly lines: ExpectedLine[]
   readonly unexpected: UnexpectedScan[] = []
   readonly conflicts: Conflict[] = []
-  /** epc → flag. Pickup status flagging (swipe-left / batch apply). */
+  /** epc → the status that was ARMED when the unit was scanned (pickup). */
   readonly flags = new Map<string, StatusFlag>()
   /** epc → GPS captured at scan time. */
   private readonly scanGps = new Map<string, GeoPoint>()
   private readonly scannedEpcs = new Set<string>()
+  private armed: StatusFlag | null
 
   constructor(
     readonly mode: CheckoutMode,
@@ -101,18 +111,55 @@ export class CheckoutFlow {
       lineId: item.lineId,
       rentalClassId: item.rentalClassId,
       expectedQty: item.quantity,
+      taggable: item.taggable ?? item.rentalClassId !== null,
       scannedEpcs: [],
       manualQty: null,
+      manualUnits: [],
     }))
+    // Delivery IS the status choice — armed from birth. Pickup starts unarmed.
+    this.armed = mode === 'delivery' ? { status: DELIVERY_STATUS, reasons: [], freeText: null } : null
+  }
+
+  // ── Status arming (BEFORE scanning) ─────────────────────────────────────────
+
+  /** The status every scan ingested right now will be stamped with. */
+  get armedStatus(): StatusFlag | null {
+    return this.armed
+  }
+
+  /**
+   * Arm a pickup status. Wash and Repair REQUIRE at least one reason — the
+   * form collects them here, before the first scan, so the UI cannot
+   * silently under-collect.
+   */
+  armStatus(status: string, reasons: string[] = [], freeText: string | null = null): void {
+    if (this.mode !== 'pickup') throw new Error('arming a status is a pickup-mode operation')
+    if (REASON_REQUIRED_STATUSES.has(status) && reasons.length === 0 && !freeText) {
+      throw new Error(`${status} requires at least one reason`)
+    }
+    this.armed = { status, reasons, freeText }
+  }
+
+  disarmStatus(): void {
+    if (this.mode !== 'pickup') throw new Error('arming a status is a pickup-mode operation')
+    this.armed = null
   }
 
   // ── Scan intake ────────────────────────────────────────────────────────────
 
+  /** Already counted in this session? (Screens use this to drop stale pending pulls.) */
+  isScanned(epc: string): boolean {
+    return this.scannedEpcs.has(epc)
+  }
+
   /**
-   * Feed a hit from the ScanSession. Returns what happened so the UI can
-   * react (row check-off, unmatched queue, conflict interrupt).
+   * Feed a committed hit. Returns what happened so the UI can react (row
+   * check-off, unmatched queue, conflict interrupt). Pickup mode REFUSES
+   * hits while no status is armed — screens gate the trigger, this is the
+   * backstop.
    */
   async ingest(hit: ScanHit): Promise<'matched' | 'unexpected' | 'conflict' | 'duplicate'> {
+    if (!this.armed) throw new Error('no status armed — choose a status before scanning')
     const epc = hit.item?.epc ?? (hit.modality === 'rfid' ? hit.identifier : null)
 
     if (epc && this.scannedEpcs.has(epc)) return 'duplicate'
@@ -143,7 +190,7 @@ export class CheckoutFlow {
     const conflict = this.conflicts[conflictIndex]
     if (!conflict || conflict.resolution !== null) return
     conflict.resolution = 'overridden'
-    await this.countItem(conflict.hit)
+    this.countItem(conflict.hit)
   }
 
   blockConflict(conflictIndex: number): void {
@@ -154,6 +201,9 @@ export class CheckoutFlow {
   private countItem(hit: ScanHit): 'matched' | 'unexpected' {
     const item = hit.item as ReplicaItem
     this.scannedEpcs.add(item.epc)
+    // Stamp the armed status at the moment of the scan (pickup). Delivery's
+    // armed value is constant, so stamping it is harmless and keeps one path.
+    if (this.armed) this.flags.set(item.epc, this.armed)
 
     const line = this.matchLine(item)
     if (!line) {
@@ -169,47 +219,54 @@ export class CheckoutFlow {
   }
 
   private matchLine(item: ReplicaItem): ExpectedLine | undefined {
-    // Primary key: rentalClassId (when the host supplied it). Fallback:
-    // normalized name (see ASSUMPTIONS.md — mapping join lands at merge time).
-    const byClass = this.lines.find(
+    // Non-taggable lines never enter the scan path — a scan can only match a
+    // taggable line. Primary key: rentalClassId (when the host supplied it).
+    // Fallback: normalized name (see ASSUMPTIONS.md — mapping join lands at
+    // merge time).
+    const scannable = this.lines.filter((l) => l.taggable)
+    const byClass = scannable.find(
       (l) => l.rentalClassId !== null && l.rentalClassId === item.rentalClassId,
     )
     if (byClass) return byClass
     const wanted = normalizeName(item.commonName)
-    return this.lines.find((l) => normalizeName(l.name) === wanted)
+    return scannable.find((l) => normalizeName(l.name) === wanted)
   }
 
-  // ── Manual entry (non-taggable lines) ─────────────────────────────────────
+  // ── Manual entry (non-taggable lines ONLY) ─────────────────────────────────
 
+  /** Bulk quantity for a non-taggable line. */
   setManualQty(lineKey: string, qty: number): void {
+    const line = this.requireManualLine(lineKey)
+    line.manualQty = Math.max(0, Math.floor(qty))
+    line.manualUnits = [] // bulk and per-unit selection are mutually exclusive
+  }
+
+  /** Select one serialized asset on a non-taggable line (serial # or unit label). */
+  addManualUnit(lineKey: string, unitLabel: string): void {
+    const line = this.requireManualLine(lineKey)
+    line.manualUnits.push(unitLabel)
+    line.manualQty = null
+  }
+
+  removeManualUnit(lineKey: string, index: number): void {
+    const line = this.requireManualLine(lineKey)
+    line.manualUnits.splice(index, 1)
+  }
+
+  private requireManualLine(lineKey: string): ExpectedLine {
     const line = this.lines.find((l) => l.key === lineKey)
-    if (line) line.manualQty = Math.max(0, Math.floor(qty))
-  }
-
-  // ── Pickup status flagging ─────────────────────────────────────────────────
-
-  /**
-   * Flag one scanned unit (swipe-left). Wash and Repair REQUIRE at least one
-   * reason — throws otherwise so the UI cannot silently under-collect.
-   */
-  flagStatus(epc: string, status: string, reasons: string[] = [], freeText: string | null = null): void {
-    if (this.mode !== 'pickup') throw new Error('status flagging is a pickup-mode operation')
-    if (!this.scannedEpcs.has(epc)) throw new Error(`cannot flag ${epc} — not scanned in this session`)
-    if (REASON_REQUIRED_STATUSES.has(status) && reasons.length === 0 && !freeText) {
-      throw new Error(`${status} requires at least one reason`)
-    }
-    this.flags.set(epc, { status, reasons, freeText })
-  }
-
-  /** Batch-apply one status to a selection of scanned units (same validation). */
-  batchFlagStatus(epcs: string[], status: string, reasons: string[] = [], freeText: string | null = null): void {
-    for (const epc of epcs) this.flagStatus(epc, status, reasons, freeText)
+    if (!line) throw new Error(`unknown line ${lineKey}`)
+    if (line.taggable) throw new Error(`${line.name} is RFID-tracked — scan it, manual entry is for non-RFID lines`)
+    return line
   }
 
   // ── Summary / exceptions ───────────────────────────────────────────────────
 
   confirmedQty(line: ExpectedLine): number {
-    return line.manualQty !== null ? line.manualQty : line.scannedEpcs.length
+    if (!line.taggable) {
+      return line.manualUnits.length > 0 ? line.manualUnits.length : line.manualQty ?? 0
+    }
+    return line.scannedEpcs.length
   }
 
   summary(): CheckoutSummary {
@@ -239,6 +296,10 @@ export class CheckoutFlow {
    * Enqueue the completion writes (status batch + order completion) and
    * return the queued payloads. Networkless by design — the queue drains
    * when connectivity allows; the driver is never trapped behind sync.
+   *
+   * Only SCANNED units are written. An expected item never scanned back gets
+   * NO status write at all — it retains 'Delivered' upstream (corrected
+   * model, 2026-07-13; the old 'Needs to be Inspected' default is gone).
    */
   async complete(deps: {
     queue: WriteQueue
@@ -251,25 +312,22 @@ export class CheckoutFlow {
     const statusWrites: ItemStatusWrite[] = []
 
     for (const epc of Array.from(this.scannedEpcs)) {
+      const flag = this.flags.get(epc)
+      if (!flag) throw new Error(`scanned unit ${epc} has no stamped status — arming is broken`)
       const gps = this.scanGps.get(epc) ?? fallbackGps ?? undefined
-      const base: ItemStatusWrite = {
+      statusWrites.push({
         epc,
         contractNumber: this.stop.contractNumber,
         scannedBy: deps.scannedBy,
         scannedAt: deps.timestamp,
         lat: gps ? String(gps.lat) : undefined,
         lng: gps ? String(gps.lng) : undefined,
-      }
-      if (this.mode === 'delivery') {
-        statusWrites.push({ ...base, status: DELIVERY_STATUS })
-      } else {
-        const flag = this.flags.get(epc)
-        statusWrites.push({
-          ...base,
-          status: flag?.status ?? DEFAULT_RETURN_STATUS,
-          statusNotes: flag ? formatStatusNotes(flag) : undefined,
-        })
-      }
+        status: flag.status,
+        statusNotes:
+          this.mode === 'pickup' && (flag.reasons.length > 0 || flag.freeText)
+            ? formatStatusNotes(flag)
+            : undefined,
+      })
     }
 
     if (statusWrites.length > 0) {

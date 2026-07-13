@@ -1,9 +1,12 @@
 'use client'
 
-// Scan mode controls: RFID (individual = single-unit confirm behavior lives in
-// the flow; mass = continuous inventory), barcode, NFC tap, plus the power
-// slider. Also shows the unsynced-writes badge so the driver always sees
-// pending sync state at a glance.
+// Scan mode controls. RFID is a PRESS-AND-HOLD trigger (mirrors the XR2's
+// physical trigger): pointer down starts inventory, pointer up/leave stops
+// it. Individual pulls capture the first tag only (the screen enforces
+// that); mass pulls accumulate while held. Barcode and NFC stay armed
+// toggles (hardware trigger / tap gesture do the per-read gating). Also
+// shows the unsynced-writes badge so the driver always sees pending sync
+// state at a glance.
 
 import { useEffect, useState } from 'react'
 import { useTheme } from '../provider/RfidModuleProvider'
@@ -12,17 +15,24 @@ import { PowerSlider } from './PowerSlider'
 
 export interface ScanControlsProps {
   active: { rfid: boolean; barcode: boolean; nfc: boolean }
-  onToggleRfid: () => void
+  /** Pointer-down on the trigger. */
+  onScanStart: () => void
+  /** Pointer-up/leave/cancel on the trigger. */
+  onScanEnd: () => void
   onToggleBarcode: () => void
   onToggleNfc: () => void
   power: number
   onPower: (level: number) => void
   maxPower?: number
+  /** Disable the trigger (pickup: no status armed yet). */
+  scanDisabled?: boolean
+  /** Shown on the trigger while disabled (e.g. "Choose a status first"). */
+  disabledLabel?: string
 }
 
 export function ScanControls(props: ScanControlsProps) {
   const theme = useTheme()
-  const button = (label: string, on: boolean, onClick: () => void) => (
+  const toggle = (label: string, on: boolean, onClick: () => void) => (
     <button
       key={label}
       onClick={onClick}
@@ -43,12 +53,46 @@ export function ScanControls(props: ScanControlsProps) {
     </button>
   )
 
+  const disabled = props.scanDisabled === true
   return (
     <div style={{ display: 'grid', gap: 10 }}>
+      <button
+        data-testid="scan-trigger"
+        disabled={disabled}
+        onPointerDown={() => !disabled && props.onScanStart()}
+        onPointerUp={props.onScanEnd}
+        onPointerLeave={() => props.active.rfid && props.onScanEnd()}
+        onPointerCancel={props.onScanEnd}
+        onContextMenu={(e) => e.preventDefault()}
+        aria-pressed={props.active.rfid}
+        style={{
+          minHeight: theme.touchTargetPx * 1.4,
+          borderRadius: 14,
+          border: 'none',
+          background: disabled
+            ? theme.colors.surfaceMuted
+            : props.active.rfid
+              ? theme.colors.success
+              : theme.colors.primary,
+          color: disabled ? theme.colors.muted : theme.colors.surface,
+          fontWeight: 800,
+          fontSize: 16,
+          letterSpacing: '0.04em',
+          fontFamily: theme.fonts.body,
+          touchAction: 'none',
+          userSelect: 'none',
+          WebkitUserSelect: 'none',
+        }}
+      >
+        {disabled
+          ? props.disabledLabel ?? 'Scanning unavailable'
+          : props.active.rfid
+            ? 'SCANNING… release to stop'
+            : 'HOLD TO SCAN'}
+      </button>
       <div style={{ display: 'flex', gap: 8 }}>
-        {button(props.active.rfid ? 'RFID · scanning' : 'RFID scan', props.active.rfid, props.onToggleRfid)}
-        {button(props.active.barcode ? 'Barcode · on' : 'Barcode', props.active.barcode, props.onToggleBarcode)}
-        {button(props.active.nfc ? 'NFC · armed' : 'NFC tap', props.active.nfc, props.onToggleNfc)}
+        {toggle(props.active.barcode ? 'Barcode · on' : 'Barcode', props.active.barcode, props.onToggleBarcode)}
+        {toggle(props.active.nfc ? 'NFC · armed' : 'NFC tap', props.active.nfc, props.onToggleNfc)}
       </div>
       <PowerSlider value={props.power} onChange={props.onPower} max={props.maxPower ?? 33} />
     </div>

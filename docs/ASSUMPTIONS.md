@@ -123,18 +123,65 @@ How to verify: GET one item that the legacy app marked delivered; read its
 Risk if wrong: medium — a mismatched string forks the dataset (filters/
 conflict checks won't see legacy-delivered items as delivered). One-line fix.
 
-## [Pickup] — Default status for unflagged returned items
+## [Pickup] — Default status for unflagged returned items — RESOLVED 2026-07-13
 
-What I needed: what the legacy app writes for a scanned-back item the driver
-did NOT flag.
-What I did instead: `DEFAULT_RETURN_STATUS = 'Needs to be Inspected'`
-(configurable constant, same file). Chosen because it is the safest member of
-the exact vocabulary (blocks re-rent until someone looks at it); not confirmed
-against the legacy app's behavior.
-How to verify: run one pickup in the legacy app without flagging; read the
-resulting status.
-Risk if wrong: low — worst case items land one inspection step earlier than
-legacy; never rentable-when-damaged.
+RESOLVED by Darren's scan-model correction: there IS no default. The status
+is chosen BEFORE scanning (armed), every scanned unit is stamped with the
+armed status, and an item never scanned back gets NO write at all — it
+retains 'Delivered' upstream. `DEFAULT_RETURN_STATUS` was removed from
+`src/modules/rfid/flows/checkoutFlow.ts`; `CheckoutFlow.ingest` now throws in
+pickup mode until `armStatus()` has been called (Wash/Repair collect their
+required reasons at arm time).
+
+## [Scan model] — Non-RFID line detection ("taggable")
+
+What I needed: a per-line signal that a stop's expected item carries no RFID
+tag (those lines never enter the scan path; they are completed manually as
+individual serialized assets or bulk quantities).
+What I did instead: added `ExpectedItem.taggable?: boolean` to the adapter
+contract for the host to set (PTR: derivable from the rfid_to_tapgoods_map
+join at merge time — mapped rental class ⇒ taggable). Default heuristic when
+the host omits it: `rentalClassId !== null`. `CheckoutFlow.matchLine` only
+matches taggable lines; manual entry refuses taggable lines.
+How to verify: at merge time, wire the host StopContext builder to set
+`taggable` from the mapping table; confirm a known untagged line (e.g. dance
+floor) renders in the Manual items section.
+Risk if wrong: medium — a mis-flagged taggable line would force manual entry
+on a scannable item (annoying, not corrupting); the reverse would leave a
+line unscannable but visibly short in the summary.
+
+## [Scan model] — Serialized-asset source for manual units
+
+What I needed: where the list of individually-serialized non-RFID assets
+lives so the driver can pick real units (the replica is EPC-keyed, so
+untagged serialized assets are not in it).
+What I did instead: free-entry — `ManualItemRow` lets the crew add units one
+at a time with an optional serial # (defaults to "Unit N"); stored on the
+line as `manualUnits: string[]` and counted toward `confirmedQty`. No
+invented catalog lookup.
+How to verify: ask Darren whether Easy RFID Pro Item Master rows exist for
+untagged serialized assets (serial_num populated, no tag) — if so, a picker
+can replace free entry in a later session.
+Risk if wrong: low — worst case serials are typo-prone free text; quantities
+stay correct either way.
+
+## [GPS] — Capture NOT confirmed against a real permission grant
+
+What I needed: confirmation that `navigator.geolocation`-backed capture
+works end-to-end in the Android WebView against a real runtime permission
+grant (ACCESS_FINE_LOCATION dialog → WebView geolocation callback → lat/long
+on the write).
+What I did instead: everything runs through the injectable
+`LocationAdapter` (`getCurrentPosition(): Promise<GeoPoint | null>`, resolves
+null on denial/timeout, never rejects); all session verification used mock
+adapters. The real adapter + the WebView's `onGeolocationPermissionsShowPrompt`
+wiring in the Android wrapper have NOT been exercised against a real grant.
+How to verify: on-device (XR2) — grant location, run one Touch Scan status
+write, confirm lat/long land in the queued payload; then deny and confirm the
+write proceeds coordinate-less.
+Risk if wrong: medium — writes degrade gracefully to no-GPS by design, so
+nothing breaks; but the "GPS included on every write" doctrine is silently
+unmet until the device test passes.
 
 ## [Touch Scan] — Quality dropdown vocabulary
 

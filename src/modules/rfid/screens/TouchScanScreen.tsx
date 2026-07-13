@@ -2,19 +2,27 @@
 
 // ─── Touch Scan — standalone, main-nav reachable, fully offline ──────────────
 // Identify any tag by any modality; quick status/quality update. Sub-modes
-// from the live app: Individual (re-scan re-triggers — window dedupe), Mass
-// (accumulate list), Status (accumulate + batch status apply). Fixed Scan is
-// deliberately absent (fixed portals — out of scope). All reads come from the
-// replica; all writes ride the queue: the radio can be off and nothing here
-// changes. Per-screen power defaults follow the live app (15 individual,
-// 25 status/mass), configurable via props.
+// (corrected scan model, 2026-07-13):
+//   • Individual — press-and-hold, capture the FIRST tag seen only; the item
+//     resolves from the on-device replica the instant it lands; Clear
+//     discards the pull so the same screen can re-pull immediately.
+//   • Mass — press-and-hold, accumulate every distinct tag in range into the
+//     grid (each row resolved on landing); Clear resets the list.
+//   • Status — choose the status FIRST (Wash/Repair collect required reasons
+//     at arm time), then press-and-hold to accumulate, then COMMIT writes the
+//     armed status to every recognized tag (one queue entry, N rows).
+// Fixed Scan is deliberately absent (fixed portals — out of scope). All reads
+// come from the replica; all writes ride the queue: the radio can be off and
+// nothing here changes. Per-screen power defaults follow the live app
+// (15 individual, 25 status/mass), configurable via props.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAdapters, useTheme } from '../provider/RfidModuleProvider'
 import { useModuleRuntime } from '../provider/useModuleRuntime'
-import { ScanSession, type ScanHit } from '../flows/scanSession'
+import { usePendingPulls } from '../provider/usePendingPulls'
+import { ScanSession } from '../flows/scanSession'
 import { ITEM_STATUSES, REASON_REQUIRED_STATUSES } from '../flows/statusVocabulary'
-import { formatStatusNotes } from '../flows/checkoutFlow'
+import { formatStatusNotes, type StatusFlag } from '../flows/checkoutFlow'
 import { ScanControls, UnsyncedBadge } from '../components/ScanControls'
 import { DamageDetailForm } from '../components/DamageDetailForm'
 import { Message } from './DeliveryCheckoutScreen'
@@ -49,26 +57,22 @@ export function TouchScanScreen({
   const [active, setActive] = useState({ rfid: false, barcode: false, nfc: false })
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [detail, setDetail] = useState<AccumulatedHit | null>(null)
-  const [accumulated, setAccumulated] = useState<AccumulatedHit[]>([])
-  const [batchStatus, setBatchStatus] = useState<string | null>(null)
+  /** Mass/status: a tapped row's detail view. Individual uses the pull itself. */
+  const [rowDetail, setRowDetail] = useState<AccumulatedHit | null>(null)
+  /** Status mode: the status chosen BEFORE scanning. */
+  const [armed, setArmed] = useState<StatusFlag | null>(null)
   const [reasonsFor, setReasonsFor] = useState<'Wash' | 'Repair' | null>(null)
   const [meta, setMeta] = useState<{ seededAt: number | null; itemCount: number } | null>(null)
   const [syncing, setSyncing] = useState(false)
   const sessionRef = useRef<ScanSession | null>(null)
-  const modeRef = useRef(mode)
-  modeRef.current = mode
 
-  const onHit = useCallback((hit: ScanHit) => {
-    const entry: AccumulatedHit = { identifier: hit.identifier, item: hit.item }
-    if (modeRef.current === 'individual') {
-      setDetail(entry)
-    } else {
-      setAccumulated((prev) =>
-        prev.some((p) => p.identifier === entry.identifier) ? prev : [...prev, entry],
-      )
-    }
-  }, [])
+  const pulls = usePendingPulls({
+    mode: mode === 'individual' ? 'individual' : 'mass',
+    onIndividualCapture: () => {
+      void sessionRef.current?.stopRfid()
+      setActive((a) => ({ ...a, rfid: false }))
+    },
+  })
 
   useEffect(() => {
     if (runtime.status !== 'ready') return
@@ -77,9 +81,9 @@ export function TouchScanScreen({
       scanner: runtime.runtime.scanner,
       bridge: runtime.runtime.bridge,
       replica: runtime.runtime.replica,
-      onHit,
-      // Individual mode WANTS re-scans of the same tag; mass/status dedupe per
-      // session via the accumulated-list check in onHit instead.
+      onHit: pulls.capture,
+      // Window dedupe: Clear-and-re-pull of the SAME tag must re-fire; the
+      // pending list dedupes accumulation.
       dedupeMode: 'window',
     })
     sessionRef.current = session
@@ -87,14 +91,14 @@ export function TouchScanScreen({
       sessionRef.current = null
       void session.dispose()
     }
-  }, [runtime, onHit])
+  }, [runtime, pulls.capture])
 
   const changeMode = (next: TouchScanMode) => {
     setMode(next)
     setPower(powerDefaults[next])
-    setDetail(null)
-    setAccumulated([])
-    setBatchStatus(null)
+    setRowDetail(null)
+    setArmed(null)
+    pulls.clear()
   }
 
   if (runtime.status === 'starting') return <Message text="Starting scanner…" tone="muted" />
@@ -102,17 +106,32 @@ export function TouchScanScreen({
 
   const { scanner, queue, replica, syncEngine, tagBackend, connectivity } = runtime.runtime
 
-  const toggle = async (kind: 'rfid' | 'barcode' | 'nfc') => {
+  const scanGated = mode === 'status' && !armed
+
+  const scanStart = async () => {
+    const session = sessionRef.current
+    if (!session || scanGated) return
+    try {
+      await session.startRfid()
+      await scanner.setOutputPower(power)
+      setActive({ ...session.active })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  const scanEnd = async () => {
     const session = sessionRef.current
     if (!session) return
+    await session.stopRfid()
+    setActive({ ...session.active })
+  }
+
+  const toggle = (kind: 'barcode' | 'nfc') => {
+    const session = sessionRef.current
+    if (!session || scanGated) return
     try {
-      if (kind === 'rfid') {
-        if (session.active.rfid) await session.stopRfid()
-        else {
-          await session.startRfid()
-          await scanner.setOutputPower(power)
-        }
-      } else if (kind === 'barcode') {
+      if (kind === 'barcode') {
         session.active.barcode ? session.stopBarcode() : session.startBarcode()
       } else {
         session.active.nfc ? session.disableNfc() : session.enableNfc()
@@ -175,18 +194,35 @@ export function TouchScanScreen({
     setNotice(`${writes.length} update(s) queued — they sync automatically.`)
   }
 
-  const applyBatchStatus = async (status: string, reasons: string[] = [], freeText: string | null = null) => {
-    const epcs = accumulated.filter((a) => a.item).map((a) => (a.item as ReplicaItem).epc)
+  const arm = (status: string, reasons: string[] = [], freeText: string | null = null) => {
+    setArmed({ status, reasons, freeText })
+    setReasonsFor(null)
+  }
+
+  const pickStatus = (status: string) => {
+    if (REASON_REQUIRED_STATUSES.has(status)) {
+      setReasonsFor(status as 'Wash' | 'Repair')
+    } else {
+      arm(status)
+    }
+  }
+
+  const commitArmedStatus = async () => {
+    if (!armed) return
+    const epcs = pulls.pending.filter((a) => a.item).map((a) => (a.item as ReplicaItem).epc)
     if (epcs.length === 0) {
       setError('Nothing scanned that the item list recognizes.')
       return
     }
     const statusNotes =
-      reasons.length || freeText ? formatStatusNotes({ status, reasons, freeText }) : undefined
-    await submitWrite(epcs, { status, statusNotes })
-    setBatchStatus(null)
-    setReasonsFor(null)
+      armed.reasons.length || armed.freeText ? formatStatusNotes(armed) : undefined
+    await submitWrite(epcs, { status: armed.status, statusNotes })
+    pulls.drain()
+    setRowDetail(null)
   }
+
+  const individualPull = mode === 'individual' ? pulls.pending[0] ?? null : null
+  const detail = mode === 'individual' ? individualPull : rowDetail
 
   return (
     <div
@@ -258,30 +294,98 @@ export function TouchScanScreen({
       {error ? <Message text={error} tone="error" onDismiss={() => setError(null)} /> : null}
       {notice ? <Message text={notice} tone="success" onDismiss={() => setNotice(null)} /> : null}
 
+      {mode === 'status' ? (
+        <section data-testid="status-arm" style={{ display: 'grid', gap: 8 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: theme.colors.ink }}>
+            1 · Choose the status, then scan — commit writes it to every recognized tag
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {ITEM_STATUSES.map((status) => {
+              const isArmed = armed?.status === status
+              return (
+                <button
+                  key={status}
+                  onClick={() => pickStatus(status)}
+                  aria-pressed={isArmed}
+                  style={{
+                    minHeight: 44,
+                    padding: '0 14px',
+                    borderRadius: 999,
+                    border: `2px solid ${isArmed ? theme.colors.success : theme.colors.primary}`,
+                    background: isArmed ? theme.colors.success : theme.colors.surface,
+                    color: isArmed ? theme.colors.surface : theme.colors.primary,
+                    fontWeight: 700,
+                    fontSize: 13,
+                  }}
+                >
+                  {status}
+                </button>
+              )
+            })}
+          </div>
+          {armed ? (
+            <div data-testid="armed-status" style={{ fontSize: 13, color: theme.colors.success, fontWeight: 700 }}>
+              Armed: {armed.status}
+              {armed.reasons.length > 0 ? ` — ${armed.reasons.join(', ')}` : ''}
+              {armed.freeText ? ` (${armed.freeText})` : ''}
+            </div>
+          ) : (
+            <div style={{ fontSize: 13, color: theme.colors.muted }}>
+              No status armed — scanning is off until you choose one.
+            </div>
+          )}
+        </section>
+      ) : null}
+
       <ScanControls
         active={active}
-        onToggleRfid={() => void toggle('rfid')}
-        onToggleBarcode={() => void toggle('barcode')}
-        onToggleNfc={() => void toggle('nfc')}
+        onScanStart={() => void scanStart()}
+        onScanEnd={() => void scanEnd()}
+        onToggleBarcode={() => toggle('barcode')}
+        onToggleNfc={() => toggle('nfc')}
         power={power}
         onPower={(v) => {
           setPower(v)
           if (sessionRef.current?.active.rfid) void scanner.setOutputPower(v)
         }}
         maxPower={scanner.capabilities.powerRange.max}
+        scanDisabled={scanGated}
+        disabledLabel="Choose a status first"
       />
 
-      {mode === 'individual' && detail ? (
-        <ItemDetailCard
-          hit={detail}
-          onSubmit={(change) =>
-            detail.item ? void submitWrite([detail.item.epc], change) : undefined
-          }
-          onLaunchMap={(lat, lng, label) => adapters.navigation.openMap({ lat, lng }, label)}
-        />
-      ) : null}
-      {mode === 'individual' && !detail ? (
-        <Message text="Scan a tag — details appear here. Reads come from the on-device item list; no signal needed." tone="muted" />
+      {mode === 'individual' ? (
+        individualPull ? (
+          <>
+            <button
+              onClick={pulls.clear}
+              style={{
+                minHeight: 44,
+                borderRadius: 10,
+                border: `1px solid ${theme.colors.surfaceMuted}`,
+                background: theme.colors.surface,
+                color: theme.colors.danger,
+                fontWeight: 700,
+              }}
+            >
+              Clear — pull again
+            </button>
+            <ItemDetailCard
+              hit={individualPull}
+              onSubmit={(change) => {
+                if (individualPull.item) {
+                  void submitWrite([individualPull.item.epc], change)
+                  pulls.clear() // ready for the next pull
+                }
+              }}
+              onLaunchMap={(lat, lng, label) => adapters.navigation.openMap({ lat, lng }, label)}
+            />
+          </>
+        ) : (
+          <Message
+            text="Hold to scan — the first tag in range is captured and its details appear here instantly from the on-device item list; no signal needed."
+            tone="muted"
+          />
+        )
       ) : null}
 
       {mode !== 'individual' ? (
@@ -309,15 +413,15 @@ export function TouchScanScreen({
               <span>Bin</span>
               <span>Common name</span>
             </div>
-            {accumulated.length === 0 ? (
+            {pulls.pending.length === 0 ? (
               <div style={{ padding: 14, fontSize: 13, color: theme.colors.muted, background: theme.colors.surface }}>
-                Start scanning — tags accumulate here ({accumulated.length}).
+                Hold to scan — tags accumulate here ({pulls.pending.length}).
               </div>
             ) : (
-              accumulated.map((entry) => (
+              pulls.pending.map((entry) => (
                 <button
                   key={entry.identifier}
-                  onClick={() => setDetail(entry)}
+                  onClick={() => setRowDetail(entry)}
                   data-testid={`grid-row-${entry.identifier}`}
                   style={{
                     display: 'grid',
@@ -343,39 +447,41 @@ export function TouchScanScreen({
             )}
           </section>
 
-          {mode === 'status' && accumulated.some((a) => a.item) ? (
-            <div style={{ display: 'grid', gap: 8 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: theme.colors.ink }}>
-                Apply status to all {accumulated.filter((a) => a.item).length} recognized tag(s)
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {ITEM_STATUSES.map((status) => (
-                  <button
-                    key={status}
-                    onClick={() => {
-                      if (REASON_REQUIRED_STATUSES.has(status)) {
-                        setBatchStatus(status)
-                        setReasonsFor(status as 'Wash' | 'Repair')
-                      } else {
-                        void applyBatchStatus(status)
-                      }
-                    }}
-                    style={{
-                      minHeight: 44,
-                      padding: '0 14px',
-                      borderRadius: 999,
-                      border: `2px solid ${theme.colors.primary}`,
-                      background: theme.colors.surface,
-                      color: theme.colors.primary,
-                      fontWeight: 700,
-                      fontSize: 13,
-                    }}
-                  >
-                    {status}
-                  </button>
-                ))}
-              </div>
-            </div>
+          {pulls.pending.length > 0 ? (
+            <button
+              onClick={() => {
+                pulls.clear()
+                setRowDetail(null)
+              }}
+              style={{
+                minHeight: 44,
+                borderRadius: 10,
+                border: `1px solid ${theme.colors.surfaceMuted}`,
+                background: theme.colors.surface,
+                color: theme.colors.danger,
+                fontWeight: 700,
+              }}
+            >
+              Clear list
+            </button>
+          ) : null}
+
+          {mode === 'status' && armed && pulls.pending.some((a) => a.item) ? (
+            <button
+              data-testid="commit-status"
+              onClick={() => void commitArmedStatus()}
+              style={{
+                minHeight: theme.touchTargetPx,
+                borderRadius: 12,
+                border: 'none',
+                background: theme.colors.primary,
+                color: theme.colors.surface,
+                fontSize: 15,
+                fontWeight: 700,
+              }}
+            >
+              Commit {pulls.pending.filter((a) => a.item).length} as {armed.status}
+            </button>
           ) : null}
 
           {detail ? (
@@ -385,21 +491,18 @@ export function TouchScanScreen({
                 detail.item ? void submitWrite([detail.item.epc], change) : undefined
               }
               onLaunchMap={(lat, lng, label) => adapters.navigation.openMap({ lat, lng }, label)}
-              onClose={() => setDetail(null)}
+              onClose={() => setRowDetail(null)}
             />
           ) : null}
         </>
       ) : null}
 
-      {reasonsFor && batchStatus ? (
+      {reasonsFor ? (
         <DamageDetailForm
           status={reasonsFor}
-          itemName={`${accumulated.filter((a) => a.item).length} scanned tag(s)`}
-          onCancel={() => {
-            setReasonsFor(null)
-            setBatchStatus(null)
-          }}
-          onSubmit={(reasons, freeText) => void applyBatchStatus(batchStatus, reasons, freeText)}
+          itemName={`everything scanned while ${reasonsFor} is armed`}
+          onCancel={() => setReasonsFor(null)}
+          onSubmit={(reasons, freeText) => arm(reasonsFor, reasons, freeText)}
         />
       ) : null}
 

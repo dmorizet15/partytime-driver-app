@@ -3,18 +3,28 @@
 // ─── Delivery Checkout — lives inside the host's stop detail flow ────────────
 // The driver is already on the stop: contract, client, and expected items come
 // from StopContextAdapter. No manual entry, no "Get Expected" button — that is
-// the core UX win over the legacy app. Scan modes: RFID mass (continuous),
-// RFID single, barcode, NFC, manual qty for non-taggable lines. Conflicts
-// interrupt full-screen. Complete produces the summary and enqueues writes
+// the core UX win over the legacy app.
+//
+// Scan model (corrected 2026-07-13): the status is decided BEFORE scanning —
+// on delivery the mode IS the status ('Delivered'). The trigger is
+// press-and-hold. Individual pull = first tag only, Clear to discard and
+// re-pull; Mass pull = accumulate everything in range, then commit. Every
+// captured tag resolves against the LOCAL replica the instant it lands
+// (name + current status in the tray) — the legacy app resolved on commit.
+// Non-RFID lines never enter the scan path: they are completed manually as
+// individual serialized assets or as a bulk quantity. Conflicts interrupt
+// full-screen at commit. Complete produces the summary and enqueues writes
 // (sandbox-guarded Easy RFID Pro batch + dry-run TapGoods completion).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAdapters, useTheme } from '../provider/RfidModuleProvider'
 import { useModuleRuntime } from '../provider/useModuleRuntime'
+import { usePendingPulls } from '../provider/usePendingPulls'
 import { ScanSession, type ScanHit } from '../flows/scanSession'
-import { CheckoutFlow, type CheckoutSummary } from '../flows/checkoutFlow'
-import { ItemRowRFID } from '../components/ItemRowRFID'
+import { CheckoutFlow, DELIVERY_STATUS, type CheckoutSummary } from '../flows/checkoutFlow'
+import { ItemRowRFID, ManualItemRow } from '../components/ItemRowRFID'
 import { ScanControls, UnsyncedBadge } from '../components/ScanControls'
+import { ScanTray } from '../components/ScanTray'
 import { ConflictInterrupt } from '../components/ConflictInterrupt'
 
 export interface DeliveryCheckoutScreenProps {
@@ -23,6 +33,8 @@ export interface DeliveryCheckoutScreenProps {
   onDone?: () => void
 }
 
+export type ScanPullMode = 'individual' | 'mass'
+
 export function DeliveryCheckoutScreen({ defaultPower = 25, onDone }: DeliveryCheckoutScreenProps) {
   const theme = useTheme()
   const adapters = useAdapters()
@@ -30,6 +42,7 @@ export function DeliveryCheckoutScreen({ defaultPower = 25, onDone }: DeliveryCh
   const [, bump] = useState(0)
   const rerender = useCallback(() => bump((n) => n + 1), [])
   const [power, setPower] = useState(defaultPower)
+  const [scanMode, setScanMode] = useState<ScanPullMode>('individual')
   const [phase, setPhase] = useState<'scanning' | 'summary' | 'done'>('scanning')
   const [summary, setSummary] = useState<CheckoutSummary | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -46,13 +59,19 @@ export function DeliveryCheckoutScreen({ defaultPower = 25, onDone }: DeliveryCh
 
   const sessionRef = useRef<ScanSession | null>(null)
 
-  const onHit = useCallback(
-    (hit: ScanHit) => {
-      if (!flow) return
-      void flow.ingest(hit).then(rerender)
+  const pulls = usePendingPulls({
+    mode: scanMode,
+    // A unit already committed to the flow never re-enters the tray.
+    reject: (hit: ScanHit) => {
+      const epc = hit.item?.epc ?? (hit.modality === 'rfid' ? hit.identifier : null)
+      return epc !== null && flow !== null && flow.isScanned(epc)
     },
-    [flow, rerender],
-  )
+    // Individual = first tag only: drop the radio the moment it lands.
+    onIndividualCapture: () => {
+      void sessionRef.current?.stopRfid()
+      setActive((a) => ({ ...a, rfid: false }))
+    },
+  })
 
   // Build/tear down the scan session with the runtime.
   useEffect(() => {
@@ -61,15 +80,17 @@ export function DeliveryCheckoutScreen({ defaultPower = 25, onDone }: DeliveryCh
       scanner: runtime.runtime.scanner,
       bridge: runtime.runtime.bridge,
       replica: runtime.runtime.replica,
-      onHit,
-      dedupeMode: 'session',
+      onHit: pulls.capture,
+      // Window dedupe (not session): Clear-and-re-pull of the SAME tag must
+      // re-fire; the tray and the flow own longer-lived dedupe.
+      dedupeMode: 'window',
     })
     sessionRef.current = session
     return () => {
       sessionRef.current = null
       void session.dispose()
     }
-  }, [runtime, flow, onHit])
+  }, [runtime, flow, pulls.capture])
 
   if (!stop) {
     return <Message text="No stop context — open this screen from a stop." tone="error" />
@@ -82,18 +103,31 @@ export function DeliveryCheckoutScreen({ defaultPower = 25, onDone }: DeliveryCh
 
   // Always read the ref inside handlers: the render that first shows these
   // controls commits BEFORE the effect assigns the session, so a render-time
-  // capture would close over null and silently no-op the first tap.
-  const toggle = async (kind: 'rfid' | 'barcode' | 'nfc') => {
+  // capture would close over null and silently no-op the first press.
+  const scanStart = async () => {
     const session = sessionRef.current
     if (!session) return
     try {
-      if (kind === 'rfid') {
-        if (session.active.rfid) await session.stopRfid()
-        else {
-          await session.startRfid()
-          await scanner.setOutputPower(power)
-        }
-      } else if (kind === 'barcode') {
+      await session.startRfid()
+      await scanner.setOutputPower(power)
+      setActive({ ...session.active })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  const scanEnd = async () => {
+    const session = sessionRef.current
+    if (!session) return
+    await session.stopRfid()
+    setActive({ ...session.active })
+  }
+
+  const toggle = (kind: 'barcode' | 'nfc') => {
+    const session = sessionRef.current
+    if (!session) return
+    try {
+      if (kind === 'barcode') {
         session.active.barcode ? session.stopBarcode() : session.startBarcode()
       } else {
         session.active.nfc ? session.disableNfc() : session.enableNfc()
@@ -104,7 +138,19 @@ export function DeliveryCheckoutScreen({ defaultPower = 25, onDone }: DeliveryCh
     }
   }
 
+  const commitPulls = async () => {
+    for (const hit of pulls.drain()) await flow.ingest(hit)
+    rerender()
+  }
+
+  const changeScanMode = (next: ScanPullMode) => {
+    setScanMode(next)
+    pulls.clear()
+  }
+
   const openConflict = flow.conflicts.find((c) => c.resolution === null)
+  const taggableLines = flow.lines.filter((l) => l.taggable)
+  const manualLines = flow.lines.filter((l) => !l.taggable)
 
   const complete = async () => {
     const driver = await adapters.identity.getCurrentDriver()
@@ -145,7 +191,7 @@ export function DeliveryCheckoutScreen({ defaultPower = 25, onDone }: DeliveryCh
             Delivery scan · {stop.clientName}
           </div>
           <div style={{ fontSize: 12, color: theme.colors.muted }}>
-            Contract {stop.contractNumber} — from the stop, nothing to type
+            Contract {stop.contractNumber} — commits as {DELIVERY_STATUS}
           </div>
         </div>
         <UnsyncedBadge queue={queue} />
@@ -155,11 +201,13 @@ export function DeliveryCheckoutScreen({ defaultPower = 25, onDone }: DeliveryCh
 
       {phase === 'scanning' ? (
         <>
+          <ScanModeSwitch mode={scanMode} onChange={changeScanMode} />
           <ScanControls
             active={active}
-            onToggleRfid={() => void toggle('rfid')}
-            onToggleBarcode={() => void toggle('barcode')}
-            onToggleNfc={() => void toggle('nfc')}
+            onScanStart={() => void scanStart()}
+            onScanEnd={() => void scanEnd()}
+            onToggleBarcode={() => toggle('barcode')}
+            onToggleNfc={() => toggle('nfc')}
             power={power}
             onPower={(v) => {
               setPower(v)
@@ -168,19 +216,52 @@ export function DeliveryCheckoutScreen({ defaultPower = 25, onDone }: DeliveryCh
             maxPower={scanner.capabilities.powerRange.max}
           />
 
+          <ScanTray
+            mode={scanMode}
+            pending={pulls.pending}
+            onClear={pulls.clear}
+            onCommit={() => void commitPulls()}
+            commitLabel={
+              scanMode === 'individual'
+                ? 'Add to delivery'
+                : `Add ${pulls.pending.length} to delivery`
+            }
+          />
+
           <section style={{ borderRadius: 12, overflow: 'hidden', border: `1px solid ${theme.colors.surfaceMuted}` }}>
-            {flow.lines.map((line) => (
-              <ItemRowRFID
-                key={line.key}
-                line={line}
-                confirmedQty={flow.confirmedQty(line)}
-                onManualQty={(qty) => {
-                  flow.setManualQty(line.key, qty)
-                  rerender()
-                }}
-              />
+            {taggableLines.map((line) => (
+              <ItemRowRFID key={line.key} line={line} confirmedQty={flow.confirmedQty(line)} />
             ))}
           </section>
+
+          {manualLines.length > 0 ? (
+            <section data-testid="manual-items" style={{ display: 'grid', gap: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: theme.colors.ink, padding: '0 2px 6px' }}>
+                Manual items — no RFID tag, never scanned
+              </div>
+              <div style={{ borderRadius: 12, overflow: 'hidden', border: `1px solid ${theme.colors.surfaceMuted}` }}>
+                {manualLines.map((line) => (
+                  <ManualItemRow
+                    key={line.key}
+                    line={line}
+                    confirmedQty={flow.confirmedQty(line)}
+                    onBulkQty={(qty) => {
+                      flow.setManualQty(line.key, qty)
+                      rerender()
+                    }}
+                    onAddUnit={(unit) => {
+                      flow.addManualUnit(line.key, unit)
+                      rerender()
+                    }}
+                    onRemoveUnit={(i) => {
+                      flow.removeManualUnit(line.key, i)
+                      rerender()
+                    }}
+                  />
+                ))}
+              </div>
+            </section>
+          ) : null}
 
           {flow.unexpected.length > 0 ? (
             <section
@@ -256,6 +337,41 @@ export function DeliveryCheckoutScreen({ defaultPower = 25, onDone }: DeliveryCh
 }
 
 // ── Small shared pieces ───────────────────────────────────────────────────────
+
+export function ScanModeSwitch({
+  mode,
+  onChange,
+}: {
+  mode: ScanPullMode
+  onChange: (mode: ScanPullMode) => void
+}) {
+  const theme = useTheme()
+  return (
+    <div style={{ display: 'flex', gap: 8 }}>
+      {(['individual', 'mass'] as const).map((m) => (
+        <button
+          key={m}
+          onClick={() => onChange(m)}
+          aria-pressed={mode === m}
+          style={{
+            flex: 1,
+            minHeight: 44,
+            borderRadius: 10,
+            border: `2px solid ${mode === m ? theme.colors.primary : theme.colors.surfaceMuted}`,
+            background: mode === m ? theme.colors.primary : theme.colors.surface,
+            color: mode === m ? theme.colors.surface : theme.colors.ink,
+            fontWeight: 700,
+            fontSize: 13,
+            textTransform: 'capitalize',
+            fontFamily: theme.fonts.body,
+          }}
+        >
+          {m === 'individual' ? 'Individual scan' : 'Mass scan'}
+        </button>
+      ))}
+    </div>
+  )
+}
 
 export function SummaryView({
   summary,

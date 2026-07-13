@@ -2,8 +2,11 @@
 // Acceptance criteria 6/7 at the logic layer: expected list from stop context
 // (no manual entry), scans check off against expectation, ConflictInterrupt on
 // non-rentable EPC, exceptions in the summary, completion writes ride the
-// queue (status batch + order completion + GPS), pickup flagging with the
-// exact vocabulary and required reasons, batch apply.
+// queue (status batch + order completion + GPS). Corrected scan model
+// (2026-07-13): the status is ARMED BEFORE scanning — delivery is implicitly
+// 'Delivered', pickup refuses scans until a vocabulary status (with required
+// reasons for Wash/Repair) is armed, every counted scan is stamped with the
+// armed status, and unscanned items get NO write (they retain 'Delivered').
 
 import { describe, expect, it } from 'vitest'
 import { IDBFactory } from 'fake-indexeddb'
@@ -17,7 +20,7 @@ import { RecordingOrderSystem } from '../testing/recordingOrderSystem'
 import { FakeConnectivity } from '../offline/connectivity'
 import { SyncEngine } from '../offline/syncEngine'
 import { ScanSession, type ScanHit } from '../flows/scanSession'
-import { CheckoutFlow, DEFAULT_RETURN_STATUS, DELIVERY_STATUS } from '../flows/checkoutFlow'
+import { CheckoutFlow, DELIVERY_STATUS } from '../flows/checkoutFlow'
 import { BARCODE, EPC, NFC_UID, UNKNOWN_EPC, fixtureItems, FIXTURE_CONTRACT } from '../testing/fixtures'
 import type { GeoPoint, LocationAdapter, StopContext } from '../adapters/types'
 import type { ItemStatusWrite } from '../ports/tagBackend'
@@ -98,6 +101,24 @@ describe('ScanSession', () => {
     expect(w.bridge.callsTo('stopBarcode')).toHaveLength(1)
   })
 
+  it('press-and-hold start/stop cycles never multiply reads (single subscription per session)', async () => {
+    const w = await world()
+    const hits: ScanHit[] = []
+    const s = await makeSession(w, (h) => hits.push(h), 'window')
+
+    // Three trigger pulls — like three press-and-hold gestures.
+    for (let i = 0; i < 3; i++) {
+      await s.startRfid()
+      w.scanner.emitTag(EPC.rentable)
+      await s.stopRfid()
+    }
+    await settle()
+    // Window dedupe is 0ms here, so every emission lands — but exactly ONCE
+    // each. A per-start subscription would have delivered 1+2+3 = 6 hits.
+    expect(hits).toHaveLength(3)
+    await s.dispose()
+  })
+
   it('reports unknown identifiers with item:null', async () => {
     const w = await world()
     const hits: ScanHit[] = []
@@ -171,6 +192,50 @@ describe('CheckoutFlow — delivery', () => {
     expect(summary.unexpected.map((u) => u.reason)).toEqual(['unknown-tag'])
     expect(summary.conflicts.filter((c) => c.resolution === 'blocked')).toHaveLength(1)
     expect(summary.exceptionCount).toBe(3) // short chairs + unknown tag + blocked conflict
+  })
+
+  it('non-RFID lines never enter the scan path: scans cannot match them, manual entry cannot touch taggable lines', async () => {
+    const w = await world()
+    // The tent line is marked non-taggable by the host — a scanned tent must
+    // NOT check it off, even though the rental class matches.
+    const stop = deliveryStop()
+    stop.expectedItems = [
+      { lineId: '501', rentalClassId: 'RC-TENT-20X20', name: 'TENT 20X20 FRAME', quantity: 1, taggable: false },
+    ]
+    const flow = new CheckoutFlow('delivery', stop, location)
+    expect(flow.lines[0].taggable).toBe(false)
+    expect(await scanInto(flow, w, EPC.rentable)).toBe('unexpected') // not-on-order, not a match
+    expect(flow.lines[0].scannedEpcs).toHaveLength(0)
+
+    // Default heuristic: rentalClassId null → non-taggable; present → taggable.
+    const heuristic = new CheckoutFlow('delivery', deliveryStop(), location)
+    expect(heuristic.lines.map((l) => l.taggable)).toEqual([true, true, false])
+    // Manual entry refuses RFID-tracked lines.
+    expect(() => heuristic.setManualQty(heuristic.lines[0].key, 1)).toThrow(/RFID-tracked/)
+    expect(() => heuristic.addManualUnit(heuristic.lines[0].key, 'SN-X')).toThrow(/RFID-tracked/)
+  })
+
+  it('manual selection: bulk quantity OR individual serialized units, mutually exclusive', async () => {
+    const flow = new CheckoutFlow('delivery', deliveryStop(), location)
+    const dance = flow.lines[2] // non-taggable
+
+    flow.setManualQty(dance.key, 2)
+    expect(flow.confirmedQty(dance)).toBe(2)
+
+    // Switching to per-unit selection clears the bulk figure.
+    flow.addManualUnit(dance.key, 'DF-0007')
+    flow.addManualUnit(dance.key, 'DF-0011')
+    expect(dance.manualQty).toBeNull()
+    expect(flow.confirmedQty(dance)).toBe(2)
+    expect(dance.manualUnits).toEqual(['DF-0007', 'DF-0011'])
+
+    flow.removeManualUnit(dance.key, 0)
+    expect(flow.confirmedQty(dance)).toBe(1)
+
+    // And bulk clears the units.
+    flow.setManualQty(dance.key, 1)
+    expect(dance.manualUnits).toEqual([])
+    expect(flow.confirmedQty(dance)).toBe(1)
   })
 
   it('complete(): one status batch with GPS + contract rides the queue, then the order completion', async () => {
@@ -260,43 +325,59 @@ describe('CheckoutFlow — pickup', () => {
     return flow.ingest({ modality: 'rfid', identifier: epc, item, at: 1 })
   }
 
+  it('REFUSES scans until a status is armed — the status is chosen BEFORE scanning', async () => {
+    const w = await world()
+    const flow = new CheckoutFlow('pickup', pickupStop(), location)
+    expect(flow.armedStatus).toBeNull()
+    await expect(scanInto(flow, w, EPC.rentable)).rejects.toThrow(/no status armed/)
+
+    flow.armStatus('Ready to Rent')
+    expect(flow.armedStatus?.status).toBe('Ready to Rent')
+    expect(await scanInto(flow, w, EPC.rentable)).toBe('matched')
+
+    flow.disarmStatus()
+    await expect(scanInto(flow, w, EPC.qualityA)).rejects.toThrow(/no status armed/)
+  })
+
   it('accepts items back regardless of status (no delivery conflicts on pickup)', async () => {
     const w = await world()
     const flow = new CheckoutFlow('pickup', pickupStop(), location)
+    flow.armStatus('Ready to Rent')
     // A wet tent coming BACK is normal — not a conflict.
     expect(await scanInto(flow, w, EPC.wetItem)).toBe('matched')
     expect(flow.conflicts).toHaveLength(0)
   })
 
-  it('flags statuses with the exact six-value vocabulary; Wash/Repair REQUIRE a reason', async () => {
+  it('arming uses the exact vocabulary; Wash/Repair REQUIRE a reason AT ARM TIME', async () => {
     const w = await world()
     const flow = new CheckoutFlow('pickup', pickupStop(), location)
+
+    // Reason-required statuses refuse to arm without one — before any scan.
+    expect(() => flow.armStatus('Wash')).toThrow(/requires at least one reason/)
+    expect(() => flow.armStatus('Repair')).toThrow(/requires at least one reason/)
+
+    // Each scan is stamped with the status armed at that moment.
+    flow.armStatus('Wash', ['Dirty / Mud', 'Leaves'])
     await scanInto(flow, w, EPC.rentable)
+    flow.armStatus('Repair', ['Rip or Tear'], 'NW corner seam')
     await scanInto(flow, w, EPC.qualityA)
+    flow.armStatus('Wet')
     await scanInto(flow, w, EPC.qualityB)
 
-    // Reason-required statuses refuse to flag without one.
-    expect(() => flow.flagStatus(EPC.rentable, 'Wash')).toThrow(/requires at least one reason/)
-    expect(() => flow.flagStatus(EPC.rentable, 'Repair')).toThrow(/requires at least one reason/)
-    // Unflagged-scan guard: can't flag what wasn't scanned.
-    expect(() => flow.flagStatus(UNKNOWN_EPC, 'Wet')).toThrow(/not scanned/)
-
-    flow.flagStatus(EPC.rentable, 'Wash', ['Dirty / Mud', 'Leaves'])
-    flow.flagStatus(EPC.qualityA, 'Repair', ['Rip or Tear'], 'NW corner seam')
-    flow.batchFlagStatus([EPC.qualityB], 'Wet')
-
     expect(flow.flags.get(EPC.rentable)?.reasons).toEqual(['Dirty / Mud', 'Leaves'])
+    expect(flow.flags.get(EPC.qualityA)?.status).toBe('Repair')
+    expect(flow.flags.get(EPC.qualityB)?.status).toBe('Wet')
     expect(flow.flags.size).toBe(3)
   })
 
-  it('complete(): flagged statuses + reason notes in ONE batch; unflagged get the default return status', async () => {
+  it('complete(): stamped statuses + reason notes in ONE batch; UNSCANNED items get NO write (retain Delivered)', async () => {
     const w = await world()
     const flow = new CheckoutFlow('pickup', pickupStop(), location)
+    flow.armStatus('Wash', ['Dirty / Mud'])
     await scanInto(flow, w, EPC.rentable)
+    flow.armStatus('Repair', ['Grommet'], 'NE corner')
     await scanInto(flow, w, EPC.qualityA)
-    await scanInto(flow, w, EPC.qualityB)
-    flow.flagStatus(EPC.rentable, 'Wash', ['Dirty / Mud'])
-    flow.flagStatus(EPC.qualityA, 'Repair', ['Grommet'], 'NE corner')
+    // EPC.qualityB (the second chair) is never scanned back.
 
     const { statusWrites, orderKind } = await flow.complete({
       queue: w.queue,
@@ -316,12 +397,18 @@ describe('CheckoutFlow — pickup', () => {
       status: 'Repair',
       statusNotes: 'Repair: Grommet, Location of Repair: NE corner',
     })
-    expect(byEpc.get(EPC.qualityB)).toMatchObject({ status: DEFAULT_RETURN_STATUS })
+    // No default status exists: nothing was written for the unscanned chair,
+    // so upstream it retains 'Delivered'.
+    expect(statusWrites).toHaveLength(2)
+    expect(byEpc.has(EPC.qualityB)).toBe(false)
+    expect((await w.replica.getByEpc(EPC.qualityB))?.syncState).toBe('synced')
 
     // Batch shape: one item-status entry (N rows), one order entry.
     const entries = await w.queue.entries()
     expect(entries.map((e) => e.kind)).toEqual(['item-status', 'order-pickup'])
-    expect((entries[0].payload as ItemStatusWrite[])).toHaveLength(3)
+    expect((entries[0].payload as ItemStatusWrite[])).toHaveLength(2)
+    // The summary is honest about the short line.
+    expect(flow.summary().rows.find((r) => r.name.startsWith('CHAIR'))?.exception).toBe('Short 1')
   })
 
   it('pre-fetches expected items by last contract from the REPLICA (offline)', async () => {
