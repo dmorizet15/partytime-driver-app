@@ -4,6 +4,20 @@ Next.js 14 PWA for the driver mobile workflow. Downstream of `partytime-dashboar
 
 ---
 
+## RFID — where this stands. Read this first if you have been away.
+
+The RFID feature replaces the standalone Easy RFID Pro app for the driver's field workflow. It is not live. No driver has it. Nobody is scanning anything in production.
+
+All the RFID code lives on branch feat/rfid-native-integration inside this driver app. It has never been merged to this app's main. Drivers are unaffected and stay unaffected until it is deliberately merged. Putting RFID live is one deliberate merge made on purpose after a device test, never a drift.
+
+Built and tested against a fake scanner, not real hardware: offline database, write queue, delivery checkout, pickup return, touch scan. The scan model is status-first: pick the status, then scan items into it. Individual scan grabs the first tag and has a Clear button. Mass scan collects many, then commits. Tags resolve to real item names instantly because the item table lives on the device.
+
+Never tested on a real device: the RFID radio, GPS at scan time, and live writes to Easy RFID Pro and TapGoods.
+
+The separate partytime-rfid project is a workshop for specs and notes. Its main holds documentation only. No driver has it. When notes say "merged to main," they mean that workshop, not the drivers' app.
+
+Open before a device test: confirm the batch write against the Easy RFID sandbox, test GPS permission on the XR2, replace the name-match fallback with the real rfid_to_tapgoods join.
+
 ## RFID Session Guardrails — `feat/rfid-native-integration` (read before ANY RFID work)
 
 Session-scoped, binding rules for the native RFID integration build (started 2026-07-09). Violating any of these fails the run:
