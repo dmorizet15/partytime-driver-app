@@ -41,7 +41,7 @@ Session-scoped, binding rules for the native RFID integration build (started 202
 
 **Next:** live WRITE verification incl. batch-write `success_count == N` (reads proven 2026-07-15; blocked on sandbox hosts/creds — the wired credentials are production, where the guard refuses writes by design — see `docs/ASSUMPTIONS.md`), physical XR2 smoke test incl. GPS against a REAL permission grant (unconfirmed — mock adapters only; ASSUMPTIONS.md entry), rfid_to_tapgoods_map join for `ExpectedItem.rentalClassId` + `taggable` + replica barcode/nfcUid enrichment, deferred flows (`src/modules/rfid/flows/deferred.ts` stubs → specs in partytime-rfid `docs/feature-specs/`, on main since `77ac601`).
 **Blocked:** live TapGoods verification (Darren, manually, labeled test order); locate tuning (hardware).
-**Merge note:** the eventual PR to `main` is driver-facing → MINOR `VERSION` bump + CHANGELOG bullets per the standing rule; feature-branch commits carry `[skip version]`.
+**Merge note:** the eventual PR to `main` is driver-facing → MINOR `VERSION` bump + CHANGELOG bullets per the standing rule. **Do NOT put `[skip version]` in feature-branch commit messages** — `check-version-bump.mjs` skips the check when ANY commit in the diff range carries it, so branch commits with the tag would silently disable the version guard on the merge itself (corrected 2026-07-15; two commits were reworded to strip it). Branch commits need no tag at all: `src/modules/` isn't in the guard's driver-facing path list, and the guard only runs against pushes to `main`.
 
 ## Compact Instructions
 
