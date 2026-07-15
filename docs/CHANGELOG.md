@@ -4,6 +4,19 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-07-15 — RFID live-read verification: real API proven, paging bug found + fixed (branch `feat/rfid-native-integration`; no migration; ZERO writes)
+
+First-ever contact between the RFID module and the real Easy RFID Pro API — reads only, from this laptop, MockScanner standing in for the radio. TapGoods stayed dry-run locked; the Easy RFID write guard stayed on (and was observed firing: `NON-SANDBOX — WRITES WILL BE REFUSED` on the production host).
+
+- **Plain-language orientation block** added to the top of CLAUDE.md's RFID section (for a non-technical owner returning after weeks away). Committed on its own.
+- **Credentials wired** (Task 1): the four `EZRFID_*` vars copied from `~/partytime-rfid/.env.local` into this app's gitignored `.env.local`, plus the `EASY_RFID_*` names the module reads. Hosts are PRODUCTION (`cs.iot.ptshome.com` / `login.cloud.ptshome.com`) — reads allowed, writes guard-refused, exactly as designed.
+- **THE FIND — Item Master paging bug (Task 2):** the server silently caps `limit` at 200; the client's "short page = last page" heuristic stopped after one page and would have seeded **200 of 13,024 records (1.5% of the fleet)**. Fixed: `fetchItemMasterRows` trusts the envelope's `totalcount` (falls back to the old behavior only when absent). Regression-tested with a limit-capping fake server; 3 new tests in `server.test.ts`.
+- **Full seed proven:** auth (`/api/v1/login` → token) + 13,024 records in ~12–13 s through the real client path (≈66 paged requests).
+- **EPC resolution proven against real data (Task 3):** new `RFID_LIVE=1`-gated harness (`src/modules/rfid/tests/liveResolution.test.ts`, honestly SKIPPED in CI) — seeds the replica from the real API, emits a real EPC through MockScanner + ScanSession, asserts the resolved common name / rental class / quality / status match, then kills `fetch`, closes + reopens the DB (app restart), and proves resolution still works with zero network.
+- **Assumptions resolved by real data:** `'Delivered'` confirmed live (237 records, exact string); all six pickup-vocabulary statuses appear verbatim; live quality vocabulary is `A+…C-` (no `D`; dropdown update queued in todo); legacy `Ready To Rent` case variant exists (281 rows).
+- **Mapping table confirmed available (Task 4):** `rfid_to_tapgoods_map` lives in the shared Supabase, readable with this app's service key — 548 rows, join key confirmed `rfid_item_id == rental_class_num` (547/548 against the real Item Master), covering 548/947 fleet rental classes. Stop-side linkage (`tapgoods_item_id` ↔ pick-list line) is the remaining unknown before the name-match fallback can be replaced.
+- Suite: 72 tests (71 run + 1 gated live); tsc clean; `next build` green (38 pages). All commits `[skip version]` (feature branch).
+
 ## 2026-07-13 — RFID scan model corrected: status-first, press-and-hold, no default return status (branch `feat/rfid-native-integration`; no migration; mock-verified)
 
 The RFID module's scan model was built wrong (status flagged AFTER scanning, toggle-style triggers, 'Needs to be Inspected' default for unflagged returns). Corrected per Darren to match the legacy Easy RFID Pro model plus one deliberate improvement:

@@ -67,6 +67,14 @@ export function extractRows<T>(json: unknown): T[] {
   return []
 }
 
+/** Envelope total-row count (`totalcount`), when the API provides one. */
+export function extractTotalCount(json: unknown): number | null {
+  if (!json || typeof json !== 'object' || Array.isArray(json)) return null
+  const raw = (json as Record<string, unknown>).totalcount
+  const n = typeof raw === 'string' ? Number(raw) : raw
+  return typeof n === 'number' && Number.isFinite(n) && n >= 0 ? n : null
+}
+
 let hostAsserted = false
 
 export class EzrfidClient {
@@ -223,7 +231,13 @@ export class EzrfidClient {
 
   // ── Item Master ops ───────────────────────────────────────────────────────
 
-  /** Paged GET of the full Item Master. */
+  /** Paged GET of the full Item Master.
+   *
+   * Live-API gotcha (confirmed against production 2026-07-15): the server
+   * silently caps `limit` at 200 — a page shorter than the requested size
+   * does NOT mean "last page" (that heuristic truncated a 13,024-row table
+   * to 200). The envelope carries `totalcount`; trust it when present and
+   * stop early on a short page only when it is absent. */
   async fetchItemMasterRows(pageSize = 1000): Promise<Record<string, string>[]> {
     const rows: Record<string, string>[] = []
     let offset = 0
@@ -235,7 +249,10 @@ export class EzrfidClient {
       const json = await res.json().catch(() => null)
       const page = extractRows<Record<string, string>>(json)
       rows.push(...page)
-      if (page.length < pageSize) return rows
+      const total = extractTotalCount(json)
+      if (page.length === 0) return rows
+      if (total !== null && rows.length >= total) return rows
+      if (total === null && page.length < pageSize) return rows
       offset += page.length
     }
   }

@@ -129,6 +129,62 @@ describe('Easy RFID Pro client — live-API gotchas', () => {
       expect.objectContaining({ kind: 'network' }),
     )
   })
+
+  it('pages past the server 200-row limit cap using totalcount (confirmed live 2026-07-15)', async () => {
+    // The live API silently caps limit at 200 and echoes totalcount in the
+    // envelope. A short page must NOT be read as "last page" — that
+    // truncated the real 13,024-row Item Master to 200 records.
+    const SERVER_CAP = 200
+    const TOTAL = 450
+    const table = Array.from({ length: TOTAL }, (_, i) => ({ tag_id: `E2${String(i).padStart(4, '0')}` }))
+    const calls: Array<{ url: string }> = []
+    const dynamicImpl = (async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/login')) return okLogin()
+      const params = new URL(url).searchParams
+      const offset = Number(params.get('offset') ?? 0)
+      const limit = Math.min(Number(params.get('limit') ?? SERVER_CAP), SERVER_CAP) // the cap
+      const data = table.slice(offset, offset + limit)
+      calls.push({ url })
+      return Response.json({
+        totalcount: TOTAL,
+        returncount: data.length,
+        offset,
+        limit,
+        data,
+        result: { success: true, code: 0 },
+      })
+    }) as typeof fetch
+    const rows = await sandboxClient(dynamicImpl).fetchItemMasterRows(1000)
+    expect(rows).toHaveLength(TOTAL)
+    expect(new Set(rows.map((r) => r.tag_id)).size).toBe(TOTAL)
+    const dataCalls = calls.filter((c) => c.url.includes('/data/'))
+    expect(dataCalls).toHaveLength(3) // 200 + 200 + 50
+  })
+
+  it('still stops on a short page when the envelope has no totalcount (legacy shape)', async () => {
+    const { impl } = scriptedFetch([
+      { match: (u) => u.includes('/login'), respond: okLogin },
+      {
+        match: (u) => u.includes('/data/'),
+        respond: () => Response.json({ data: [{ tag_id: 'E2A' }], result: { success: true } }),
+      },
+    ])
+    const rows = await sandboxClient(impl).fetchItemMasterRows(1000)
+    expect(rows).toHaveLength(1)
+  })
+
+  it('stops on an empty page even when totalcount overstates the table', async () => {
+    const { impl } = scriptedFetch([
+      { match: (u) => u.includes('/login'), respond: okLogin },
+      {
+        match: (u) => u.includes('/data/'),
+        respond: () => Response.json({ totalcount: 99, data: [], result: { success: true } }),
+      },
+    ])
+    const rows = await sandboxClient(impl).fetchItemMasterRows(1000)
+    expect(rows).toHaveLength(0)
+  })
 })
 
 describe('wire mapping', () => {

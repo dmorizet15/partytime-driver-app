@@ -6,6 +6,14 @@ Format: one lesson per block. Lead with the rule, then **Why** and **How to appl
 
 ---
 
+## A suspiciously round row count from a paged API is a truncation bug until proven otherwise — servers silently cap `limit`, so never treat "short page" as "last page" when the envelope carries a total.
+
+**Why:** 2026-07-15, first live read against the Easy RFID Pro Item Master returned exactly 200 rows. The client requested `limit=1000` and its paging loop stopped whenever a page came back shorter than the requested size — a reasonable-looking heuristic that was silently wrong: the server caps any `limit` above 200 down to 200 and the real table held 13,024 rows. Every mock/fixture test passed (fixtures never exceeded one page); only real-API contact exposed it. The response envelope carried `totalcount` the whole time. The fix trusts `totalcount` when present, stops on an empty page always, and keeps the short-page stop only for envelope shapes with no total.
+
+**How to apply:** when a paged fetch returns a round number (100/200/500/1000), probe before believing it: request `offset=N` past the "end" and see if more rows come back; check the envelope for `totalcount`/`total`-style fields and echoed `limit` (a server that echoes a smaller limit than requested is telling you about the cap). Write the regression test as a fake server that CAPS the limit, not one that serves exactly what's asked. General form: any "stop early" heuristic that saves one request is a bet against an undocumented server behavior — prefer the explicit signal (total count, empty page) over the inferred one.
+
+---
+
 ## To display "the same value another surface enforces," REUSE that surface's resolver function — don't re-derive the rule. Narrow the resolver's param to a structural interface so a lighter row shape can call it too.
 
 **Why:** 2026-07-06 the Pickup Answer card's "No earlier than [time]" floor had to equal the value the early-pickup guard blocks on, "so the promise and the block can never disagree." The guard resolves the committed pickup time through `effectiveWindow(stop).startsAt` in `stopConstraints.ts` (a source-priority tree: `dispatcher_time_override` → structured `pickup_window_*` → notes). Re-implementing that tree in the card's derivation would have created a second copy that drifts the day the priority order changes (it already changed once). Instead the card calls the SAME `effectiveWindow`. The only obstacle was the type: `effectiveWindow(stop: Stop)` and the card's reservation-scoped pickup rows aren't full driver `Stop`s. Fix = narrow the param to a structural `WindowResolvable` interface (just the fields it reads); `Stop` still satisfies it, so every existing caller is untouched, and the lighter row shape now reuses the one resolver — value parity by construction, not by convention.

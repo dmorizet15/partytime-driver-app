@@ -21,6 +21,37 @@ Risk if wrong: low — binary signatures can't lie about shape; only prose
 semantics (param meanings for lockTag/addMask) are inferred and are flagged
 as unverified in the notes.
 
+## [Item Master paging] — Server silently caps `limit` at 200 — CONFIRMED + FIXED 2026-07-15
+
+What I needed: nothing — this was found, not assumed. First live read against the
+production API (host `cs.iot.ptshome.com`, reads only) returned exactly 200 rows
+for `limit=1000`; probing showed the server caps any `limit` above 200 down to
+200 and echoes `totalcount` (13,024) in the envelope.
+What I did instead: `fetchItemMasterRows` no longer treats a short page as the
+last page — it trusts the envelope's `totalcount` when present (stops early on a
+short page only when `totalcount` is absent, and always on an empty page).
+Regression-tested with a capping fake server (450 rows → 3 pages). The old
+heuristic would have silently seeded 200 of 13,024 items (1.5% of the fleet).
+How to verify: `RFID_LIVE=1 npx vitest run src/modules/rfid/tests/liveResolution.test.ts`
+(dev server running) — asserts > 10,000 records seed.
+Risk if wrong: none — verified against the live API; the sandbox may differ but
+the totalcount logic degrades to the old behavior when the field is absent.
+
+## [Item Master data hygiene] — observed live 2026-07-15 (13,024 rows)
+
+What I needed: nothing — findings from the first full read, logged for filters.
+What was observed: status is free text with live variants — `Ready to Rent`
+(4,248) AND `Ready To Rent` (281, legacy case variant); 41 rows with empty
+status; 34 rows with empty tag_id/common_name/rental_class_num (placeholder
+rows). Quality vocabulary live is `A+ A A- B+ B B- C+ C C-` (no `D` in use;
+4,628 records are `A+`; 1,889 empty; one garbage value holding an EPC). The
+Touch Scan quality dropdown currently offers A/B/C/D + the record's own value —
+records keep their real grade, but the picker can't SET `A+`/modifier grades.
+How to verify: re-run the live harness; counts drift with operations.
+Risk if wrong: low — but any exact-string status filter must remember the
+`Ready To Rent` case variant, and the quality dropdown should adopt the real
+vocabulary before drivers write quality with it.
+
 ## [Easy RFID Pro] — No sandbox credentials or API base on this machine
 
 What I needed: credentials + the sandbox's actual API/auth hosts to run live
@@ -41,6 +72,16 @@ production contract encoded in `partytime-rfid/src/lib/ezrfid.ts` (upsert
 operation wrapper, filter syntax, wrapped-401s), the first live run will
 surface it; no live writes can happen until someone deliberately supplies
 the env, so nothing can be silently wrong in production.
+
+PARTIALLY RESOLVED 2026-07-15: production credentials are now wired into this
+app's `.env.local` (copied from `~/partytime-rfid/.env.local`, hosts
+`cs.iot.ptshome.com` / `login.cloud.ptshome.com`). READS are proven live —
+login (`/api/v1/login` → `access_token`), paged Item Master GET, 13,024
+records seeded through the real client path. The startup guard correctly
+logged `NON-SANDBOX — WRITES WILL BE REFUSED`. Still open: the SANDBOX's
+API/auth hosts remain unknown, so live WRITE verification (batch upsert,
+`success_count == N`) is still blocked — it needs sandbox hosts + creds, or a
+deliberate, Darren-approved production test with `EASY_RFID_ALLOW_PRODUCTION`.
 
 ## [Bridge] — HAL operations with no bridge support on the XR2 path
 
@@ -109,6 +150,19 @@ Risk if wrong: medium — name matching will miss renamed items and produce
 noisy exceptions; it can never mis-write (writes key on scanned EPC, not on
 the match).
 
+PROGRESS 2026-07-15 (read-only investigation): `rfid_to_tapgoods_map` IS in
+the shared Supabase and readable with this app's service key — 548 rows, all
+`match_type='manual'`, zero null `tapgoods_item_id`. Join key CONFIRMED
+against the real Item Master: `rfid_item_id` equals the Item Master's
+`rental_class_num` (= replica `rentalClassId`) for 547/548 rows. Coverage:
+548 of 947 distinct rental classes in the live fleet (~399 classes unmapped —
+those lines stay name-match/manual). STILL UNKNOWN: what `tapgoods_item_id`
+(8-hex, e.g. `A0840FE9`) keys to on the stop side — `dispatch_stops.items`
+lines carry only name/qty/category/`tapgoods_pick_list_item_id`, so the
+merge-time StopContext builder needs the tapgoods_item_id ↔ pick-list-line
+linkage (likely via `reservations.tapgoods_data`) before `ExpectedItem.
+rentalClassId`/`taggable` can be set from the map instead of the name.
+
 ## [Delivery] — Exact "delivered" status string
 
 What I needed: the exact free-text status value a delivery write should set
@@ -122,6 +176,11 @@ How to verify: GET one item that the legacy app marked delivered; read its
 `status` field verbatim.
 Risk if wrong: medium — a mismatched string forks the dataset (filters/
 conflict checks won't see legacy-delivered items as delivered). One-line fix.
+
+RESOLVED 2026-07-15: confirmed against the live Item Master — 237 records
+carry exactly `Delivered` (and all six pickup-vocabulary statuses appear live
+verbatim: Needs to be Inspected / Ready to Rent / Repair / Staged / Wash /
+Wet). `DELIVERY_STATUS = 'Delivered'` is correct as shipped.
 
 ## [Pickup] — Default status for unflagged returned items — RESOLVED 2026-07-13
 

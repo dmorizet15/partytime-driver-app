@@ -1,5 +1,14 @@
 # Open Tasks — partytime-driver-app
 
+## July 15, 2026 — RFID live-read verification — branch `feat/rfid-native-integration`; NO migration; ZERO writes
+
+Real Easy RFID Pro API proven for READS from this laptop: credentials wired into `.env.local` (production hosts — write guard correctly refuses), full 13,024-record Item Master seeded through the real client path, MockScanner EPC resolution proven against real data online + with network killed. Found + fixed the paging bug (server caps `limit` at 200; old heuristic truncated the fleet to 200 records). `'Delivered'` + all six pickup statuses confirmed live verbatim. `rfid_to_tapgoods_map` confirmed readable from this app (548 rows; join key = `rfid_item_id == rental_class_num`, 547/548). Suite 72 tests (1 = `RFID_LIVE=1`-gated live harness, skipped in CI).
+
+- [ ] Live WRITE verification: batch `success_count == N` against the SANDBOX — still blocked on sandbox API/auth hosts + creds (wired creds are production, where writes are guard-refused by design). Alternative: Darren-approved labeled production test with `EASY_RFID_ALLOW_PRODUCTION`.
+- [ ] Quality dropdown: adopt the real live vocabulary `A+ A A- B+ B B- C+ C C-` (no `D` live; 4,628 records are `A+` which the picker can't currently set) — small change, do before drivers write quality.
+- [ ] Merge-time join, stop side: determine what `tapgoods_item_id` (8-hex) keys to in `dispatch_stops.items`/`reservations.tapgoods_data` — the replica side of the join is proven; the stop-line side is the remaining unknown (ASSUMPTIONS.md).
+- [ ] Exact-string status filters must handle the live `Ready To Rent` case variant (281 rows) + 41 empty-status rows.
+
 ## July 13, 2026 — RFID scan-model correction — branch `feat/rfid-native-integration` (`2f974bc`); NO migration
 
 Corrected per Darren: status-first arming, press-and-hold triggers (Individual = first tag + Clear/re-pull; Mass = accumulate + commit), instant replica resolution, no default return status (unscanned retain 'Delivered'), non-RFID lines manual-only (`ExpectedItem.taggable`). 68/68 tests + `next build` green — mock-verified only.
@@ -8,7 +17,7 @@ Corrected per Darren: status-first arming, press-and-hold triggers (Individual =
 - [ ] XR2 device test: press-and-hold trigger feel (on-screen + hardware trigger), first-tag capture latency, Clear/re-pull within the 500ms window in the field.
 - [ ] GPS against a REAL permission grant (grant → lat/long on the queued write; deny → coordinate-less write proceeds) — currently UNCONFIRMED, mock adapters only.
 - [ ] Merge-time: host StopContext sets `ExpectedItem.taggable` from the rfid_to_tapgoods_map join; decide serialized-asset picker vs free entry (ask Darren whether untagged serialized assets exist in Item Master).
-- [ ] Confirm the exact live 'Delivered' status string against a legacy-delivered record before any live write (ASSUMPTIONS.md, unchanged).
+- [x] Confirm the exact live 'Delivered' status string against a legacy-delivered record before any live write — CONFIRMED 2026-07-15: 237 live records carry exactly `Delivered`.
 - [ ] Merge-to-main session: VERSION bump (MINOR) + What's New entry — deliberately NOT done on the branch.
 
 
