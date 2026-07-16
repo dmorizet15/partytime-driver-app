@@ -1,5 +1,12 @@
 # Open Tasks — partytime-driver-app
 
+## July 16, 2026 — RFID Session 16: audible scan chirp — WRAPPER repo only (partytime-rfid `4d86250`); THIS repo unchanged; ZERO writes
+
+Chirp-per-deduplicated-read shipped in the wrapper's JanamScanner (SDK SoundTool via `startBeep()`, host-init + volume floor — the two decoded root causes of all historical silence). Device-verified via CDP with real ambient tags: Mass chirp train + Individual single-chirp/first-tag/radio-drop confirmed in AudioFlinger; dedup ≥500ms + `/dev/ttyHSL0` release intact. No module/driver-app change — hardware-trigger holds chirp identically by construction.
+
+- [ ] **By-ear confirmation (Darren, 2 min):** Individual hold near a tag → one chirp; Mass sweep → chirp train. (Media volume now auto-floors to 9/15 on scan start.)
+- [ ] Pre-init / keep-warm decision for the ~2s per-press radio init — proposal in partytime-rfid `tasks/open-questions.md` Session 16 (needs an idle-armed battery measurement; changes verified lifecycle → deliberate change only).
+
 ## July 16, 2026 — RFID Session 15: hardware trigger wired into the HAL — branch `feat/rfid-native-integration` (`7698dcf`); NO migration; ZERO writes
 
 The wrapper's `trigger-event` bridge CustomEvent (partytime-rfid `726287d`, Session 14) is now consumed by the module: `RfidScanner.onTrigger` + `capabilities.hardwareTrigger` (Xr2Scanner real, MockScanner test-drivable via `emitTrigger`, C72 honest stub), and `useHardwareTrigger` routes trigger edges into the SAME `scanStart`/`scanEnd` handlers as the on-screen HOLD TO SCAN button in all three screens — so first-tag-wins (individual), accumulate-then-commit (mass), and the pickup armed-status gate are identical for hardware holds. 77 tests green (6 new), tsc + `next build` green.

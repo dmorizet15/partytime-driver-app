@@ -4,6 +4,16 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-07-16 — RFID Session 16: audible scan chirp — wrapper repo only (partytime-rfid `4d86250`; THIS repo code-untouched; no migration; ZERO writes)
+
+Darren's ask: the legacy Easy RFID Pro chirp-per-tag-read, absent from the native build. Delivered entirely in the partytime-rfid wrapper — the driver-app module needed zero changes, because the chirp fires in `JanamScanner.onInventoryTag` at the exact ≥500ms dedup gate that feeds `rfid-scan` bridge events, so on-screen holds and hardware-trigger holds chirp identically by construction.
+
+- **Why every scan to date was silent — two stacked root causes, both decoded/found this session:** (1) the SDK's sound player (`SoundTool`, behind `RfidManager.startBeep()`) requires HOST initialization — nothing in the SDK calls `SoundTool.init(Context)`, and uninitialized it silently no-ops (bytecode-verified via javap on the committed .aar; `setBeepEnable(true)` had been armed in `startInventory` since day one and could never make a sound). (2) The XR2's STREAM_MUSIC speaker volume was 0/15 — SoundPool renders chirps into a muted stream. The wrapper now re-inits SoundTool + pins volume 10/10 on EVERY radio cycle (the power rule's `release()` tears it down each time) and floors the media stream at 60% of max on scan start (raise-only).
+- **Device-verified hands-free** (CDP rig; real ambient tags; no human hands available): Mass UI-hold → 59 deduped events / 7 distinct EPCs resolving from the 12,991-record replica + a chirp train at ~300ms cadence in AudioFlinger's local log (timestamped `AT::add` streams from the app's pid); Individual UI-hold at power 30 → first tag captured, radio dropped mid-hold, exactly ONE chirp stream. Dedup floor ≥500ms held across every run; `/dev/ttyHSL0` closed after release. Remaining human step: a 2-minute by-ear check (machine verification stops at the audio mixer).
+- **Two honest nuances:** SoundTool throttles chirps <30ms apart, so tags reported in the SAME inventory burst merge into one audible chirp (vendor behavior the legacy app shares — swept tags chirp per tag). And Individual mode's power-15 default reads nothing from across-the-room tags (Mass=25 and native default 30 read them fine) — initially chased as a bug, actually RF range.
+- **Secondary (investigate + propose, no code):** the ~2s per-press radio init — options written to partytime-rfid `tasks/open-questions.md` (scan-surface pre-init vs keep-warm window; blocking unknown = idle-armed battery draw; Darren's decision, since it changes the hardware-verified radio lifecycle).
+- Guardrails intact: zero writes, TapGoods dry-run locked, `EASY_RFID_ALLOW_PRODUCTION` unset, driver-app `main` untouched, no force-pushes. Rig torn down at session close.
+
 ## 2026-07-16 — RFID Session 15: physical XR2 trigger wired into the HAL (branch `feat/rfid-native-integration` `7698dcf`; no migration; ZERO writes)
 
 Session 14 (partytime-rfid, same day) landed the wrapper's `trigger-event` bridge CustomEvent (`{pressed, timestamp}`, Android edge-filters key repeats, physically validated on the XR2). This session consumed it web-side, closing the "flows only work via on-screen buttons" gap.
