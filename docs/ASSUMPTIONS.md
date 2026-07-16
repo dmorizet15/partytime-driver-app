@@ -276,3 +276,20 @@ How to verify: build on a machine with the real .env.local — no placeholders
 needed.
 Risk if wrong: none at runtime (placeholders are build-time only, never
 committed).
+
+## [Hardware trigger] — Behavior when the barcode toggle is armed during a trigger hold
+
+What I needed: how the physical trigger should behave when the driver has the
+Barcode toggle armed and then holds the trigger.
+What I did instead: the web layer always treats a trigger press as the RFID
+press-and-hold (useHardwareTrigger → scanStart). But Session 14 (partytime-rfid)
+proved that with a barcode session armed the FRAMEWORK also drives the imager
+on the same physical trigger — so a hold with barcode armed may fire BOTH the
+RFID inventory (web-decided) and a barcode decode (native-decided) at once.
+How to verify: on an unlocked XR2 with the module runtime up: arm Barcode,
+hold the trigger over a tag + a barcode; observe whether both modalities land
+and whether that's desirable (both paths dedupe/resolve safely, so it may be
+fine — or the imager fire may surprise the driver).
+Risk if wrong: low — both events resolve through the same ScanSession intake
+and unit-level dedupe; worst case is a surprising double-capture UX, not bad
+data.

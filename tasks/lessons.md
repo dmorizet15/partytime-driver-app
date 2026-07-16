@@ -6,6 +6,14 @@ Format: one lesson per block. Lead with the rule, then **Why** and **How to appl
 
 ---
 
+## A PIN-locked Android device is NOT a usable WebView test target even when CDP responds — check screen/keyguard state FIRST, before interpreting "no events" or a hung async as a code failure.
+
+**Why:** 2026-07-16 (RFID Session 15), verifying the hardware-trigger HAL on the XR2: `Runtime.evaluate` over CDP answered instantly (the page looked alive), but (a) `input keyevent 523` never produced a `trigger-event` in the page — the raw key path requires the activity to have window focus, and focus was `NotificationShade` (keyguard); and (b) the module runtime hung on "Starting scanner…" forever — the locked-screen renderer throttles IndexedDB to ~2.5 MINUTES per operation (a probed `indexedDB.open` took 158s), so `openRfidDb` + `queue.recover` never finished. Both symptoms mimic bugs in the freshly written code. The tells, in order: `dumpsys window | grep mCurrentFocus` → `NotificationShade`; `dumpsys power` → `Dozing`; `screencap` suddenly returning 0 bytes (secure keyguard surface blocks capture); `uiautomator dump` showing "Enter your PIN". `wm dismiss-keyguard` only clears swipe keyguards — a secure PIN cannot (and must not) be scripted around.
+
+**How to apply:** before any on-device WebView session, run the wake ritual and VERIFY it took: `input keyevent 224` (wake) → `wm dismiss-keyguard` → `dumpsys window | grep mCurrentFocus` must show the app's activity, not NotificationShade. If a PIN pad is up and no PIN is on record, the device half of the session is blocked — flag it and stop; never guess credentials. Remember the split: synthetic `input keyevent` needs app FOCUS to reach `dispatchKeyEvent`, while framework broadcasts (TriggerProbe's `TRIGGER_EVENT`) deliver even when locked — a probe receiving broadcasts is NOT evidence the app can see the key. And treat any "async that never settles" in a backgrounded/locked WebView as throttling before bug: storage, timers, and rAF are all suspended or minute-batched under the keyguard.
+
+---
+
 ## A suspiciously round row count from a paged API is a truncation bug until proven otherwise — servers silently cap `limit`, so never treat "short page" as "last page" when the envelope carries a total.
 
 **Why:** 2026-07-15, first live read against the Easy RFID Pro Item Master returned exactly 200 rows. The client requested `limit=1000` and its paging loop stopped whenever a page came back shorter than the requested size — a reasonable-looking heuristic that was silently wrong: the server caps any `limit` above 200 down to 200 and the real table held 13,024 rows. Every mock/fixture test passed (fixtures never exceeded one page); only real-API contact exposed it. The response envelope carried `totalcount` the whole time. The fix trusts `totalcount` when present, stops on an empty page always, and keeps the short-page stop only for envelope shapes with no total.
