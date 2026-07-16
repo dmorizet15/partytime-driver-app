@@ -98,7 +98,10 @@ export class EzrfidClient {
     this.username = opts.username ?? process.env.EASY_RFID_USERNAME
     this.password = opts.password ?? process.env.EASY_RFID_PASSWORD
     this.allowProduction = opts.allowProduction ?? process.env.EASY_RFID_ALLOW_PRODUCTION === 'true'
-    this.fetchImpl = opts.fetchImpl ?? fetch
+    // Wrapped, not stored bare: `this.fetchImpl(...)` with the raw global would
+    // pass the instance as receiver — Illegal invocation in browsers (see
+    // httpTagBackend.ts; server-side Node tolerates it, fixed for parity).
+    this.fetchImpl = opts.fetchImpl ?? ((...args: Parameters<typeof fetch>) => fetch(...args))
     this.now = opts.now ?? (() => Date.now())
     this.assertHostOnce()
   }

@@ -233,6 +233,29 @@ describe('wire mapping', () => {
   })
 })
 
+describe('HttpTagBackend — default fetch binding', () => {
+  it('calls the global fetch with a clean receiver (browsers throw Illegal invocation otherwise)', async () => {
+    // Simulate a real browser's window.fetch, which rejects any foreign `this`.
+    // Node's fetch tolerates it, which is exactly why only the XR2 WebView
+    // caught this bug (2026-07-16) — this fake restores the strictness.
+    const realFetch = globalThis.fetch
+    function strictFetch(this: unknown, ...args: Parameters<typeof fetch>) {
+      if (this !== undefined && this !== globalThis) {
+        throw new TypeError("Failed to execute 'fetch' on 'Window': Illegal invocation")
+      }
+      void args
+      return Promise.resolve(Response.json({ items: [] }))
+    }
+    globalThis.fetch = strictFetch as typeof fetch
+    try {
+      const backend = new HttpTagBackend() // NO fetchImpl — the default path under test
+      await expect(backend.fetchAllItems()).resolves.toEqual([])
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
+})
+
 describe('route handlers + HttpTagBackend round trip', () => {
   function mountedBackend(fetchScripts: Scripted[]) {
     const { impl } = scriptedFetch(fetchScripts)

@@ -159,7 +159,10 @@ export function TouchScanScreen({
       const written = await replica.seedFromBackend(tagBackend)
       setMeta(await replica.meta())
       setNotice(`Item list refreshed — ${written} records.`)
-    } catch {
+    } catch (e) {
+      // Loud, not silent: the swallowed cause hid a real device-only bug once
+      // (Illegal invocation, 2026-07-16) — always log what actually failed.
+      console.error('[rfid] item list sync failed:', e)
       setError('Item list refresh failed — check signal and retry.')
     } finally {
       setSyncing(false)

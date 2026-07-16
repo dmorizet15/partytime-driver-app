@@ -24,7 +24,11 @@ export class HttpTagBackend implements TagBackendPort {
 
   constructor(opts: HttpTagBackendOptions = {}) {
     this.basePath = (opts.basePath ?? '/api/rfid-module').replace(/\/$/, '')
-    this.fetchImpl = opts.fetchImpl ?? fetch
+    // Wrap, don't store, the global: `this.fetchImpl(...)` would otherwise call
+    // fetch with the class instance as receiver — an "Illegal invocation"
+    // TypeError in real browsers (Node's fetch tolerates it, so only device
+    // contact catches this; found live on the XR2 2026-07-16).
+    this.fetchImpl = opts.fetchImpl ?? ((...args: Parameters<typeof fetch>) => fetch(...args))
   }
 
   async fetchAllItems(): Promise<ItemRecord[]> {
