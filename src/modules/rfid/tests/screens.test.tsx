@@ -78,6 +78,14 @@ async function holdAndScan(scanner: MockScanner, emit: () => void) {
   fireEvent.pointerUp(trigger)
 }
 
+/** Same hold, but via the PHYSICAL trigger (bridge trigger-event → HAL onTrigger). */
+async function hardwareHoldAndScan(scanner: MockScanner, emit: () => void) {
+  scanner.emitTrigger(true)
+  await waitFor(() => expect(scanner.state.inventoryRunning).toBe(true))
+  emit()
+  scanner.emitTrigger(false)
+}
+
 describe('DeliveryCheckoutScreen', () => {
   it('mass pull: hold accumulates, tags resolve instantly, commit checks off + interrupts on conflict, completes into the queue', async () => {
     await seedModuleDb()
@@ -188,6 +196,42 @@ describe('DeliveryCheckoutScreen', () => {
     // never force-matched.
     await screen.findByTestId('unexpected-queue')
   })
+
+  it('PHYSICAL trigger: individual press captures the first tag and drops the radio mid-hold; mass press accumulates until release', async () => {
+    await seedModuleDb()
+    const stack = makeStack()
+
+    render(
+      <RfidModuleProvider adapters={adapters('delivery')} {...stack}>
+        <DeliveryCheckoutScreen />
+      </RfidModuleProvider>,
+    )
+    await screen.findByText(/Riverbend Events/)
+
+    // Individual (default): hardware press arms the radio; FIRST tag wins.
+    stack.scanner.emitTrigger(true)
+    await waitFor(() => expect(stack.scanner.state.inventoryRunning).toBe(true))
+    stack.scanner.emitTag(EPC.rentable)
+    // First-tag capture drops the radio WHILE the trigger is still held.
+    await waitFor(() => expect(stack.scanner.state.inventoryRunning).toBe(false))
+    expect(stack.scanner.emitTag(EPC.inWash)).toBe(false)
+    stack.scanner.emitTrigger(false) // release after capture — harmless
+    const tray = await screen.findByTestId('scan-tray')
+    await waitFor(() => expect(tray.textContent).toContain('TENT 20X20 FRAME'))
+
+    // Clear, switch to mass: hardware hold accumulates, release stops the radio.
+    // (Different tags than the individual pull — the 500ms window dedupe is live.)
+    fireEvent.click(screen.getByText('Clear'))
+    fireEvent.click(screen.getByText('Mass scan'))
+    await hardwareHoldAndScan(stack.scanner, () => {
+      stack.scanner.emitTag(EPC.inWash)
+      stack.scanner.emitTag(EPC.qualityA)
+      expect(stack.scanner.state.inventoryRunning).toBe(true) // mass keeps scanning while held
+    })
+    await waitFor(() => expect(stack.scanner.state.inventoryRunning).toBe(false)) // release stopped it
+    const massTray = await screen.findByTestId('scan-tray')
+    await waitFor(() => expect(massTray.textContent).toContain('2 tag(s)'))
+  })
 })
 
 describe('PickupReturnScreen', () => {
@@ -240,5 +284,32 @@ describe('PickupReturnScreen', () => {
     expect(batch).toHaveLength(1) // ONLY the scanned tent — no default status for the rest
     expect(batch[0]).toMatchObject({ epc: EPC.rentable, status: 'Wash', statusNotes: 'Wash: Leaves' })
     expect(batch[0].scannedBy).toBe('Test Driver')
+  })
+
+  it('PHYSICAL trigger honors the armed-status gate: a press with no status armed never starts the radio', async () => {
+    await seedModuleDb()
+    const stack = makeStack()
+
+    render(
+      <RfidModuleProvider adapters={adapters('pickup')} {...stack}>
+        <PickupReturnScreen />
+      </RfidModuleProvider>,
+    )
+    await screen.findByText(/Riverbend Events/)
+    await screen.findByTestId('scan-trigger') // runtime ready — the trigger hook is live
+
+    // No status armed → the hardware press is a no-op, same as the disabled button.
+    stack.scanner.emitTrigger(true)
+    await new Promise((r) => setTimeout(r, 25))
+    expect(stack.scanner.state.inventoryRunning).toBe(false)
+    stack.scanner.emitTrigger(false)
+
+    // Arm a reason-free status → the SAME hardware hold now scans.
+    fireEvent.click(screen.getByRole('button', { name: 'Ready to Rent' }))
+    await screen.findByTestId('armed-status')
+    await hardwareHoldAndScan(stack.scanner, () => {
+      stack.scanner.emitTag(EPC.rentable)
+    })
+    await screen.findByTestId('scan-tray')
   })
 })

@@ -91,6 +91,48 @@ describe('Xr2Scanner', () => {
     expect(reads).toHaveLength(0)
     expect(bridge.callsTo('stopRfid').length).toBeGreaterThan(0)
   })
+
+  it('forwards trigger-event edges to onTrigger WITHOUT initialize — a press is what causes power-up', () => {
+    const bridge = new ScriptedBridge()
+    const s = new Xr2Scanner(bridge)
+    expect(s.capabilities.hardwareTrigger).toBe(true)
+    const edges: boolean[] = []
+    s.onTrigger((pressed) => edges.push(pressed))
+
+    bridge.emit('trigger-event', { pressed: true })
+    bridge.emit('trigger-event', { pressed: false })
+    expect(edges).toEqual([true, false])
+  })
+
+  it('drops consecutive same-state trigger edges (leaked key repeats) so callbacks see alternation', () => {
+    const bridge = new ScriptedBridge()
+    const s = new Xr2Scanner(bridge)
+    const edges: boolean[] = []
+    s.onTrigger((pressed) => edges.push(pressed))
+
+    bridge.emit('trigger-event', { pressed: true })
+    bridge.emit('trigger-event', { pressed: true }) // repeat — dropped
+    bridge.emit('trigger-event', { pressed: false })
+    bridge.emit('trigger-event', { pressed: false }) // repeat — dropped
+    bridge.emit('trigger-event', { pressed: true })
+    expect(edges).toEqual([true, false, true])
+  })
+
+  it('trigger subscription survives release() and unsubscribe detaches it', async () => {
+    const bridge = new ScriptedBridge()
+    const s = new Xr2Scanner(bridge)
+    const edges: boolean[] = []
+    const off = s.onTrigger((pressed) => edges.push(pressed))
+
+    await s.initialize()
+    await s.release() // powers the radio down — the physical trigger stays alive
+    bridge.emit('trigger-event', { pressed: true })
+    expect(edges).toEqual([true])
+
+    off()
+    bridge.emit('trigger-event', { pressed: false })
+    expect(edges).toEqual([true])
+  })
 })
 
 describe('C72Scanner stub (acceptance criterion 3)', () => {
@@ -99,6 +141,8 @@ describe('C72Scanner stub (acceptance criterion 3)', () => {
     expect(s.deviceName).toBe('Chainway C72')
     await expect(s.initialize()).rejects.toThrow(NotImplementedError)
     expect(() => s.onTagRead(() => {})).toThrow(NotImplementedError)
+    expect(s.capabilities.hardwareTrigger).toBe(false) // callers gate before onTrigger
+    expect(() => s.onTrigger(() => {})).toThrow(NotImplementedError)
     await expect(s.setOutputPower(10)).rejects.toThrow(NotImplementedError)
   })
 })

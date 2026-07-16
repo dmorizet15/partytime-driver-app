@@ -17,6 +17,12 @@ export interface BridgeEventMap {
   'nfc-scan': { uid: string; tagType: string; timestamp: number }
   /** Locate-mode proximity stream while findEpc is active (proximity 0.0–1.0). */
   'rfid-locate': { epc: string; proximity: number; timestamp: number }
+  /**
+   * Physical trigger edge (XR2 side trigger). The native layer edge-filters
+   * key repeats — first DOWN and the UP only. Press-and-hold semantics are
+   * decided in the web layer (Session 11 scan model).
+   */
+  'trigger-event': { pressed: boolean; timestamp: number }
 }
 
 export type BridgeEventName = keyof BridgeEventMap

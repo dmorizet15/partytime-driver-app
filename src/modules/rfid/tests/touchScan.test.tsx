@@ -61,6 +61,14 @@ async function holdAndScan(scanner: MockScanner, emit: () => void) {
   fireEvent.pointerUp(trigger)
 }
 
+/** Same hold, but via the PHYSICAL trigger (HAL onTrigger path). */
+async function hardwareHoldAndScan(scanner: MockScanner, emit: () => void) {
+  scanner.emitTrigger(true)
+  await waitFor(() => expect(scanner.state.inventoryRunning).toBe(true))
+  emit()
+  scanner.emitTrigger(false)
+}
+
 describe('TouchScanScreen — offline', () => {
   it('Individual: hold captures the FIRST tag only, details resolve instantly, Clear re-pulls; edit queues, never lost', async () => {
     await seedModuleDb()
@@ -121,6 +129,29 @@ describe('TouchScanScreen — offline', () => {
     expect(item?.currentStatus).toBe('Staged') // local overlay immediate
     expect(item?.syncState).not.toBe('synced') // honest: NOT synced yet
     db.close()
+  })
+
+  it('PHYSICAL trigger: individual press captures the first tag, radio drops mid-hold, release is safe', async () => {
+    await seedModuleDb()
+    const stack = deadNetworkStack()
+
+    render(
+      <RfidModuleProvider adapters={toolAdapters()} {...stack}>
+        <TouchScanScreen />
+      </RfidModuleProvider>,
+    )
+    await screen.findByTestId('scan-trigger') // runtime ready — the trigger hook is live
+
+    stack.scanner.emitTrigger(true)
+    await waitFor(() => expect(stack.scanner.state.inventoryRunning).toBe(true))
+    stack.scanner.emitTag(EPC.rentable)
+    // First tag wins: the radio drops WHILE the trigger is still held.
+    await waitFor(() => expect(stack.scanner.state.inventoryRunning).toBe(false))
+    expect(stack.scanner.emitTag(EPC.inWash)).toBe(false)
+    stack.scanner.emitTrigger(false) // release after capture — harmless
+
+    await screen.findByTestId('item-detail')
+    screen.getByText('TENT 20X20 FRAME')
   })
 
   it('Mass: hold accumulates a grid of Status/Quality/Bin/Common Name from the replica; row opens details; Clear resets', async () => {

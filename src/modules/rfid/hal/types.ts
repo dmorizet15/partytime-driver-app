@@ -33,6 +33,8 @@ export interface ScannerCapabilities {
   tagMemoryAccess: boolean
   /** True when setInventoryParameter / addMask / clearMask are usable. */
   inventoryTuning: boolean
+  /** True when the device surfaces a physical scan trigger (XR2 side trigger) to onTrigger. */
+  hardwareTrigger: boolean
   /** Output power range for this device (XR2: 0–33; short-range profile tops at 26). */
   powerRange: { min: number; max: number }
 }
@@ -66,6 +68,15 @@ export interface RfidScanner {
   stopInventory(): Promise<void>
   /** Subscribe to normalized tag reads (already deduplicated per device policy). Returns unsubscribe. */
   onTagRead(callback: (read: TagRead) => void): () => void
+
+  /**
+   * Subscribe to physical-trigger edges (true = pressed, false = released).
+   * Deliberately ALIVE regardless of initialize()/release() — a trigger press
+   * is typically what causes initialization. Devices without a hardware
+   * trigger (`capabilities.hardwareTrigger` false) never fire; callers
+   * feature-gate on the capability. Returns unsubscribe.
+   */
+  onTrigger(callback: (pressed: boolean) => void): () => void
 
   readTag(epc: string, bank: MemoryBank, offsetWords: number, lengthWords: number): Promise<string>
   writeTag(epc: string, bank: MemoryBank, offsetWords: number, dataHex: string): Promise<void>

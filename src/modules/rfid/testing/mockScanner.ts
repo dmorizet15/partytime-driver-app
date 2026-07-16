@@ -28,6 +28,7 @@ export class MockScanner implements RfidScanner {
     barcode: true,
     tagMemoryAccess: true,
     inventoryTuning: true,
+    hardwareTrigger: true,
     powerRange: { min: 0, max: 33 },
   }
 
@@ -38,6 +39,7 @@ export class MockScanner implements RfidScanner {
   private session: InventorySession | undefined
   private masks: string[] = []
   private listeners = new Set<(read: TagRead) => void>()
+  private triggerListeners = new Set<(pressed: boolean) => void>()
   private locateTargets = new Map<string, (rssi: number) => void>()
   private tags = new Map<string, MockTag>()
   private now = 1_000_000 // deterministic clock, advances per emission
@@ -80,6 +82,14 @@ export class MockScanner implements RfidScanner {
     this.locateTargets.get(epc)?.(rssi)
   }
 
+  /**
+   * Emit a physical-trigger edge. Delivered regardless of radio state — like
+   * hardware, where a press is what CAUSES initialization (HAL contract).
+   */
+  emitTrigger(pressed: boolean): void {
+    this.triggerListeners.forEach((cb) => cb(pressed))
+  }
+
   // ── Introspection for assertions ───────────────────────────────────────────
 
   get state() {
@@ -119,6 +129,11 @@ export class MockScanner implements RfidScanner {
   onTagRead(callback: (read: TagRead) => void): () => void {
     this.listeners.add(callback)
     return () => this.listeners.delete(callback)
+  }
+
+  onTrigger(callback: (pressed: boolean) => void): () => void {
+    this.triggerListeners.add(callback)
+    return () => this.triggerListeners.delete(callback)
   }
 
   async readTag(epc: string, bank: MemoryBank, offsetWords: number, lengthWords: number): Promise<string> {

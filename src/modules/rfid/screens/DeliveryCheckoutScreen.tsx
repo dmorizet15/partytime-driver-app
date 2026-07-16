@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAdapters, useTheme } from '../provider/RfidModuleProvider'
 import { useModuleRuntime } from '../provider/useModuleRuntime'
+import { useHardwareTrigger } from '../provider/useHardwareTrigger'
 import { usePendingPulls } from '../provider/usePendingPulls'
 import { ScanSession, type ScanHit } from '../flows/scanSession'
 import { CheckoutFlow, DELIVERY_STATUS, type CheckoutSummary } from '../flows/checkoutFlow'
@@ -73,6 +74,8 @@ export function DeliveryCheckoutScreen({ defaultPower = 25, onDone }: DeliveryCh
     },
   })
 
+  const trigger = useHardwareTrigger(runtime.status === 'ready' ? runtime.runtime.scanner : null)
+
   // Build/tear down the scan session with the runtime.
   useEffect(() => {
     if (runtime.status !== 'ready' || !flow) return
@@ -122,6 +125,10 @@ export function DeliveryCheckoutScreen({ defaultPower = 25, onDone }: DeliveryCh
     await session.stopRfid()
     setActive({ ...session.active })
   }
+
+  // The physical trigger is the same press-and-hold as the on-screen button —
+  // delivery arms 'Delivered' implicitly, so no extra gate here.
+  trigger.current = { onPress: () => void scanStart(), onRelease: () => void scanEnd() }
 
   const toggle = (kind: 'barcode' | 'nfc') => {
     const session = sessionRef.current

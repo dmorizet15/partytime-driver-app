@@ -19,6 +19,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAdapters, useTheme } from '../provider/RfidModuleProvider'
 import { useModuleRuntime } from '../provider/useModuleRuntime'
+import { useHardwareTrigger } from '../provider/useHardwareTrigger'
 import { usePendingPulls } from '../provider/usePendingPulls'
 import { ScanSession } from '../flows/scanSession'
 import { ITEM_STATUSES, REASON_REQUIRED_STATUSES } from '../flows/statusVocabulary'
@@ -74,6 +75,8 @@ export function TouchScanScreen({
     },
   })
 
+  const trigger = useHardwareTrigger(runtime.status === 'ready' ? runtime.runtime.scanner : null)
+
   useEffect(() => {
     if (runtime.status !== 'ready') return
     void runtime.runtime.replica.meta().then(setMeta)
@@ -126,6 +129,10 @@ export function TouchScanScreen({
     await session.stopRfid()
     setActive({ ...session.active })
   }
+
+  // The physical trigger is the same press-and-hold as the on-screen button —
+  // scanStart's status gate and first-tag-wins apply identically.
+  trigger.current = { onPress: () => void scanStart(), onRelease: () => void scanEnd() }
 
   const toggle = (kind: 'barcode' | 'nfc') => {
     const session = sessionRef.current

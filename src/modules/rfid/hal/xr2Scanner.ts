@@ -31,12 +31,16 @@ export class Xr2Scanner implements RfidScanner {
     barcode: true,
     tagMemoryAccess: false, // no bridge methods yet — see ASSUMPTIONS.md
     inventoryTuning: false, // no bridge methods yet — see ASSUMPTIONS.md
+    hardwareTrigger: true, // side trigger via the bridge trigger-event (Session 14)
     powerRange: { min: 0, max: 33 },
   }
 
   private initialized = false
   private listeners = new Set<(read: TagRead) => void>()
   private unsubscribeScan: (() => void) | null = null
+  private triggerListeners = new Set<(pressed: boolean) => void>()
+  private unsubscribeTrigger: (() => void) | null = null
+  private lastTriggerPressed: boolean | null = null
   private power = DEFAULT_POWER
 
   constructor(private readonly bridge: NativeBridge) {}
@@ -85,6 +89,29 @@ export class Xr2Scanner implements RfidScanner {
   onTagRead(callback: (read: TagRead) => void): () => void {
     this.listeners.add(callback)
     return () => this.listeners.delete(callback)
+  }
+
+  onTrigger(callback: (pressed: boolean) => void): () => void {
+    // Independent of initialize()/release() by contract: a trigger press is
+    // what CAUSES the radio to come up, so this must fire while powered down.
+    if (!this.unsubscribeTrigger) {
+      this.unsubscribeTrigger = this.bridge.on('trigger-event', (d: BridgeEventMap['trigger-event']) => {
+        // Android already edge-filters key repeats; drop any consecutive
+        // same-state edge that leaks through so callbacks see alternation.
+        if (d.pressed === this.lastTriggerPressed) return
+        this.lastTriggerPressed = d.pressed
+        this.triggerListeners.forEach((cb) => cb(d.pressed))
+      })
+    }
+    this.triggerListeners.add(callback)
+    return () => {
+      this.triggerListeners.delete(callback)
+      if (this.triggerListeners.size === 0 && this.unsubscribeTrigger) {
+        this.unsubscribeTrigger()
+        this.unsubscribeTrigger = null
+        this.lastTriggerPressed = null
+      }
+    }
   }
 
   async readTag(): Promise<string> {

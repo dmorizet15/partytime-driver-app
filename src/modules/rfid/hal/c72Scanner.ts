@@ -24,6 +24,7 @@ export class C72Scanner implements RfidScanner {
     barcode: false,
     tagMemoryAccess: false,
     inventoryTuning: false,
+    hardwareTrigger: false,
     powerRange: { min: 0, max: 30 },
   }
 
@@ -50,6 +51,9 @@ export class C72Scanner implements RfidScanner {
     this.die()
   }
   onTagRead(_callback: (read: TagRead) => void): () => void {
+    this.die()
+  }
+  onTrigger(_callback: (pressed: boolean) => void): () => void {
     this.die()
   }
   async readTag(_epc: string, _bank: MemoryBank, _offsetWords: number, _lengthWords: number): Promise<string> {

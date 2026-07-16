@@ -17,6 +17,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAdapters, useTheme } from '../provider/RfidModuleProvider'
 import { useModuleRuntime } from '../provider/useModuleRuntime'
+import { useHardwareTrigger } from '../provider/useHardwareTrigger'
 import { usePendingPulls } from '../provider/usePendingPulls'
 import { ScanSession, type ScanHit } from '../flows/scanSession'
 import { CheckoutFlow, type CheckoutSummary } from '../flows/checkoutFlow'
@@ -69,6 +70,8 @@ export function PickupReturnScreen({ defaultPower = 25, onDone }: PickupReturnSc
     },
   })
 
+  const trigger = useHardwareTrigger(runtime.status === 'ready' ? runtime.runtime.scanner : null)
+
   useEffect(() => {
     if (runtime.status !== 'ready' || !flow || !stop) return
     // Pre-fetch what should come back — replica-side, by last contract, offline.
@@ -116,6 +119,10 @@ export function PickupReturnScreen({ defaultPower = 25, onDone }: PickupReturnSc
     await session.stopRfid()
     setActive({ ...session.active })
   }
+
+  // The physical trigger is the same press-and-hold as the on-screen button —
+  // scanStart's armed-status gate applies identically (no status → no scan).
+  trigger.current = { onPress: () => void scanStart(), onRelease: () => void scanEnd() }
 
   const toggle = (kind: 'barcode' | 'nfc') => {
     const session = sessionRef.current
