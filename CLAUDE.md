@@ -142,6 +142,7 @@ Tables: `ava_knowledge` (022, verified Q&A, `status='published'` read / super_ad
 
 ## Session start ritual
 
+- **Step 1: `bash scripts/state.sh`** — computed repo state (branch, UNCOMMITTED vs UNPUSHED, migration head, env files). Every value carries its source; trust its output over memory or a stale clone. Core is byte-identical across PTR repos — per-repo logic goes in `scripts/state.local.sh`, never in the core.
 - **Run `npm run hooks:install` once per clone** (sets `core.hooksPath=.githooks`, enabling the blocking pre-push version guard — git does not clone hooks; verify with `git config core.hooksPath`).
 - Read `CLAUDE.md` + `tasks/todo.md` + `tasks/lessons.md`; read the relevant `docs/claude/` sub-doc for the active feature.
 - Fetch Notion: Master Project Hub + latest v1.1 Build Plan + most recent Session Summary.
