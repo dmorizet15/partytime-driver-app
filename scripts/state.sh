@@ -111,7 +111,10 @@ if [ -d supabase/migrations ]; then
     echo "head: $(basename "$head_file")  (local files — remote tracker not queried, may diverge)"
     # "next" derives from the NEWEST file only — a max over all files gets polluted by
     # foreign-convention names (e.g. stub files mirrored from another repo).
-    # Known conventions: <14-digit-ts>_<seq>_name.sql | <YYYYMMDD>_<seq>_name.sql | <YYYYMMDD><NNN>_name.sql
+    # Known conventions (matched most-specific first; each requires a specific char at
+    # position 5/9/12/15, so no two arms can cross-match the same filename):
+    #   <14-digit-ts>_<seq>_name.sql | <YYYYMMDD><NNN>_name.sql | <YYYYMMDD>_<seq>_name.sql
+    #   <NNNN>_name.sql  (bare zero-padded sequence, no date — e.g. EEC 0018_name.sql)
     hb="$(basename "$head_file")"
     head_seq=""
     case "$hb" in
@@ -127,6 +130,12 @@ if [ -d supabase/migrations ]; then
       [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_*)
         rest="${hb#????????_}"
         head_seq="$(printf '%s\n' "$rest" | sed -n 's/^0*\([0-9][0-9]*\)_.*/\1/p')"
+        ;;
+      [0-9][0-9][0-9][0-9]_*)
+        # bare zero-padded sequence, no date/timestamp (e.g. 0018_name.sql -> 18)
+        num="${hb%%_*}"
+        head_seq="$(printf '%s\n' "$num" | sed 's/^0*//')"
+        [ -z "$head_seq" ] && head_seq=0
         ;;
     esac
     if [ -n "$head_seq" ] && [ "$head_seq" -lt 100000 ] 2>/dev/null; then
