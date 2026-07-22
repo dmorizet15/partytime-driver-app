@@ -10,6 +10,7 @@ import Image from 'next/image'
 import BottomNav from '@/components/BottomNav'
 import AvaChip from '@/components/AvaChip'
 import AvaPreferencesSection from '@/components/ava/AvaPreferencesSection'
+import CalendarSyncSection from '@/components/calendarSync/CalendarSyncSection'
 import UploadComplianceDocModal from './UploadComplianceDocModal'
 import {
   DOCUMENT_LABELS,
@@ -687,6 +688,9 @@ export default function ProfileScreen() {
 
         {/* AVA preferences */}
         <AvaPreferencesSection />
+
+        {/* Google Calendar sync */}
+        <CalendarSyncSection />
 
         {/* Account */}
         <SectionEyebrow>Account</SectionEyebrow>
