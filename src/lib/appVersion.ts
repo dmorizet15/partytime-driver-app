@@ -24,6 +24,14 @@ export interface Release {
 // Newest FIRST. RELEASES[0] is the live version.
 export const RELEASES: readonly Release[] = [
   {
+    version: '2.8.0',
+    date: '2026-07-22',
+    bullets: [
+      `New: connect your Google Calendar from your Profile — your WhenIWork shifts then show up automatically as "Busy", so you don't get booked over`,
+      `Turn shift syncing on or off, or disconnect, anytime from your Profile`,
+    ],
+  },
+  {
     version: '2.7.2',
     date: '2026-07-13',
     bullets: [
