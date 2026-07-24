@@ -12,7 +12,7 @@ Full Phase 1 build per the locked Notion spec (`3a70aa6451b881af8f84f8da196b7dde
 - [x] `npx next build` green both repos.
 - [ ] **On-device smoke gate (THE gate — 5 of 7 spec items need a live device, same as every other feature in this codebase):**
   1. Delivery capture on a metered-unit test stop (photo + meter + fuel) → row lands, completion gated correctly until captured.
-  2. Pickup capture → OUT values shown for reference, IN captured, email arrives at dispatch@ with correct hours math (formula confirmed 2026-07-24 — see below, no longer hedged).
+  2. Pickup capture → OUT values shown for reference, IN captured, email arrives at dispatch@ with correct hours math (formula confirmed 2026-07-24 — see below, no longer hedged). **Now also verifiable without email (dashboard mig 109, same day):** the pickup stop's card gains an amber "N hrs overage" badge on its face when overage_hours > 0, and the full breakdown lives in the card's expanded Generator section — check there first if Resend isn't confirmed working yet.
   3. ~~50KVA name resolution~~ — VERIFIED via live DB query (no-suffix → Terex `c3e6cd13`, `(WN)` → `b765c407`, exact string match confirmed against live `non_truck_assets` rows).
   4. Skip path — reason+note logged, email shows MISSING CAPTURE.
   5. Offline capture (IndexedDB) → reconnect → flush lands the row + photo.
