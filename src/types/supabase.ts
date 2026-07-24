@@ -2504,9 +2504,12 @@ export type Database = {
           created_at: string
           fuel_level: string | null
           hour_meter: number | null
+          hours_used: number | null
           id: string
+          included_hours: number | null
           item_name: string
           ocr_prefill: Json | null
+          overage_hours: number | null
           photo_path: string | null
           recorded_at: string
           recorded_by: string | null
@@ -2522,9 +2525,12 @@ export type Database = {
           created_at?: string
           fuel_level?: string | null
           hour_meter?: number | null
+          hours_used?: number | null
           id?: string
+          included_hours?: number | null
           item_name: string
           ocr_prefill?: Json | null
+          overage_hours?: number | null
           photo_path?: string | null
           recorded_at?: string
           recorded_by?: string | null
@@ -2540,9 +2546,12 @@ export type Database = {
           created_at?: string
           fuel_level?: string | null
           hour_meter?: number | null
+          hours_used?: number | null
           id?: string
+          included_hours?: number | null
           item_name?: string
           ocr_prefill?: Json | null
+          overage_hours?: number | null
           photo_path?: string | null
           recorded_at?: string
           recorded_by?: string | null
