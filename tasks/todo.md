@@ -1,5 +1,29 @@
 # Open Tasks — partytime-driver-app
 
+## July 24, 2026 — Generator Stop Actions Phase 1 — branch `feat/generator-stop-actions` (UNMERGED); dashboard migs 107+108; VERSION 2.8.0 → 2.9.0
+
+Full Phase 1 build per the locked Notion spec (`3a70aa6451b881af8f84f8da196b7dde`): photo-first hour-meter + fuel-level capture on generator delivery/pickup stops, hard completion gate, offline IndexedDB queue, dashboard pickup-completion write-back + billing email, read-only board badge. Both repos build green. **NOT pushed to origin** — GitHub unreachable from the build sandbox (DNS/network); commits are local-only on the branch in both repos. **Also flagging: this was built on a named branch per the RFID precedent, but main's own Division of Labor section says "No branches until Darren says otherwise" — a real policy conflict surfaced mid-session (main's CLAUDE.md doesn't carry RFID's branch-strategy note, since that only ever existed on the RFID branch). Darren needs to decide: merge this branch via PR, or have a session rebuild it directly on `main`.**
+
+- [x] Verified next migration number fresh AFTER a `git pull` surfaced a NEW migration (106, `google_calendar_connections`, merged same day by another session) — used 107, then a second small migration (108, `usage_alert_sent_at` dedup stamp) found mid-build. See `tasks/lessons.md`.
+- [x] Schema: `stop_generator_actions` (dashboard mig 107) — capture-or-skip CHECK constraint, RLS mirroring `stop_equipment_returns`, `generator-action-photos` private storage bucket. Mig 108 adds `usage_alert_sent_at` for email dedup.
+- [x] Driver app: `src/lib/generatorActions/{units,service,offlineQueue}.ts`, `GeneratorActionsSection.tsx`, wired into `StopDetailScreen.tsx` as a HARD gate (both delivery + pickup), `GET /api/stops/generator-actions`.
+- [x] Dashboard: `POST /api/generator-actions/pickup-complete` (cross-app write-back, current_hours write, Resend usage email), `GET /api/generator-actions/photo-url` (signed URL mint for the board's read-only photo link), board badge + `GeneratorActionsV5.tsx` read-only section on the live `StopCardV5`/`WarehouseStopCard`.
+- [x] Verified live against the shared DB: all 4 asset UUIDs exist, active, names match the config exactly, `current_hours` null on all (matches spec claim).
+- [x] `npx next build` green both repos.
+- [ ] **On-device smoke gate (THE gate — 5 of 7 spec items need a live device, same as every other feature in this codebase):**
+  1. Delivery capture on a metered-unit test stop (photo + meter + fuel) → row lands, completion gated correctly until captured.
+  2. Pickup capture → OUT values shown for reference, IN captured, email arrives at dispatch@ with correct hours math (labeled "suggested").
+  3. ~~50KVA name resolution~~ — VERIFIED via live DB query (no-suffix → Terex `c3e6cd13`, `(WN)` → `b765c407`, exact string match confirmed against live `non_truck_assets` rows).
+  4. Skip path — reason+note logged, email shows MISSING CAPTURE.
+  5. Offline capture (IndexedDB) → reconnect → flush lands the row + photo.
+  6. `non_truck_assets.current_hours` updates after capture (only when the new reading exceeds the stored value — all 4 rows currently NULL, so the first real capture on each is the base case).
+  7. ~~Non-metered generator stop (e.g. Subaru 7.5K)~~ — VERIFIED by construction (not in the `GENERATOR_UNITS` config list → `matchingGeneratorUnits` returns empty → component renders `null`, gate is a no-op).
+- [ ] **Included/overage hours formula — Darren to confirm** (per spec's own Open Items): `full_weeks*40 + min(remaining_days*8, 40)`, `rentalDays` computed from the delivery_out stop's `scheduled_date` → the pickup_in stop's `scheduled_date` (my choice — flagged as the more semantically correct source than `order_start_date`/`order_end_date`, which is the customer's EVENT window, not the physical rental period; see CLAUDE.md subsystem block). Ships labeled "suggested" either way.
+- [ ] Serial numbers for the 4 towable units — nice-to-have per spec, not blocking.
+- [ ] Storage bucket decision (`generator-action-photos`) doubles as a chance to fix the POD-storage "not production-grade" flag mentioned in the spec — noted, not addressed this session (separate concern).
+- [ ] **Branch/merge decision (Darren) — see the flag at the top of this entry and in CLAUDE.md's Current build state.**
+- [ ] Phase 2 (parked, per spec): Claude Vision OCR pre-fill on the meter photo — depends on `ANTHROPIC_API_KEY` on driver-app Vercel (already an open task elsewhere in this file).
+
 ## July 13, 2026 — Equipment returns: pickup crews never reached the confirm card + What's New dumped the whole history — ON `main`; NO migration; VERSION 2.7.0 → 2.7.2
 
 Darren: first live pickup day. Crews said they had no way to check off the cords/chair carts the delivery crew left; Melissa was emailed that the items were left on site when the crews had actually brought them all back.

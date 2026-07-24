@@ -6,6 +6,22 @@ Format: one lesson per block. Lead with the rule, then **Why** and **How to appl
 
 ---
 
+## A migration number verified BEFORE a `git pull` is stale the instant the pull lands — re-verify AFTER pulling, not just once at session start.
+
+**Why:** 2026-07-24 (Generator Stop Actions), the dashboard repo's latest migration was checked (093 files, head `105`) BEFORE creating the feature branch. The branch-creation `git pull` then fast-forwarded in a same-day Calendar Sync merge that added migration `106` (`google_calendar_connections`) — a migration that didn't exist moments earlier. Writing the new feature's migration as `106` (the pre-pull answer) would have collided. The fix was mechanical: re-run the migration-count check AFTER every `git checkout`/`git pull` that could have moved `main`, not just once at the top of the session. "I checked at session start" is not the same claim as "I checked right before I wrote the file."
+
+**How to apply:** treat any git operation that syncs with `origin` (`pull`, `checkout` of a branch that tracks `main`, `fetch` + `merge`) as invalidating a previously-verified migration/version number. Re-verify immediately before writing the migration file, not from memory of an earlier check in the same session — this is the same "never trust a stated number, verify at the point of use" doctrine, just extended to include your OWN earlier verification if time and a sync operation have passed since.
+
+---
+
+## A CLAUDE.md loaded from a long-lived feature branch is NOT authoritative for what to do on `main` — branch-specific policy notes (like "use a named branch") can live only on that branch and never reach `main`'s own file.
+
+**Why:** 2026-07-24, a session started on `feat/rfid-native-integration` (open since 2026-07-09) whose CLAUDE.md said "Branch strategy: feature work → named branch; unrelated fixes → direct to main." Following that, a new unrelated feature (Generator Stop Actions) was built on a fresh `feat/generator-stop-actions` branch in both repos. But main's OWN CLAUDE.md — never touched by the RFID branch's un-merged commits — says plainly under Division of Labor: "All builds push to `main`. No branches until Darren says otherwise." The RFID branch's note was a diary entry for why THAT branch exists, written on the branch itself; it was never true of `main` and never merged back. Reading a stale/branch-scoped CLAUDE.md snapshot (carried over in conversation context from before a `git checkout main`) as if it described current `main` policy produced a real process deviation — a second branch built where the standing default calls for pushing directly to `main`.
+
+**How to apply:** after `git checkout`-ing to a different branch (especially `main`) mid-session, re-`Read` that branch's CLAUDE.md fresh rather than trusting a copy loaded into context before the checkout — division-of-labor / branch-strategy language is exactly the kind of thing that can differ file-to-file across branches with no merge conflict to surface it, since it's prose, not code. When a long-lived feature branch's CLAUDE.md contains a bullet that reads like a one-off justification ("branch strategy: X, because Y"), treat it as scoped to that branch's own existence, not as an update to the shared policy, unless it's also present on `main`.
+
+---
+
 ## An append-only list that a UI renders in full is a slow-motion bug. If entries belong to a version/date/user, MODEL that — don't flatten and hope the reader filters.
 
 **Why:** 2026-07-13. `appVersion.ts` kept every driver-facing changelog bullet in one flat array, and the "What's New" sheet rendered all of it under the newest version's header. Every release quietly made it worse until a 3-bullet bugfix release announced 26 features. The key detail: the app ALREADY stored the answer — `ptr_last_seen_version` — but used it only to decide *whether* to show the sheet, never *what* to show. The data to scope the view existed; the model didn't. Note also that the file's own instructions ("prepend the new bullets to CHANGELOG") faithfully produced the bug, so every author, human and AI, did the wrong thing correctly.
