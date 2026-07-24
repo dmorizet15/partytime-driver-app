@@ -2502,6 +2502,9 @@ export type Database = {
           action_type: string
           asset_id: string
           created_at: string
+          delivery_out_fuel_level: string | null
+          delivery_out_hour_meter: number | null
+          delivery_out_photo_path: string | null
           fuel_level: string | null
           hour_meter: number | null
           hours_used: number | null
@@ -2523,6 +2526,9 @@ export type Database = {
           action_type: string
           asset_id: string
           created_at?: string
+          delivery_out_fuel_level?: string | null
+          delivery_out_hour_meter?: number | null
+          delivery_out_photo_path?: string | null
           fuel_level?: string | null
           hour_meter?: number | null
           hours_used?: number | null
@@ -2544,6 +2550,9 @@ export type Database = {
           action_type?: string
           asset_id?: string
           created_at?: string
+          delivery_out_fuel_level?: string | null
+          delivery_out_hour_meter?: number | null
+          delivery_out_photo_path?: string | null
           fuel_level?: string | null
           hour_meter?: number | null
           hours_used?: number | null
