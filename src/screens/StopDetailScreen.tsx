@@ -52,6 +52,9 @@ import EquipmentPickupSection, {
   type EquipmentPickupSectionHandle,
 } from '@/components/equipment/EquipmentPickupSection'
 import EquipmentRetrieveCard from '@/components/equipment/EquipmentRetrieveCard'
+import GeneratorActionsSection, {
+  type GeneratorActionsSectionHandle,
+} from '@/components/generator/GeneratorActionsSection'
 import PickupAnswerCard from '@/components/pickup/PickupAnswerCard'
 import { commitEquipmentReturns, type EquipmentReturnEntry } from '@/lib/equipmentReturns/service'
 import { retrieveLabel } from '@/lib/equipmentReturns/rules'
@@ -92,6 +95,8 @@ const FONT_BODY    = "var(--font-inter), 'Inter', system-ui, -apple-system, sans
 
 // Scroll target for the "some left behind" branch of the equipment gate.
 const EQUIPMENT_PICKUP_ANCHOR = 'equipment-pickup-confirm'
+// Scroll target for the Generator Stop Actions hard gate.
+const GENERATOR_ACTIONS_ANCHOR = 'generator-actions-confirm'
 
 // ─── Stop type pill colors ────────────────────────────────────────────────────
 // Keep in lockstep with TYPE_PILL in DayRouteSelectorScreen — both depot
@@ -376,6 +381,13 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   // Pickup-side confirm (reservation ledger) — superset handle; completion
   // POSTs the confirmed counts + runs the final-pickup discrepancy check.
   const equipmentPickupRef = useRef<EquipmentPickupSectionHandle>(null)
+
+  // Generator Stop Actions — HARD gate (unlike Equipment Return's soft
+  // never-blocking prompt above). No metered unit on the stop → the section
+  // renders null and reports allResolved=true via its mount-time effect, so
+  // this defaults permissive and never blocks a non-generator stop.
+  const [generatorActionsResolved, setGeneratorActionsResolved] = useState(true)
+  const generatorActionsRef = useRef<GeneratorActionsSectionHandle>(null)
 
   // ── Equipment retrieval gate (2026-07-13) ─────────────────────────────────
   // A pickup crew can finish a stop in two taps ("Confirm all" at the top of
@@ -1185,6 +1197,16 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   // 2. Everything else → standard yes/no confirmation modal.
   function handleMarkCompleteTap() {
     if (!stop) return
+    // Generator Stop Actions — HARD gate (unlike equipmentGateBlocks below,
+    // which asks-but-never-blocks). Reachable here only in the recovery case
+    // where check-off already committed but the generator card wasn't
+    // resolved yet (the primary path guards the CTA itself — see
+    // handleInlineCheckoffComplete + the CTA's disabled condition).
+    if (!generatorActionsResolved) {
+      document.getElementById(GENERATOR_ACTIONS_ANCHOR)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      return
+    }
     if (equipmentGateBlocks(() => handleMarkCompleteTap())) return
     const isCodDelivery = stop.payment_state === 'cod' && stop.stop_type === 'delivery'
     if (isCodDelivery && cashConfirmed === false) {
@@ -1246,7 +1268,7 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   // ONE funnel: items → cash (COD only) → complete → navigate. The gate is
   // LOCAL — a TapGoods outage never traps the driver here.
   async function handleInlineCheckoffComplete() {
-    if (!stop || checkoffCommitting || !checkoffProgress.allResolved) return
+    if (!stop || checkoffCommitting || !checkoffProgress.allResolved || !generatorActionsResolved) return
     if (equipmentGateBlocks(() => void handleInlineCheckoffComplete())) return
     const handle = checkoffPanelRef.current
     if (!handle) return
@@ -2815,6 +2837,21 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
           </div>
         )}
 
+        {/* GENERATOR STOP ACTIONS — HARD gate (unlike the soft equipment
+            prompts above). Placed before the manifest for the same reason the
+            equipment pickup card moved up on 2026-07-13: a crew that never
+            scrolls past "Confirm all" must still see this. Renders null (no
+            gate) when the stop carries no metered unit. */}
+        {(stop.stop_type === 'delivery' || stop.stop_type === 'pickup') && !isCompleted && (
+          <div id={GENERATOR_ACTIONS_ANCHOR}>
+            <GeneratorActionsSection
+              ref={generatorActionsRef}
+              stop={stop}
+              onResolvedChange={setGeneratorActionsResolved}
+            />
+          </div>
+        )}
+
         {/* MANIFEST — when the inline check-off is active (Rev 1), the
             interactive panel IS the item list (confirm-all + per-line
             controls in the manifest slot); otherwise the static list. */}
@@ -3118,24 +3155,30 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
           flexShrink: 0,
         }}>
           <button
-            onClick={handleInlineCheckoffComplete}
+            onClick={
+              checkoffProgress.allResolved && !generatorActionsResolved
+                ? () => document.getElementById(GENERATOR_ACTIONS_ANCHOR)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                : handleInlineCheckoffComplete
+            }
             disabled={!checkoffProgress.allResolved || checkoffCommitting}
             style={{
               width: '100%', height: 48, borderRadius: 999, border: 0,
-              background: checkoffProgress.allResolved ? C.gold : C.off,
-              color: checkoffProgress.allResolved ? C.ink : C.muted,
+              background: checkoffProgress.allResolved && generatorActionsResolved ? C.gold : C.off,
+              color: checkoffProgress.allResolved && generatorActionsResolved ? C.ink : C.muted,
               cursor: checkoffProgress.allResolved && !checkoffCommitting ? 'pointer' : 'default',
               fontSize: 14.5, fontWeight: 900, fontFamily: FONT_DISPLAY,
               letterSpacing: '-0.01em',
-              boxShadow: checkoffProgress.allResolved ? '0 14px 30px -10px rgba(255,184,0,0.55)' : 'none',
+              boxShadow: checkoffProgress.allResolved && generatorActionsResolved ? '0 14px 30px -10px rgba(255,184,0,0.55)' : 'none',
               transition: 'background 160ms ease',
             }}
           >
             {checkoffCommitting
               ? 'Saving…'
-              : checkoffProgress.allResolved
-                ? (nextStop ? 'Complete Stop → Next' : 'Complete Stop')
-                : `Confirm ${checkoffProgress.total - checkoffProgress.confirmed} item${checkoffProgress.total - checkoffProgress.confirmed === 1 ? '' : 's'} to complete`}
+              : !checkoffProgress.allResolved
+                ? `Confirm ${checkoffProgress.total - checkoffProgress.confirmed} item${checkoffProgress.total - checkoffProgress.confirmed === 1 ? '' : 's'} to complete`
+                : !generatorActionsResolved
+                  ? 'Capture generator reading to complete'
+                  : (nextStop ? 'Complete Stop → Next' : 'Complete Stop')}
           </button>
           <div style={{
             marginTop: 3, textAlign: 'center',

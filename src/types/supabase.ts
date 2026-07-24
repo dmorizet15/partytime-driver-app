@@ -135,36 +135,198 @@ export type Database = {
           },
         ]
       }
+      ava_knowledge: {
+        Row: {
+          answer: string
+          category: string
+          created_at: string
+          created_by: string | null
+          id: string
+          last_edited_at: string
+          last_edited_by: string | null
+          question: string
+          source: string
+          status: string
+          version: number
+        }
+        Insert: {
+          answer: string
+          category?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          last_edited_at?: string
+          last_edited_by?: string | null
+          question: string
+          source?: string
+          status?: string
+          version?: number
+        }
+        Update: {
+          answer?: string
+          category?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          last_edited_at?: string
+          last_edited_by?: string | null
+          question?: string
+          source?: string
+          status?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ava_knowledge_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ava_knowledge_last_edited_by_fkey"
+            columns: ["last_edited_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ava_knowledge_gaps: {
+        Row: {
+          answer: string | null
+          answered_at: string | null
+          answered_by: string | null
+          asked_by: string | null
+          context: Json | null
+          created_at: string
+          id: string
+          is_answered: boolean
+          knowledge_id: string | null
+          question: string
+          surface: string
+        }
+        Insert: {
+          answer?: string | null
+          answered_at?: string | null
+          answered_by?: string | null
+          asked_by?: string | null
+          context?: Json | null
+          created_at?: string
+          id?: string
+          is_answered?: boolean
+          knowledge_id?: string | null
+          question: string
+          surface?: string
+        }
+        Update: {
+          answer?: string | null
+          answered_at?: string | null
+          answered_by?: string | null
+          asked_by?: string | null
+          context?: Json | null
+          created_at?: string
+          id?: string
+          is_answered?: boolean
+          knowledge_id?: string | null
+          question?: string
+          surface?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ava_knowledge_gaps_answered_by_fkey"
+            columns: ["answered_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ava_knowledge_gaps_asked_by_fkey"
+            columns: ["asked_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ava_knowledge_gaps_knowledge_id_fkey"
+            columns: ["knowledge_id"]
+            isOneToOne: false
+            referencedRelation: "ava_knowledge"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ava_settings: {
+        Row: {
+          key: string
+          updated_at: string
+          updated_by: string | null
+          value: string
+        }
+        Insert: {
+          key: string
+          updated_at?: string
+          updated_by?: string | null
+          value: string
+        }
+        Update: {
+          key?: string
+          updated_at?: string
+          updated_by?: string | null
+          value?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ava_settings_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ava_stop_notes: {
         Row: {
           address_key: string
           author_id: string | null
           created_at: string
+          created_by_role: string | null
           id: string
+          last_confirmed_at: string | null
           note: string
           photo_urls: string[]
           raw_address: string | null
+          status: string
           updated_at: string
+          visit_count_since_added: number
         }
         Insert: {
           address_key: string
           author_id?: string | null
           created_at?: string
+          created_by_role?: string | null
           id?: string
+          last_confirmed_at?: string | null
           note: string
           photo_urls?: string[]
           raw_address?: string | null
+          status?: string
           updated_at?: string
+          visit_count_since_added?: number
         }
         Update: {
           address_key?: string
           author_id?: string | null
           created_at?: string
+          created_by_role?: string | null
           id?: string
+          last_confirmed_at?: string | null
           note?: string
           photo_urls?: string[]
           raw_address?: string | null
+          status?: string
           updated_at?: string
+          visit_count_since_added?: number
         }
         Relationships: [
           {
@@ -175,6 +337,39 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      ava_vocabulary: {
+        Row: {
+          aliases: string[]
+          category: string
+          created_at: string
+          definition: string
+          id: string
+          status: string
+          term: string
+          updated_at: string
+        }
+        Insert: {
+          aliases?: string[]
+          category?: string
+          created_at?: string
+          definition: string
+          id?: string
+          status?: string
+          term: string
+          updated_at?: string
+        }
+        Update: {
+          aliases?: string[]
+          category?: string
+          created_at?: string
+          definition?: string
+          id?: string
+          status?: string
+          term?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       carrier_compliance: {
         Row: {
@@ -831,6 +1026,24 @@ export type Database = {
           },
         ]
       }
+      equipment_return_alerts: {
+        Row: {
+          emailed_at: string
+          payload: Json | null
+          reservation_id: string
+        }
+        Insert: {
+          emailed_at?: string
+          payload?: Json | null
+          reservation_id: string
+        }
+        Update: {
+          emailed_at?: string
+          payload?: Json | null
+          reservation_id?: string
+        }
+        Relationships: []
+      }
       field_work_orders: {
         Row: {
           asset_id: string | null
@@ -1040,6 +1253,53 @@ export type Database = {
           {
             foreignKeyName: "game_scores_player_id_fkey"
             columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      google_calendar_connections: {
+        Row: {
+          connected_at: string
+          enabled: boolean
+          google_calendar_id: string
+          google_email: string
+          id: string
+          last_error: string | null
+          refresh_token: string
+          updated_at: string
+          user_id: string | null
+          wiw_user_id: number
+        }
+        Insert: {
+          connected_at?: string
+          enabled?: boolean
+          google_calendar_id: string
+          google_email: string
+          id?: string
+          last_error?: string | null
+          refresh_token: string
+          updated_at?: string
+          user_id?: string | null
+          wiw_user_id: number
+        }
+        Update: {
+          connected_at?: string
+          enabled?: boolean
+          google_calendar_id?: string
+          google_email?: string
+          id?: string
+          last_error?: string | null
+          refresh_token?: string
+          updated_at?: string
+          user_id?: string | null
+          wiw_user_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "google_calendar_connections_user_id_fkey"
+            columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -1578,6 +1838,33 @@ export type Database = {
         }
         Relationships: []
       }
+      rfid_to_tapgoods_map: {
+        Row: {
+          confirmed_at: string | null
+          confirmed_by: string | null
+          match_type: string
+          quantity_per_scan: number
+          rfid_item_id: string
+          tapgoods_item_id: string
+        }
+        Insert: {
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          match_type?: string
+          quantity_per_scan?: number
+          rfid_item_id: string
+          tapgoods_item_id: string
+        }
+        Update: {
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          match_type?: string
+          quantity_per_scan?: number
+          rfid_item_id?: string
+          tapgoods_item_id?: string
+        }
+        Relationships: []
+      }
       route_crew: {
         Row: {
           created_at: string | null
@@ -1685,6 +1972,7 @@ export type Database = {
           transfer_pending_to: string | null
           truck_id: string | null
           truck_id_2: string | null
+          truck_id_3: string | null
           unload_completed_at: string | null
           unload_started_at: string | null
           updated_at: string
@@ -1713,6 +2001,7 @@ export type Database = {
           transfer_pending_to?: string | null
           truck_id?: string | null
           truck_id_2?: string | null
+          truck_id_3?: string | null
           unload_completed_at?: string | null
           unload_started_at?: string | null
           updated_at?: string
@@ -1741,6 +2030,7 @@ export type Database = {
           transfer_pending_to?: string | null
           truck_id?: string | null
           truck_id_2?: string | null
+          truck_id_3?: string | null
           unload_completed_at?: string | null
           unload_started_at?: string | null
           updated_at?: string
@@ -1766,6 +2056,13 @@ export type Database = {
           {
             foreignKeyName: "routes_truck_id_2_fkey"
             columns: ["truck_id_2"]
+            isOneToOne: false
+            referencedRelation: "trucks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "routes_truck_id_3_fkey"
+            columns: ["truck_id_3"]
             isOneToOne: false
             referencedRelation: "trucks"
             referencedColumns: ["id"]
@@ -1964,6 +2261,145 @@ export type Database = {
         }
         Relationships: []
       }
+      sms_inbound_messages: {
+        Row: {
+          body: string
+          created_at: string
+          customer_name: string | null
+          from_number: string
+          id: string
+          is_read: boolean
+          matched: boolean
+          rc_message_id: string | null
+          received_at: string
+          route_id: string | null
+          stop_id: string | null
+          to_number: string
+          will_call_order_id: string | null
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          customer_name?: string | null
+          from_number: string
+          id?: string
+          is_read?: boolean
+          matched?: boolean
+          rc_message_id?: string | null
+          received_at?: string
+          route_id?: string | null
+          stop_id?: string | null
+          to_number: string
+          will_call_order_id?: string | null
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          customer_name?: string | null
+          from_number?: string
+          id?: string
+          is_read?: boolean
+          matched?: boolean
+          rc_message_id?: string | null
+          received_at?: string
+          route_id?: string | null
+          stop_id?: string | null
+          to_number?: string
+          will_call_order_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sms_inbound_messages_route_id_fkey"
+            columns: ["route_id"]
+            isOneToOne: false
+            referencedRelation: "routes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_inbound_messages_stop_id_fkey"
+            columns: ["stop_id"]
+            isOneToOne: false
+            referencedRelation: "dispatch_stops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_inbound_messages_will_call_order_id_fkey"
+            columns: ["will_call_order_id"]
+            isOneToOne: false
+            referencedRelation: "will_call_orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sms_outbound_messages: {
+        Row: {
+          created_at: string
+          error_message: string | null
+          formatted_time_sent: string | null
+          id: string
+          message_body: string
+          message_type: string
+          rc_message_id: string | null
+          recipient_name: string
+          recipient_phone: string
+          route_id: string | null
+          sent_at: string | null
+          sent_by_name: string | null
+          status: string
+          stop_id: string | null
+          will_call_order_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          error_message?: string | null
+          formatted_time_sent?: string | null
+          id?: string
+          message_body: string
+          message_type: string
+          rc_message_id?: string | null
+          recipient_name: string
+          recipient_phone: string
+          route_id?: string | null
+          sent_at?: string | null
+          sent_by_name?: string | null
+          status: string
+          stop_id?: string | null
+          will_call_order_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          error_message?: string | null
+          formatted_time_sent?: string | null
+          id?: string
+          message_body?: string
+          message_type?: string
+          rc_message_id?: string | null
+          recipient_name?: string
+          recipient_phone?: string
+          route_id?: string | null
+          sent_at?: string | null
+          sent_by_name?: string | null
+          status?: string
+          stop_id?: string | null
+          will_call_order_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sms_outbound_messages_stop_id_fkey"
+            columns: ["stop_id"]
+            isOneToOne: false
+            referencedRelation: "dispatch_stops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_outbound_messages_will_call_order_id_fkey"
+            columns: ["will_call_order_id"]
+            isOneToOne: false
+            referencedRelation: "will_call_orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sop_entries: {
         Row: {
           content: string
@@ -1971,9 +2407,12 @@ export type Database = {
           department: string | null
           effective_date: string | null
           id: string
+          last_edited_at: string
+          last_edited_by: string | null
           last_synced_at: string | null
           notion_page_id: string | null
           sop_number: string
+          status: string
           title: string
           updated_at: string | null
           version: string | null
@@ -1984,9 +2423,12 @@ export type Database = {
           department?: string | null
           effective_date?: string | null
           id?: string
+          last_edited_at?: string
+          last_edited_by?: string | null
           last_synced_at?: string | null
           notion_page_id?: string | null
           sop_number: string
+          status?: string
           title: string
           updated_at?: string | null
           version?: string | null
@@ -1997,14 +2439,142 @@ export type Database = {
           department?: string | null
           effective_date?: string | null
           id?: string
+          last_edited_at?: string
+          last_edited_by?: string | null
           last_synced_at?: string | null
           notion_page_id?: string | null
           sop_number?: string
+          status?: string
           title?: string
           updated_at?: string | null
           version?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "sop_entries_last_edited_by_fkey"
+            columns: ["last_edited_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stop_equipment_returns: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          equipment_key: string
+          id: string
+          quantity: number
+          stop_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          equipment_key: string
+          id?: string
+          quantity: number
+          stop_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          equipment_key?: string
+          id?: string
+          quantity?: number
+          stop_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stop_equipment_returns_stop_id_fkey"
+            columns: ["stop_id"]
+            isOneToOne: false
+            referencedRelation: "dispatch_stops"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stop_generator_actions: {
+        Row: {
+          action_type: string
+          asset_id: string
+          created_at: string
+          fuel_level: string | null
+          hour_meter: number | null
+          id: string
+          item_name: string
+          ocr_prefill: Json | null
+          photo_path: string | null
+          recorded_at: string
+          recorded_by: string | null
+          skip_note: string | null
+          skip_reason: string | null
+          stop_id: string
+          updated_at: string
+          usage_alert_sent_at: string | null
+        }
+        Insert: {
+          action_type: string
+          asset_id: string
+          created_at?: string
+          fuel_level?: string | null
+          hour_meter?: number | null
+          id?: string
+          item_name: string
+          ocr_prefill?: Json | null
+          photo_path?: string | null
+          recorded_at?: string
+          recorded_by?: string | null
+          skip_note?: string | null
+          skip_reason?: string | null
+          stop_id: string
+          updated_at?: string
+          usage_alert_sent_at?: string | null
+        }
+        Update: {
+          action_type?: string
+          asset_id?: string
+          created_at?: string
+          fuel_level?: string | null
+          hour_meter?: number | null
+          id?: string
+          item_name?: string
+          ocr_prefill?: Json | null
+          photo_path?: string | null
+          recorded_at?: string
+          recorded_by?: string | null
+          skip_note?: string | null
+          skip_reason?: string | null
+          stop_id?: string
+          updated_at?: string
+          usage_alert_sent_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stop_generator_actions_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "non_truck_assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stop_generator_actions_recorded_by_fkey"
+            columns: ["recorded_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stop_generator_actions_stop_id_fkey"
+            columns: ["stop_id"]
+            isOneToOne: false
+            referencedRelation: "dispatch_stops"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       stop_item_checkoffs: {
         Row: {
@@ -2069,6 +2639,54 @@ export type Database = {
             columns: ["work_order_id"]
             isOneToOne: false
             referencedRelation: "field_work_orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stop_visit_notes: {
+        Row: {
+          address_key: string
+          created_at: string
+          created_by: string | null
+          id: string
+          note_category: string
+          note_text: string
+          order_ref: string | null
+          stop_id: string | null
+        }
+        Insert: {
+          address_key: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          note_category: string
+          note_text: string
+          order_ref?: string | null
+          stop_id?: string | null
+        }
+        Update: {
+          address_key?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          note_category?: string
+          note_text?: string
+          order_ref?: string | null
+          stop_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stop_visit_notes_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stop_visit_notes_stop_id_fkey"
+            columns: ["stop_id"]
+            isOneToOne: false
+            referencedRelation: "dispatch_stops"
             referencedColumns: ["id"]
           },
         ]
@@ -2145,6 +2763,51 @@ export type Database = {
           sms_status?: string | null
           stop_id?: string
           stop_type?: string
+        }
+        Relationships: []
+      }
+      tag_assignments: {
+        Row: {
+          active: boolean
+          assigned_at: string
+          assigned_by: string
+          barcode: string | null
+          bin_location: string | null
+          common_name: string
+          epc: string | null
+          id: string
+          item_id: string
+          nfc_uid: string | null
+          notes: string | null
+          quality: string | null
+        }
+        Insert: {
+          active?: boolean
+          assigned_at?: string
+          assigned_by: string
+          barcode?: string | null
+          bin_location?: string | null
+          common_name: string
+          epc?: string | null
+          id?: string
+          item_id: string
+          nfc_uid?: string | null
+          notes?: string | null
+          quality?: string | null
+        }
+        Update: {
+          active?: boolean
+          assigned_at?: string
+          assigned_by?: string
+          barcode?: string | null
+          bin_location?: string | null
+          common_name?: string
+          epc?: string | null
+          id?: string
+          item_id?: string
+          nfc_uid?: string | null
+          notes?: string | null
+          quality?: string | null
         }
         Relationships: []
       }
@@ -2613,6 +3276,7 @@ export type Database = {
           staged_by: string | null
           staged_location: string | null
           status: string | null
+          tapgoods_divergent_items: Json | null
           tapgoods_rental_id: string | null
           tapgoods_sync_updated_at: string | null
           tapgoods_token: string | null
@@ -2656,6 +3320,7 @@ export type Database = {
           staged_by?: string | null
           staged_location?: string | null
           status?: string | null
+          tapgoods_divergent_items?: Json | null
           tapgoods_rental_id?: string | null
           tapgoods_sync_updated_at?: string | null
           tapgoods_token?: string | null
@@ -2699,6 +3364,7 @@ export type Database = {
           staged_by?: string | null
           staged_location?: string | null
           status?: string | null
+          tapgoods_divergent_items?: Json | null
           tapgoods_rental_id?: string | null
           tapgoods_sync_updated_at?: string | null
           tapgoods_token?: string | null
@@ -2750,7 +3416,22 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      sms_conversations_v: {
+        Row: {
+          body: string | null
+          customer_name: string | null
+          direction: string | null
+          is_read: boolean | null
+          message_type: string | null
+          phone_number: string | null
+          route_id: string | null
+          sent_at: string | null
+          sent_by_name: string | null
+          stop_id: string | null
+          will_call_order_id: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       ensure_warehouse_return_for_route: {

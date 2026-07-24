@@ -24,6 +24,14 @@ export interface Release {
 // Newest FIRST. RELEASES[0] is the live version.
 export const RELEASES: readonly Release[] = [
   {
+    version: '2.9.0',
+    date: '2026-07-24',
+    bullets: [
+      `New: delivery and pickup stops for our metered generators now ask you to snap a photo of the fuel gauge and hour meter — takes a few seconds and helps us bill accurately`,
+      `Can't get a clean reading? Tell us why (no meter, can't read it, etc.) and move on — it's logged either way`,
+    ],
+  },
+  {
     version: '2.8.0',
     date: '2026-07-22',
     bullets: [
