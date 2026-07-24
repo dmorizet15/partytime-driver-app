@@ -4,6 +4,37 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-07-24 — Generator Stop Actions Phase 1 (dashboard migs 107–110; v2.9.0)
+
+**Scope:** Full Phase 1 build per the locked Notion spec (`3a70aa6451b881af8f84f8da196b7dde`) — photo-first hour-meter + fuel-level capture on generator delivery/pickup stops for the 4 metered towables, hard completion gate, offline queue, dashboard write-back + billing email, board visibility.
+
+### Shipped
+- Migration 107 (dashboard) — `stop_generator_actions` (capture-or-skip CHECK, RLS mirroring `stop_equipment_returns`) + `generator-action-photos` private storage bucket.
+- Migration 108 (dashboard) — `usage_alert_sent_at` email-dedup stamp.
+- Migration 109 (dashboard) — `hours_used`/`included_hours`/`overage_hours` persisted on the pickup_in row (previously computed once, emailed, and discarded).
+- Migration 110 (dashboard) — snapshot of the paired delivery_out reading (`delivery_out_hour_meter`/`_fuel_level`/`_photo_path`) persisted on the pickup_in row, so the board shows Out + In together without a second round-trip.
+- Driver app: `src/lib/generatorActions/{units,service,offlineQueue}.ts`, `GeneratorActionsSection.tsx` (forced-camera photo-first capture, skip escape hatch), wired into `StopDetailScreen.tsx` as a HARD gate on both delivery and pickup completion. `GET /api/stops/generator-actions` (service-role cross-route prefill read). New IndexedDB offline queue — a required capture photo is a Blob, the existing localStorage-JSON queues can't hold one.
+- Dashboard: `POST /api/generator-actions/pickup-complete` (cross-app write-back — paired delivery-row read, `non_truck_assets.current_hours` write, billing email, dedup'd retries), `GET /api/generator-actions/photo-url` (signed URL mint), read-only board badge + expanded `GeneratorActionsV5.tsx` section on the live `StopCardV5`/`WarehouseStopCard`.
+- Included/overage-hours formula confirmed by Darren same day: `included = full_weeks×40 + min(remaining_days×8, 40)`; the email and board both present these as authoritative, not "suggested."
+
+### Verified (no live device available — see Smoke tests below)
+- Live DB query: all 4 generator asset UUIDs exist, active, item names match the detection config exactly.
+- **End-to-end data-layer smoke test:** temporary rows inserted against a real historical generator stop pair (Nancy Kelly / Bird & Bottle, 130KVA WN, delivery `dc43500d…` 7/17 → pickup `3dd998db…` 7/19), read back via the exact embedded-select shape the board runs, traced by hand through `matchingGeneratorUnits`/`generatorCaptureState`/`generatorOverageHours` and the `GeneratorActionsV5` render logic — all produced the correct result (complete badge, 9 hrs overage badge, Out/In/Used/Included/Overage lines). Rows deleted immediately after; `dispatch_stops` was never touched.
+
+### Process note
+Initially built on a named branch (a real slip against both repos' "no branches until Darren says otherwise" policy, inherited as stale context from a different repo's long-lived RFID feature-branch CLAUDE.md before checking out `main` fresh). Darren caught it and had it fast-forwarded directly onto `main` the same session (`git merge --ff-only`, no rebase, no history rewrite; branch deleted). Full narrative: dashboard repo's `tasks/session-close-2026-07-24-generator-stop-actions.md`.
+
+### Smoke tests pending (THE gate — needs a live phone; no real generator job on the books until 2026-09-13)
+1. Delivery capture (photo + meter + fuel) gates completion correctly.
+2. Pickup capture shows the OUT reference + a real dispatch@ email arrives with correct math.
+3. Skip path logs + email shows MISSING CAPTURE.
+4. Offline capture flushes on reconnect.
+5. `non_truck_assets.current_hours` updates after a real capture.
+
+(50KVA name resolution and the non-metered-stop no-card behavior were verified via live DB query + code inspection — don't need a device.)
+
+---
+
 ## 2026-07-13 (c) — Equipment gate: keep asking until answered + plain "left on site" alert (no migration; v2.7.2)
 
 **Darren, after the v2.7.0 on-device smoke test** (which passed — the cards and the prompt appear correctly): the equipment question must not be tap-past-able, and answering "no" must tell Melissa the items were left behind.
