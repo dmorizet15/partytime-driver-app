@@ -12,13 +12,13 @@ Full Phase 1 build per the locked Notion spec (`3a70aa6451b881af8f84f8da196b7dde
 - [x] `npx next build` green both repos.
 - [ ] **On-device smoke gate (THE gate — 5 of 7 spec items need a live device, same as every other feature in this codebase):**
   1. Delivery capture on a metered-unit test stop (photo + meter + fuel) → row lands, completion gated correctly until captured.
-  2. Pickup capture → OUT values shown for reference, IN captured, email arrives at dispatch@ with correct hours math (labeled "suggested").
+  2. Pickup capture → OUT values shown for reference, IN captured, email arrives at dispatch@ with correct hours math (formula confirmed 2026-07-24 — see below, no longer hedged).
   3. ~~50KVA name resolution~~ — VERIFIED via live DB query (no-suffix → Terex `c3e6cd13`, `(WN)` → `b765c407`, exact string match confirmed against live `non_truck_assets` rows).
   4. Skip path — reason+note logged, email shows MISSING CAPTURE.
   5. Offline capture (IndexedDB) → reconnect → flush lands the row + photo.
   6. `non_truck_assets.current_hours` updates after capture (only when the new reading exceeds the stored value — all 4 rows currently NULL, so the first real capture on each is the base case).
   7. ~~Non-metered generator stop (e.g. Subaru 7.5K)~~ — VERIFIED by construction (not in the `GENERATOR_UNITS` config list → `matchingGeneratorUnits` returns empty → component renders `null`, gate is a no-op).
-- [ ] **Included/overage hours formula — Darren to confirm** (per spec's own Open Items): `full_weeks*40 + min(remaining_days*8, 40)`, `rentalDays` computed from the delivery_out stop's `scheduled_date` → the pickup_in stop's `scheduled_date` (my choice — flagged as the more semantically correct source than `order_start_date`/`order_end_date`, which is the customer's EVENT window, not the physical rental period; see CLAUDE.md subsystem block). Ships labeled "suggested" either way.
+- [x] **Included/overage hours formula — CONFIRMED by Darren 2026-07-24**: `included = full_weeks*40 + min(remaining_days*8, 40)`, `overage = max(0, hours_used - included)`; `rentalDays` = the delivery_out stop's `scheduled_date` → the pickup_in stop's `scheduled_date` (not `order_start_date`/`order_end_date`, which is the customer's TapGoods EVENT window, a different concept). Dashboard email (`generatorActionsNotifications.ts`, `pickup-complete/route.ts`) un-hedged — presented as authoritative billing math, no longer labeled "suggested."
 - [ ] Serial numbers for the 4 towable units — nice-to-have per spec, not blocking.
 - [ ] Storage bucket decision (`generator-action-photos`) doubles as a chance to fix the POD-storage "not production-grade" flag mentioned in the spec — noted, not addressed this session (separate concern).
 - [ ] **Push `main` to origin (both repos)** once a machine with GitHub access is available — this is the only remaining blocker to the code being live-deployable.
