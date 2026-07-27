@@ -49,3 +49,4 @@ public/swe-worker*.js.map
 *.tsbuildinfo
 next-env.d.ts
 .env*.local
+.env*
