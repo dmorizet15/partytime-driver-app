@@ -685,6 +685,7 @@ export type Database = {
           completed_at: string | null
           constraint_confidence: string | null
           created_at: string
+          created_by: string | null
           customer_cell: string | null
           customer_confirmed: boolean
           customer_confirmed_at: string | null
@@ -710,10 +711,12 @@ export type Database = {
           has_any_constraint: boolean
           has_structured_constraints: boolean
           id: string
+          is_billable: boolean
           items: Json | null
           linked_stop_id: string | null
           loaded_at: string | null
           loaded_by: string | null
+          manual_items: Json | null
           no_pickup_needed: boolean
           notes: string | null
           notes_additional_delivery: string | null
@@ -738,15 +741,19 @@ export type Database = {
             | null
           pickup_window_end: string | null
           pickup_window_start: string | null
+          related_reservation_id: string | null
           required_pickup_count: number
           reservation_id: string | null
           route_id: string | null
           route_position: number | null
           scheduled_date: string
           scheduled_time: string | null
+          service_cause: string | null
+          service_reason: string | null
           sms_override_phone: string | null
           stop_status: string | null
           stop_type: Database["public"]["Enums"]["stop_type_enum"]
+          suppress_customer_sms: boolean
           sync_date_updated_at: string | null
           sync_prev_scheduled_date: string | null
           tapgoods_discrepancy_emailed_at: string | null
@@ -774,6 +781,7 @@ export type Database = {
           completed_at?: string | null
           constraint_confidence?: string | null
           created_at?: string
+          created_by?: string | null
           customer_cell?: string | null
           customer_confirmed?: boolean
           customer_confirmed_at?: string | null
@@ -799,10 +807,12 @@ export type Database = {
           has_any_constraint?: boolean
           has_structured_constraints?: boolean
           id?: string
+          is_billable?: boolean
           items?: Json | null
           linked_stop_id?: string | null
           loaded_at?: string | null
           loaded_by?: string | null
+          manual_items?: Json | null
           no_pickup_needed?: boolean
           notes?: string | null
           notes_additional_delivery?: string | null
@@ -827,15 +837,19 @@ export type Database = {
             | null
           pickup_window_end?: string | null
           pickup_window_start?: string | null
+          related_reservation_id?: string | null
           required_pickup_count?: number
           reservation_id?: string | null
           route_id?: string | null
           route_position?: number | null
           scheduled_date: string
           scheduled_time?: string | null
+          service_cause?: string | null
+          service_reason?: string | null
           sms_override_phone?: string | null
           stop_status?: string | null
           stop_type: Database["public"]["Enums"]["stop_type_enum"]
+          suppress_customer_sms?: boolean
           sync_date_updated_at?: string | null
           sync_prev_scheduled_date?: string | null
           tapgoods_discrepancy_emailed_at?: string | null
@@ -863,6 +877,7 @@ export type Database = {
           completed_at?: string | null
           constraint_confidence?: string | null
           created_at?: string
+          created_by?: string | null
           customer_cell?: string | null
           customer_confirmed?: boolean
           customer_confirmed_at?: string | null
@@ -888,10 +903,12 @@ export type Database = {
           has_any_constraint?: boolean
           has_structured_constraints?: boolean
           id?: string
+          is_billable?: boolean
           items?: Json | null
           linked_stop_id?: string | null
           loaded_at?: string | null
           loaded_by?: string | null
+          manual_items?: Json | null
           no_pickup_needed?: boolean
           notes?: string | null
           notes_additional_delivery?: string | null
@@ -916,15 +933,19 @@ export type Database = {
             | null
           pickup_window_end?: string | null
           pickup_window_start?: string | null
+          related_reservation_id?: string | null
           required_pickup_count?: number
           reservation_id?: string | null
           route_id?: string | null
           route_position?: number | null
           scheduled_date?: string
           scheduled_time?: string | null
+          service_cause?: string | null
+          service_reason?: string | null
           sms_override_phone?: string | null
           stop_status?: string | null
           stop_type?: Database["public"]["Enums"]["stop_type_enum"]
+          suppress_customer_sms?: boolean
           sync_date_updated_at?: string | null
           sync_prev_scheduled_date?: string | null
           tapgoods_discrepancy_emailed_at?: string | null
@@ -943,6 +964,13 @@ export type Database = {
             columns: ["linked_stop_id"]
             isOneToOne: false
             referencedRelation: "dispatch_stops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dispatch_stops_related_reservation_id_fkey"
+            columns: ["related_reservation_id"]
+            isOneToOne: false
+            referencedRelation: "reservations"
             referencedColumns: ["id"]
           },
           {
@@ -3475,7 +3503,7 @@ export type Database = {
         | "balance_due"
         | "credit"
       route_status_enum: "draft" | "dispatched" | "in_progress" | "complete"
-      stop_type_enum: "delivery" | "pickup" | "warehouse_return"
+      stop_type_enum: "delivery" | "pickup" | "warehouse_return" | "service"
       user_role:
         | "super_admin"
         | "scheduler"
@@ -3629,7 +3657,7 @@ export const Constants = {
         "credit",
       ],
       route_status_enum: ["draft", "dispatched", "in_progress", "complete"],
-      stop_type_enum: ["delivery", "pickup", "warehouse_return"],
+      stop_type_enum: ["delivery", "pickup", "warehouse_return", "service"],
       user_role: [
         "super_admin",
         "scheduler",
