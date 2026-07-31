@@ -2,9 +2,14 @@
 
 Tracking only **open** debt and active blockers. For per-session smoke-test coverage, see `docs/claude/stack.md` NEXT block.
 
-Last reviewed: 2026-05-16.
+Last reviewed: 2026-07-31.
 
 ---
+
+## Departure semantics (2026-07-31, Route 1 premature-completion incident)
+- **`dispatch_stops.actual_departure_at` is still written equal to `completed_at`** by `/api/complete-stop` ("the driver tap IS the departure moment"). Migration 033 split the two columns precisely so "marked done" and "actually left" could diverge — then they were written identically, so the distinction lives in the schema and nowhere in the behaviour. Two consumers believe it: the driver-app auto-ETA and the dashboard ETA cascade anchor. On 2026-07-31 that produced a customer text ~3 hours early and a board whose stop-3 ETA (10:13 AM) read earlier than stop-2's (12:19 PM).
+- **Splitting them is audited safe but deliberately NOT done.** Full trace of all nine consumers: `stop_status === 'completed'` covers every `isCompleted` fallback (`StopCard`, `StopRow`, `WarehouseStopCard` — each comments that `actual_departure_at` is only a "fallback in case status didn't write", and since `/api/complete-stop` writes both in ONE update they cannot diverge); `hasAnyDeparted` (warehouse 'out' column) is OR'd with route-level `routes.actual_departure_at`, stamped separately at Start Route; only the `'otw'` last-status label in `warehouseOverviewServer.ts:368` would degrade. **The blocker is not safety, it is the absence of a real departure signal** — moving the stamp to a Navigate tap risks it never being written at all (drivers who know the route skip Navigate), which would silently disable the ETA anchor on every route. The geofence cannot supply it either: `useArrivalGeofence` is arrival-only, foreground-only, and terminal once it fires.
+- **Mitigations shipped instead (v2.10.0):** the driver is asked before the text goes out (`AutoEtaOptInRow`), and the dashboard rejects an anchor that lands before a stop's planned dwell-inclusive arrival. Revisit the column split only if premature completions keep distorting the board, and only alongside an explicit departure signal.
 
 ## Active Blockers
 - Easy RFID Pro does not launch on real Android device (out of v1.1 scope)
