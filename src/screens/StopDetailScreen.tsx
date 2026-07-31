@@ -93,6 +93,88 @@ const C = {
 const FONT_DISPLAY = "var(--font-archivo), 'Archivo', 'Inter', system-ui, -apple-system, sans-serif"
 const FONT_BODY    = "var(--font-inter), 'Inter', system-ui, -apple-system, sans-serif"
 
+// ─── Auto-ETA opt-out row ────────────────────────────────────────────────────
+// Renders ONLY when an auto-ETA would actually fire on completion (see
+// getAutoEtaTarget) — a driver without auto_send_eta never sees new UI.
+//
+// Placement rule: this MUST live inside whichever completion CTA block is live,
+// directly above the button, so it is on screen at the instant of the tap. The
+// 2026-07-13 equipment-prompt post-mortem is explicit — a pickup crew completes
+// in two taps and never scrolls past the item list, so a control below the fold
+// is a control that is never used. Same failure mode, same rule.
+//
+// Strips a trailing " - M/D/YYYY" from the order name the same way stopNames()
+// does ("Keira Gilstad - 08/01/2026" → "Keira Gilstad"); contact name wins
+// because that is the person the SMS actually addresses (recipient_name in
+// sms_outbound_messages).
+const TRAILING_DATE_RE = /\s+-\s+\d{1,2}\/\d{1,2}\/\d{2,4}\s*$/
+
+function autoEtaDisplayName(s: Stop): string {
+  const contact = (s.customer_name ?? '').trim()
+  const order   = (s.company_name ?? '').replace(TRAILING_DATE_RE, '').trim()
+  return contact || order || 'the next customer'
+}
+
+function AutoEtaOptInRow({
+  name, checked, onChange, compact = false,
+}: {
+  name: string
+  checked: boolean
+  onChange: (next: boolean) => void
+  compact?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      style={{
+        width: '100%',
+        marginBottom: compact ? 7 : 12,
+        display: 'flex', alignItems: 'center', gap: 10,
+        padding: compact ? '7px 10px' : '10px 12px',
+        borderRadius: 12,
+        border: `1px solid ${checked ? 'rgba(255,184,0,0.60)' : 'rgba(10,11,20,0.16)'}`,
+        background: checked ? C.goldSoft : C.paper,
+        cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+        transition: 'background 160ms ease, border-color 160ms ease',
+      }}
+    >
+      <span style={{
+        width: 20, height: 20, borderRadius: 6, flexShrink: 0,
+        border: `2px solid ${checked ? C.goldDeep : 'rgba(10,11,20,0.30)'}`,
+        background: checked ? C.goldDeep : 'transparent',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        {checked && (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M20 6L9 17l-5-5" stroke="#fff" strokeWidth="3.5"
+                  strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        )}
+      </span>
+      <span style={{ minWidth: 0, flex: 1 }}>
+        <span style={{
+          display: 'block',
+          fontSize: compact ? 12 : 13, fontWeight: 800, color: C.ink, lineHeight: 1.25,
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {checked ? `Text ${name} you're on the way` : `Don't text ${name} yet`}
+        </span>
+        <span style={{
+          display: 'block', marginTop: 1,
+          fontSize: compact ? 9.5 : 11, fontWeight: 600, color: C.muted, lineHeight: 1.3,
+        }}>
+          {checked
+            ? 'Sends when you complete this stop'
+            : 'Staying on site — use Send ETA when you roll'}
+        </span>
+      </span>
+    </button>
+  )
+}
+
 // Scroll target for the "some left behind" branch of the equipment gate.
 const EQUIPMENT_PICKUP_ANCHOR = 'equipment-pickup-confirm'
 // Scroll target for the Generator Stop Actions hard gate.
@@ -330,6 +412,17 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   const transferredAwayName = isTransferredAway(route, authUser?.id)
     ? crewMemberName(route, route?.active_driver_id)
     : null
+
+  // Auto-ETA opt-out — full rationale at the Auto-ETA (Part 3) block below.
+  // Declared up here with the rest of the state because early returns sit
+  // between this point and that block; a hook after one breaks hook order.
+  // Default ON, so inaction preserves the pre-2026-07-31 behaviour.
+  const [autoEtaOptIn, setAutoEtaOptIn] = useState(true)
+  // Synchronous mirror — runStopComplete reads this in the same tick as the tap
+  // that may have just toggled it. Same reasoning as EquipmentPickupSection's
+  // `latest` ref: a value closed over React state can read one render stale.
+  const autoEtaOptInRef = useRef(true)
+  useEffect(() => { autoEtaOptInRef.current = autoEtaOptIn }, [autoEtaOptIn])
 
   const [navLoading, setNavLoading] = useState(false)
   const [showCompleteModal, setShowCompleteModal] = useState(false)
@@ -945,8 +1038,28 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   // is read from the ptd_profile_<userId> cache (refreshed each online loadDay)
   // so an admin's mid-day toggle takes effect without an app restart — the
   // in-memory auth profile only updates on auth events. Fire-and-forget; self-
-  // gates on online + GPS + a customer phone; completely invisible to the driver
-  // (no toast, banner, or indicator).
+  // gates on online + GPS + a customer phone.
+  //
+  // NO LONGER INVISIBLE (2026-07-31). It shipped silent by design; that is what
+  // made the Route 1 incident possible. Cameron completed both NYACK CAMP stops
+  // at 8:21 and 8:39 AM while the crew stayed on site until ~11:30 (dispatch had
+  // modelled the 9:00–12:30 dwell as a 225-minute open_slot block), so the
+  // instant-fire texted the next customer "on the way, 1 to 1.5 hours" nearly
+  // three hours early — and nothing on his phone told him a customer had just
+  // been messaged.
+  //
+  // We deliberately do NOT try to infer "is the driver really leaving":
+  //   • break_blocks position is unreliable — the 225-min slot sat after the
+  //     PICKUP, so a "dwell follows this stop" gate would have suppressed the
+  //     harmless same-site text and let the harmful one through.
+  //   • calculated_eta is self-referential — it is rewritten by the very anchor
+  //     that a premature completion corrupts, so by 8:39 it no longer described
+  //     the plan.
+  // The driver is the only reliable signal, so we ASK — visibly, in the pinned
+  // CTA block that cannot be scrolled past (the 2026-07-13 equipment-prompt
+  // lesson). Default stays ON so today's behaviour is preserved by inaction.
+  // (State + ref live at the top of the component — there are early returns
+  // between there and here, so declaring them inline would break hook order.)
 
   // Walk forward from `start` (inclusive) through the route's sequence to the
   // first non-depot, not-yet-completed stop that has a textable phone. Skips
@@ -965,14 +1078,33 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     return null
   }
 
+  // The stop the auto-ETA would text if this stop were completed right now, or
+  // null when nothing would be sent (flag off, no next customer, no phone).
+  // Drives the opt-out row — when this is null the row does not render at all,
+  // so a driver without the flag sees no new UI.
+  function getAutoEtaTarget(): Stop | null {
+    if (!authUser?.id) return null
+    if (!readCachedProfile(authUser.id)?.auto_send_eta) return null
+    if (!stop || stop.current_status === 'completed') return null
+    return getNextCustomerStop(nextStop)
+  }
+
   function maybeFireAutoEta(): void {
-    if (!authUser?.id) return
-    const cached = readCachedProfile(authUser.id)
-    if (!cached?.auto_send_eta) return
-    const target = getNextCustomerStop(nextStop)
+    const target = getAutoEtaTarget()
     if (!target) return
+    // Driver unchecked "Text <name> you're on the way" before completing —
+    // they are staying on site / not rolling yet. Skip the send; the manual
+    // Send ETA button is untouched and still one tap away.
+    if (!autoEtaOptInRef.current) {
+      logEvent('ETA_SMS_SKIPPED', target.route_id, target.stop_id, target.order_id, { reason: 'driver_opted_out', auto: true })
+      return
+    }
     void fireAutoEta(target)
   }
+
+  // Evaluated every render — drives the opt-out row. Safe to call here: every
+  // input (stop, nextStop, allStops, authUser) is initialised well above.
+  const autoEtaTarget = getAutoEtaTarget()
 
   async function fireAutoEta(targetStop: Stop): Promise<void> {
     // Offline → skip silently. The ETA endpoint hard-requires live driver GPS
@@ -2675,6 +2807,14 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
                     that lies about what it does). Still renders for service /
                     no-item / already-committed stops. */}
                 {!checkoffActive && (
+                <>
+                {autoEtaTarget && (
+                  <AutoEtaOptInRow
+                    name={autoEtaDisplayName(autoEtaTarget)}
+                    checked={autoEtaOptIn}
+                    onChange={setAutoEtaOptIn}
+                  />
+                )}
                 <button
                   onClick={handleMarkCompleteTap}
                   style={{
@@ -2702,6 +2842,7 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
                     <ArrowIcon size={18} color={isOtwSent ? C.green : C.gold}/>
                   </span>
                 </button>
+                </>
                 )}
 
                 {/* 3-button grid */}
@@ -3154,6 +3295,17 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
           background: C.cream, borderTop: `1px solid rgba(10,11,20,0.08)`,
           flexShrink: 0,
         }}>
+          {/* Auto-ETA disclosure — THE path that produced the Route 1 incident.
+              This CTA completes in one tap with no confirmation modal, so this
+              row is the only thing standing between a tap and a customer text. */}
+          {autoEtaTarget && (
+            <AutoEtaOptInRow
+              compact
+              name={autoEtaDisplayName(autoEtaTarget)}
+              checked={autoEtaOptIn}
+              onChange={setAutoEtaOptIn}
+            />
+          )}
           <button
             onClick={
               checkoffProgress.allResolved && !generatorActionsResolved

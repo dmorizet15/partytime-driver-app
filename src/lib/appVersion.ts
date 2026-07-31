@@ -24,6 +24,14 @@ export interface Release {
 // Newest FIRST. RELEASES[0] is the live version.
 export const RELEASES: readonly Release[] = [
   {
+    version: '2.10.0',
+    date: '2026-07-31',
+    bullets: [
+      `You can now see when completing a stop will text the next customer that you're on the way — it's right above the Complete button, with their name on it`,
+      `Not leaving yet? Tap it to switch the text off, finish the stop, and send it yourself from Send ETA when you actually roll`,
+    ],
+  },
+  {
     version: '2.9.0',
     date: '2026-07-24',
     bullets: [

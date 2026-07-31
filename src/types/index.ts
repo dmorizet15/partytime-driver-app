@@ -206,6 +206,11 @@ export type WorkflowEventType =
   | 'POD_PHOTO_FAILED'
   | 'ETA_SMS_SENT'
   | 'ETA_SMS_FAILED'
+  // Auto-ETA suppressed because the driver unchecked the opt-out row before
+  // completing (2026-07-31 — Route 1 premature-completion incident). Logged so
+  // "no text went out" is diagnosable rather than indistinguishable from the
+  // silent online/GPS/no-phone skips.
+  | 'ETA_SMS_SKIPPED'
 
 export interface WorkflowEvent {
   event_type: WorkflowEventType

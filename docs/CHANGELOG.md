@@ -4,6 +4,55 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-07-31 — Route 1 premature-completion incident: auto-ETA disclosure + ETA anchor guard (no mig; v2.10.0)
+
+**Trigger:** Darren reported that Route 1's third stop (Keira Gilstad, Wassaic) was texted at ~8:00 AM that the driver was 1–1.5 hours away, when the crew did not actually leave for that customer until ~11:30 AM — and that the dashboard simultaneously showed that stop's ETA as ~10:00 AM, *earlier* than the 12:19 PM ETA on the stop before it. Investigation only at first; fixes authorised after an intentionality audit.
+
+### What actually happened (all times ET, 2026-07-31)
+
+| Time | Event | Source |
+|---|---|---|
+| 8:20:28 | `routes.actual_departure_at` stamped (pre-trip inspection completed) | `routes` |
+| 8:20:35 | GPS geofence arrival at Nyack | `dispatch_stops.arrived_at` |
+| 8:21:10 | Stop 1 (NYACK CAMP pickup) marked complete — 35 s after arriving | `completed_at` |
+| 8:21:12 | Auto-ETA texts Emily Chambers "5 minutes or less" (harmless, same site) | `sms_outbound_messages` |
+| 8:39:42 | Stop 2 (NYACK CAMP delivery) marked complete | `completed_at` |
+| 8:39:43 | **Auto-ETA texts Keira Gilstad "1 to 1.5 hours"** | `sms_outbound_messages` |
+| ~11:30 | Crew actually departs Nyack. No follow-up SMS was ever sent. | — |
+
+Cameron Keesler (Route 1 primary) is the only driver with `profiles.auto_send_eta = true`. Dispatch had modelled the camp's 9:00 AM–12:30 PM on-site dwell as a **225-minute `open_slot` break block** after stop index 0. The full ETA cascade reproduces exactly: `07:00 +64 drive = 8:04 (stop 1) +30 dur +225 slot = 12:19 (stop 2) +40 dur → anchor jumps cursor to 8:39 → +94 drive = 10:13 (stop 3) +30 +28 = 11:11 (depot)`.
+
+**Verdict: user error triggered it; two code paths amplified it into a customer-facing wrong promise.** Cameron physically tapped Complete — proven, not inferred: `flushCompleteQueue()` POSTs `/api/complete-stop` directly and never runs `runStopComplete`, so a queue replay cannot fire an auto-ETA; `fireAutoEta()` hard-requires a live GPS fix and the resulting 94-minute drive time is Nyack→Wassaic, not warehouse→Wassaic (~30 min); the sends landed 2.1 s and 1.15 s after the completion writes; and the endpoint is cookie-auth'd with the only other crew row carrying `user_id = null`.
+
+### Why no inference-based fix was possible
+Both candidate signals were tested and rejected:
+- **break_blocks position** — the 225-minute slot sits after the PICKUP, so a "dwell follows this stop" gate would have suppressed the harmless 8:21 text and let the harmful 8:39 one through.
+- **`calculated_eta`** — self-referential. It is rewritten by the very anchor a premature completion corrupts, so by 8:39 it no longer described the plan.
+
+The driver is the only reliable signal, so the driver is now asked.
+
+### Shipped — driver app (v2.10.0)
+- `StopDetailScreen.tsx`: new `AutoEtaOptInRow` — a checked-by-default row reading "Text {name} you're on the way / Sends when you complete this stop", rendered **inside both completion CTA blocks, directly above the button**. `maybeFireAutoEta()` now consults `autoEtaOptInRef` (synchronous mirror — the toggle and the completion can land in the same tick) and logs `ETA_SMS_SKIPPED` instead of sending when unchecked.
+- **Placement is the fix, not the checkbox.** Cameron's stops both had manifests, so `checkoffActive` was true and he completed via `handleInlineCheckoffComplete` — the one-tap pinned CTA that shows **no confirmation modal at all**. A checkbox in `ConfirmationModal` would never have rendered for him. Same lesson as the 2026-07-13 equipment prompt: a control below the fold is a control that is never used.
+- `WorkflowEventType` gains `'ETA_SMS_SKIPPED'` so "no text went out" is diagnosable rather than indistinguishable from the silent online/GPS/no-phone skips.
+- Auto-ETA is **no longer "completely invisible"** — that documented property is what made this incident possible. CLAUDE.md updated.
+
+### Shipped — dashboard
+- `routeTimeCalculator.ts`: **anchor sanity guard.** Body extracted to `runCascade`; `calculateRouteETAs` now runs an anchor-free planned pass first and rejects the anchor when the route carries dwell time AND the claimed departure lands before that stop's planned arrival — *you cannot be ahead of a plan whose slack you have not spent*. Deliberately scoped to routes that have break blocks, so routes without them are bit-for-bit unchanged.
+- `recalc-etas/route.ts`: **UTC anchor bug.** It copied `t.getHours()` from the browser cascades (where it is intentional and documented — the dispatcher's machine runs Eastern) into a handler that runs on Vercel with `TZ=UTC`, so an 8:39 AM departure read as 12:39 and pushed every downstream ETA four hours late. Replaced with an `Intl`-based `etMinutesFromMidnight`. Same bug class the file's own `toIso` comment calls "the root cause of the recurring ±4h SMS/email bugs" — fixed for the write, missed for the anchor.
+- `StopCardV5.tsx`: a completed stop now shows its **actual completion time** with a `Done` eyebrow instead of a stale predicted ETA. This is what made the board self-contradictory — 12:19 PM on a stop finished at 8:39 AM, sitting above a 10:13 AM stop not yet started.
+
+### Verified
+- Calculator regression-tested against the real Route 1 numbers (4 cases): premature anchor + break blocks → stop 3 moves **10:13 AM → 2:33 PM** and the sequence is monotonic again (8:04 → 12:19 → 2:33 → 3:31); **no break blocks + same early anchor → 10:13 AM, unchanged**; plausible late anchor still applies; no anchor matches the planned cascade.
+- `npx next build` exit 0 in **both** repos (dashboard with placeholder Supabase env — its `.env.local` here carries only `DEPOT_ADDRESS`; a clean-tree build fails identically, so the prerender failure is environmental and pre-existing).
+
+### Not done / open
+- **Neither repo is pushed** — `github.com` is DNS-unreachable from this sandbox. Both are committed on local `main` and need a `git push` from a networked machine.
+- Keira Gilstad received one text at 8:39 AM and no correction. Route 1's stop 3 has read "on the way" on the board since then.
+- `dispatch_stops.actual_departure_at` is still written equal to `completed_at` by `/api/complete-stop`. Splitting them was audited as safe (`stop_status` covers every `isCompleted` fallback; `hasAnyDeparted` is OR'd with route-level `actual_departure_at`; only the `'otw'` last-status label in `warehouseOverviewServer.ts` would degrade) but was **not** changed — deferring the stamp to a Navigate tap risks it never being written at all, which would silently disable the anchor for every route. Revisit only with an explicit departure signal.
+
+---
+
 ## 2026-07-24 — Generator Stop Actions Phase 1 (dashboard migs 107–110; v2.9.0)
 
 **Scope:** Full Phase 1 build per the locked Notion spec (`3a70aa6451b881af8f84f8da196b7dde`) — photo-first hour-meter + fuel-level capture on generator delivery/pickup stops for the 4 metered towables, hard completion gate, offline queue, dashboard write-back + billing email, board visibility.
