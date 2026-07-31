@@ -870,3 +870,21 @@ Empty shells exist on `/tools` for the tile grid. Content + per-tool UI is the w
 ## Active blockers
 - Easy RFID Pro launch on Android (out of v1.1 scope)
 - CoPilot destination import — final validation on real device
+
+---
+
+## 2026-07-31 — Auto-ETA disclosure + ETA anchor guard (shipped, v2.10.0)
+
+**Smoke gate (needs a live device — add to the standing on-device list):**
+- [ ] On a delivery/pickup stop WITH a manifest, confirm the "Text {name} you're on the way" row renders inside the pinned check-off CTA block, above the gold button, without scrolling.
+- [ ] Uncheck it, complete the stop, confirm NO SMS row appears in `sms_outbound_messages` for the next stop and an `ETA_SMS_SKIPPED` event is logged.
+- [ ] Leave it checked, complete, confirm the SMS still fires exactly as before (regression — default-on must preserve old behaviour).
+- [ ] Confirm a driver WITHOUT `auto_send_eta` sees no new row at all (currently only Cameron Keesler has the flag).
+- [ ] On a no-manifest stop, confirm the row renders above "Mark Stop Complete" too.
+
+**Dashboard-side (browser verify):**
+- [ ] On a route with a break block, confirm a completed stop shows its real completion time under a `Done` eyebrow, and that downstream ETAs no longer read earlier than the stop above them.
+
+**Open / deferred:**
+- `actual_departure_at` is still written equal to `completed_at` by `/api/complete-stop`. Audited safe to split, deliberately not done — needs a real departure signal first (a Navigate tap can be skipped entirely, which would silently disable the ETA anchor for every route). Revisit if premature completions keep distorting the board.
+- Operational, not code: Keira Gilstad got one text at 8:39 AM on 2026-07-31 and no correction; that stop read "on the way" on the board from then on.

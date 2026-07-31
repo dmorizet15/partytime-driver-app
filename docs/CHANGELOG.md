@@ -47,7 +47,7 @@ The driver is the only reliable signal, so the driver is now asked.
 - `npx next build` exit 0 in **both** repos (dashboard with placeholder Supabase env — its `.env.local` here carries only `DEPOT_ADDRESS`; a clean-tree build fails identically, so the prerender failure is environmental and pre-existing).
 
 ### Not done / open
-- **Neither repo is pushed** — `github.com` is DNS-unreachable from this sandbox. Both are committed on local `main` and need a `git push` from a networked machine.
+- Both repos are committed AND pushed to `origin/main` (driver `b65a8bc`, dashboard `baef264`).
 - Keira Gilstad received one text at 8:39 AM and no correction. Route 1's stop 3 has read "on the way" on the board since then.
 - `dispatch_stops.actual_departure_at` is still written equal to `completed_at` by `/api/complete-stop`. Splitting them was audited as safe (`stop_status` covers every `isCompleted` fallback; `hasAnyDeparted` is OR'd with route-level `actual_departure_at`; only the `'otw'` last-status label in `warehouseOverviewServer.ts` would degrade) but was **not** changed — deferring the stamp to a Navigate tap risks it never being written at all, which would silently disable the anchor for every route. Revisit only with an explicit departure signal.
 
