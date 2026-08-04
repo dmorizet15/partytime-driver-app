@@ -834,14 +834,35 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
       sessionStorage.setItem(earlyOverrideKey(stopId), '1')
     }
     const startIso = pickupOpensAt ?? pickupWindowStart ?? null
+    const minutesEarly = startIso
+      ? Math.max(0, Math.round((new Date(startIso).getTime() - Date.now()) / 60_000))
+      : null
+
     logEvent('NAVIGATION_STARTED', routeId, stopId, stop?.order_id, {
       early_pickup_override: true,
       override_source:       source,
       pickup_opens_at:       startIso,
-      minutes_early:         startIso
-        ? Math.max(0, Math.round((new Date(startIso).getTime() - Date.now()) / 60_000))
-        : null,
+      minutes_early:         minutesEarly,
     })
+
+    // Mig 117 — durable record of the dismissal. logEvent above still goes
+    // nowhere (EventLogger is the Phase-1 console stub), and this override is
+    // the ONLY way a pickup gets completed before a verified window, so it was
+    // the one signal worth persisting on its own rather than waiting on the
+    // full /api/events pipeline.
+    //
+    // Fire-and-forget on purpose: the gate is soft and the driver has already
+    // been released by setEarlyOverride above. A failed audit write must never
+    // strand someone in front of a countdown — worst case we lose one row.
+    void fetch('/api/stops/early-override', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        stop_id:       stopId,
+        source,
+        minutes_early: minutesEarly,
+      }),
+    }).catch(() => {})
   }
 
   function handleDismissStandby() {

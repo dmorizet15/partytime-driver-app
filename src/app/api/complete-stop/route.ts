@@ -103,6 +103,11 @@ export async function POST(request: NextRequest) {
         stop_status:         'completed',
         completed_at:        now,
         actual_departure_at: now,
+        // Mig 117 — who tapped. We had user.id all along purely to authorize
+        // the call and then discarded it, so after two Route 1 ETA incidents
+        // the completing driver could only be INFERRED (from who filed the
+        // pre-trip). Plain uuid, no FK; resolve against profiles on read.
+        completed_by:        user.id,
       })
       .eq('id', stopId)
       .select('id, route_id, stop_type')
