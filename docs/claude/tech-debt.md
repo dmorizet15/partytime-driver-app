@@ -2,7 +2,15 @@
 
 Tracking only **open** debt and active blockers. For per-session smoke-test coverage, see `docs/claude/stack.md` NEXT block.
 
-Last reviewed: 2026-07-31.
+Last reviewed: 2026-08-04.
+
+---
+
+## GPS arrival detection is effectively dead at the depot (2026-08-04, mid-route warehouse investigation)
+- **`arrived_at` is populated on 0 of 323 `warehouse_return` rows** (277 of which have valid coords), against delivery 152/506 and pickup 120/490 over the same 120-day window. The depot geofence has **never fired in production**, so the "arrival is completion" flow on the end-of-day depot stop (`StopDetailScreen.tsx:780`) has never actually run — all 74 warehouse completions were manual taps.
+- **Root cause is architectural, not a bug:** `useArrivalGeofence` is (a) foreground-only `watchPosition` and (b) armed only while that specific stop's detail screen is mounted. Drivers never sit on the warehouse screen while driving to the warehouse. The same limitation caps *any* arrival feature — a PWA cannot do background geofencing; the hook's own comment says that needs native/Capacitor.
+- **Planned partial fix** (in the approved mid-route warehouse spec, not yet built): move the depot watcher up to `AppStateProvider`, which is always mounted, so arrival can stamp without the depot screen open. **This does not make it reliable** — screen off or app backgrounded on the drive back still means no fire. Treat auto-arrival as best-effort forever; never make a workflow depend on it.
+- **Consequence for design:** completion must stay a manual tap. This is also the only honest departure signal available (see the departure-semantics entry below) — a tap as the driver rolls beats a geofence guess.
 
 ---
 

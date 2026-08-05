@@ -4,6 +4,33 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-08-04 — Mid-route warehouse completion: investigation + approved design (NO CODE CHANGED; no mig; VERSION unchanged at v2.10.0)
+
+**Trigger:** Darren reported that a driver who returns to the warehouse mid-route — to reload or swap trucks before continuing — has no way to mark that stop complete. His stated belief: an arrival trigger already auto-completes warehouse stops, and the gap was a missing manual fallback.
+
+**Outcome:** the premise did not hold, in both directions. Design approved and documented; **implementation deferred to the next session** at Darren's request (late in the day). Commits `64ac6a0` + `23dfb6e`, both `[skip version]` — docs only.
+
+### What the investigation found (all verified against the live DB)
+
+1. **Mid-route warehouse stops are not database rows.** They are synthesized client-side by `buildWarehouseStop` (`supabaseTransform.ts:258`) from `routes.break_blocks`. `stop_id` is a break-block UUID (so `/api/complete-stop` 404s) and coords are `undefined`. **34 blocks / 32 routes in the last 120 days, through 2026-10-09 — all 34 mid-route.** No button (`StopDetailScreen.tsx:2775`, "Decision 1A"), no geofence, nothing to write to.
+2. **Drivers are not stranded, dispatch is blind.** `isProgressionLocked` exempts depot stops, so the next customer stop stays tappable; the leg just sits `pending` forever.
+3. **The depot geofence has NEVER fired in production.** `arrived_at` populated on **0 of 323** `warehouse_return` rows (277 with coords), vs delivery 152/506 and pickup 120/490. `useArrivalGeofence` is foreground-only *and* armed only while that stop's screen is mounted — nobody sits on the warehouse screen while driving to the warehouse. **So the auto-detect Darren believed existed has never worked anywhere.**
+4. **`warehouse_return` cannot host a mid-route row.** `ensure_warehouse_return_for_route` has a partial unique index on `(route_id)` and actively drags the row to `max_position + 1` each sync — which is why the 13 mid-route `warehouse_return` rows all stop at 2026-06-09.
+
+### The auto-texting question — raised, investigated, settled
+
+Darren stated a product rule ("nothing should ever auto-text a customer"), then tested live and reported nothing auto-sent, and asked which was true. **Both were.** `auto_send_eta` is on for exactly one profile (**Cameron Keesler**); Darren's own account is off, so his test was correct. The feature is nonetheless real and firing — proven by timing signature rather than by the flag: 8 of Cameron's 9 OTW sends landed within **2.3 s** of a completion (min **0.71 s**) against ≥8.4 s for every flag-off driver, and the `07-31 08:39:43` send at 1.25 s with ETA *"1 to 1.5 hours"* **is the Route 1 incident recorded from the DB side**.
+
+On learning the toggle is admin-controlled per driver, Darren **reversed the rule**: leave it as is, `profiles.auto_send_eta` is the single source of truth, and no session may override it in either direction. The queued "retire auto-texting globally" task was **deleted, not parked**. Consequently the warehouse spec flipped too — warehouse completion now follows the flag like any other stop, with `AutoEtaOptInRow` rendered there and **no** depot-specific suppression.
+
+⚠ Noted for any future audit: **`logEvent` is a console stub** (`EventLogger.ts:28`) writing to no table. `stops.otw_*` joined to `dispatch_stops` is the only SMS trail.
+
+### Approved design (not built)
+
+New `stop_type_enum` value **`'warehouse'`** (not `warehouse_return`, per finding 4), dashboard-owned migrations + an `ensure_warehouse_stops_for_route` injector keyed on a new `break_block_id`; driver app deletes its synthesis, collapses the Navigate-only branch into the existing "Done — continue route" treatment, and gains a **route-level depot arrival watcher in `AppStateProvider`** (the fix for finding 3). **Arrival auto-detected; completion stays a manual tap** — a tap as the driver rolls yields a truer `actual_departure_at` than a geofence guess, and full auto-complete is unreliable in a PWA regardless. One sub-decision left open: how to order a mid-route row when `route_position` is a TapGoods-synced integer with no gap — **must be resolved in the dashboard repo**.
+
+---
+
 ## 2026-07-31 — Route 1 premature-completion incident: auto-ETA disclosure + ETA anchor guard (no mig; v2.10.0)
 
 **Trigger:** Darren reported that Route 1's third stop (Keira Gilstad, Wassaic) was texted at ~8:00 AM that the driver was 1–1.5 hours away, when the crew did not actually leave for that customer until ~11:30 AM — and that the dashboard simultaneously showed that stop's ETA as ~10:00 AM, *earlier* than the 12:19 PM ETA on the stop before it. Investigation only at first; fixes authorised after an intentionality audit.
