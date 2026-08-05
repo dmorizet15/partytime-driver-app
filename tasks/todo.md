@@ -1,5 +1,36 @@
 # Open Tasks — partytime-driver-app
 
+## August 4, 2026 — Mid-route warehouse stop completion — DESIGN ONLY, NOT IMPLEMENTED
+
+Darren reported drivers can't mark a mid-route warehouse return complete. Investigation confirmed it and found the premise of the report was wrong in an important way. **Full design + evidence: `docs/superpowers/specs/2026-08-04-mid-route-warehouse-completion-design.md`.** Design approved 2026-08-04; Darren signed off for the night before implementation. **Pick this up next session.**
+
+Headline findings (all verified against the live DB):
+- Mid-route warehouse stops are **not DB rows** — synthesized client-side from `routes.break_blocks`. 34 blocks / 32 routes in the last 120 days, through 2026-10-09, and **all 34 are mid-route**. No button (`StopDetailScreen.tsx:2775`, "Decision 1A"), no geofence (no coords, type not in the allow-list), and nothing to POST to (`stop_id` is a break-block UUID → `/api/complete-stop` 404s).
+- **The depot geofence has NEVER fired in production.** 323 `warehouse_return` rows, 277 with coords, `arrived_at` populated on **zero** — vs delivery 152/506 and pickup 120/490. Cause: `useArrivalGeofence` is foreground-only AND armed only while that stop's screen is mounted; drivers are never on the warehouse screen while driving to the warehouse.
+- **`warehouse_return` can't be reused** for the mid-route row: `ensure_warehouse_return_for_route` has a partial unique index on `(route_id)` and actively drags the row back to `max_position + 1` every sync. That's why the 13 mid-route `warehouse_return` rows all stop at 2026-06-09.
+
+- [ ] Dashboard mig A: `ALTER TYPE stop_type_enum ADD VALUE 'warehouse'` (must be its own migration — PG won't use a new enum value in the txn that adds it).
+- [ ] Dashboard mig B: `break_block_id uuid` + partial unique index `(route_id, break_block_id) WHERE stop_type='warehouse'` (idempotency key).
+- [ ] Dashboard: `ensure_warehouse_stops_for_route()` — upsert per break block, reposition on move, delete on removal **unless completed**.
+- [ ] **Resolve the open ordering sub-decision IN THE DASHBOARD REPO** — `route_position` is a TapGoods-synced integer with no room mid-route. Recommendation is preceding-stop position + a tiebreak column; confirm sync ordering there before committing.
+- [ ] Driver app: map the enum, **delete `buildWarehouseStop` + the interleave loop**, extend the `DEPOT_LAT/LNG` override to `'warehouse'`.
+- [ ] Driver app: collapse the Navigate-only `isWarehouse` branch into the `warehouse_return` treatment → "Done — continue route" falls out of the existing `hasLaterStopOnRoute`.
+- [ ] Driver app: new route-level depot arrival watcher in `AppStateProvider` (not a screen — App Router unmounts screens, same reason the co-driver realtime subscription lives there).
+- [ ] ⚠ **CROSS-REPO, SAME SESSION.** Dashboard alone → drivers see duplicate warehouse stops. Driver app alone → they see none.
+- [ ] On-device smoke gate: renders once, arrival stamps `arrived_at` with the depot screen closed, "Done — continue route" completes + unlocks the next stop, **no SMS to anyone**, end-of-day depot still auto-logs-out.
+
+## August 4, 2026 — Kill auto-texting entirely; replace with an opt-in prompt on the next stop card — NOT STARTED
+
+**Darren, 2026-08-04 (product rule): "nothing should ever auto-text a customer."** Today `profiles.auto_send_eta` (dashboard mig 097) auto-texts the next customer on stop **completion** — live for **1 of 11 profiles**. This is the feature behind the 2026-07-31 Route 1 incident, where v2.10.0 added a pre-checked opt-OUT checkbox as the fix.
+
+New model: no flag, no checkbox, no send-on-complete. The driver opens the **next** stop card and gets an opt-**IN** prompt ("Text [customer] you're on the way?"); a text goes out only on a tap. This makes the Route 1 failure structurally impossible rather than merely disclosed — a text can't precede the driver actually working the next stop.
+
+- [ ] Remove `maybeFireAutoEta` from `runStopComplete` and `AutoEtaOptInRow` from both completion CTA blocks (`StopDetailScreen.tsx`).
+- [ ] Add the opt-in prompt to the next stop card. Per doctrine, a must-see control goes **inside the pinned CTA block**, never in a modal or below the manifest.
+- [ ] Retire `profiles.auto_send_eta` + the dashboard admin toggle (`PATCH /api/admin/drivers/[id]/preferences`) — or repurpose the flag to control whether the prompt appears at all. Decide at implementation.
+- [ ] The manual "Send ETA" button stays untouched.
+- [ ] Update the CLAUDE.md auto-ETA subsystem block + Known Landmine #1, which currently document send-on-complete as the shipped behavior.
+
 ## July 24, 2026 — Generator Stop Actions Phase 1 — ON `main`; dashboard migs 107+108; VERSION 2.8.0 → 2.9.0
 
 Full Phase 1 build per the locked Notion spec (`3a70aa6451b881af8f84f8da196b7dde`): photo-first hour-meter + fuel-level capture on generator delivery/pickup stops, hard completion gate, offline IndexedDB queue, dashboard pickup-completion write-back + billing email, read-only board badge. Both repos build green. Initially built on a named branch (a real policy slip — main's Division of Labor says "No branches until Darren says otherwise", inherited from a different repo's long-lived RFID feature-branch context); Darren caught it and had it fast-forwarded directly onto local `main` the same session, branch deleted. **Still NOT pushed to origin** — GitHub unreachable from the build sandbox (DNS/network); `main` here is 2 commits ahead of `origin/main` in both repos, needs a `git push` from a machine with GitHub access.
