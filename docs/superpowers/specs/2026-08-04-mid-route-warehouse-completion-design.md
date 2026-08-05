@@ -66,19 +66,43 @@ anywhere, and mid-route there is no manual path either.
 | D1 | Mid-route warehouse legs become **real `dispatch_stops` rows** | Dispatch must see the reload leg; the ETA cascade anchors on these timestamps |
 | D2 | New `stop_type_enum` value **`'warehouse'`**, not `'warehouse_return'` | Avoids the partial unique index and the tail-forcing function (finding 5) |
 | D3 | **Arrival auto-detected; completion stays a manual tap** | A tap as the driver rolls yields a truer `actual_departure_at` than a geofence guess. Full auto-complete is unreliable in a PWA regardless (finding 4) |
-| D4 | **Warehouse completion never texts a customer** | Darren, 2026-08-04: "nothing should ever auto-text a customer" |
+| D4 | **Warehouse completion follows `profiles.auto_send_eta`, exactly like any other stop** | Darren, 2026-08-04: the driver-profile toggle is the single source of truth; this work must not override it in either direction |
 
-## Non-goal (split to its own spec)
+## D4 — how it was settled (2026-08-04)
 
-Darren's rule in D4 is **global**, and is larger than this change. Today
-`profiles.auto_send_eta` (dashboard mig 097) auto-texts the next customer on stop
-**completion** — live for **1 of 11 profiles**. The replacement model is an
-opt-**in** prompt on the *next* stop card ("Text [customer] you're on the way?"),
-firing only on a tap.
+Darren initially stated the rule as "nothing should ever auto-text a customer,"
+then tested live and reported that nothing auto-sent — an apparent contradiction
+with the flag data. Investigation resolved it: **both were true.**
 
-That retires the flag, its dashboard admin toggle, and `AutoEtaOptInRow` from both
-completion CTA blocks, and touches every stop type. **Tracked separately in
-`tasks/todo.md`.** This spec only guarantees the warehouse stop never texts.
+- `auto_send_eta` is `true` on exactly **one profile — Cameron Keesler** (active
+  driver, 38 routes in 60 days). All other 10 profiles, **including Darren's**, are
+  `false`. Darren tested on his own account, so correctly saw no auto-send.
+- The auto-send **is real and fires.** Verified by timing signature rather than by
+  the flag: auto-ETA fires ~1s after the previous stop's completion; a human tap
+  cannot. Of Cameron's 9 OTW sends, **8 landed within 2.3 seconds** of a completion
+  (min 0.71s). Every flag-off driver's fastest send was ≥8.4s, and three never sent
+  within 5s of a completion at all.
+- **Clincher:** the send at `2026-07-31 08:39:43 ET`, 1.25s after completion, ETA
+  text *"1 to 1.5 hours"* — the Route 1 incident in CLAUDE.md, recorded from the
+  database side.
+- `logEvent` is a **console stub** (`EventLogger.ts:28`) and writes nothing to the
+  DB, so `stops.otw_*` joined to `dispatch_stops` is the only audit trail for SMS
+  sends. Worth knowing before anyone plans to "check the event log."
+
+Given the toggle is admin-controlled per driver (dashboard
+`admin/drivers/[driverId]` → "Auto-send ETA on stop complete", `requireAdminAccess`
+gated, drivers cannot self-serve), Darren decided to **leave it as is**. The earlier
+"retire auto-texting globally" task was **deleted, not parked** — the flag already
+provides the control.
+
+**Implication for this spec:** the warehouse stop is not a special case. It runs the
+normal `runStopComplete` path, reaches `maybeFireAutoEta`, and texts the next
+customer *only* for a driver whose profile flag is on. `AutoEtaOptInRow` renders in
+the warehouse CTA block like any other completion surface.
+
+⚠ This is **new behavior** for a flagged driver — the warehouse stop cannot be
+completed at all today, so it has never texted anyone. Accepted knowingly: finishing
+a reload is a truthful moment to tell the next customer you're rolling.
 
 ## Design
 
@@ -124,8 +148,11 @@ it could not be verified from the driver-app repo.
     `warehouse_return` treatment above it. `hasLaterStopOnRoute` is already
     computed, so the copy resolves to **"Done — continue route"** with no new logic.
   - Add `'warehouse'` to `geofenceEnabled`.
-  - **Do not render `AutoEtaOptInRow` in the warehouse block**, and ensure the
-    warehouse completion path does not reach `maybeFireAutoEta` (D4).
+  - **Render `AutoEtaOptInRow` in the warehouse CTA block** and leave the
+    `runStopComplete` → `maybeFireAutoEta` path untouched, so warehouse completion
+    obeys `profiles.auto_send_eta` like every other stop (D4). Do **not** add a
+    depot-specific suppression — that would override the driver profile, which is
+    exactly what this work must not do.
 
 - **New — route-level depot arrival watcher.** A focused hook consumed by
   `AppStateProvider` (always mounted — same reasoning as the co-driver realtime
@@ -158,5 +185,8 @@ No test runner in this repo — `npx next build` plus on-device smoke is the gat
   1. Warehouse stop renders once (no duplicate), is tappable.
   2. Arrival at the depot stamps `arrived_at` **without** the depot screen open.
   3. "Done — continue route" completes it; next stop unlocks.
-  4. No SMS is sent to any customer at any point.
+  4. **SMS follows the profile flag, not the stop type** — on a flag-OFF driver
+     (10 of 11, including Darren's own account) completing the warehouse sends
+     nothing; on a flag-ON driver the opt-out row is visible above the button and
+     unchecking it suppresses the send.
   5. End-of-day `warehouse_return` still auto-logs-out.

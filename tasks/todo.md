@@ -17,19 +17,15 @@ Headline findings (all verified against the live DB):
 - [ ] Driver app: collapse the Navigate-only `isWarehouse` branch into the `warehouse_return` treatment → "Done — continue route" falls out of the existing `hasLaterStopOnRoute`.
 - [ ] Driver app: new route-level depot arrival watcher in `AppStateProvider` (not a screen — App Router unmounts screens, same reason the co-driver realtime subscription lives there).
 - [ ] ⚠ **CROSS-REPO, SAME SESSION.** Dashboard alone → drivers see duplicate warehouse stops. Driver app alone → they see none.
-- [ ] On-device smoke gate: renders once, arrival stamps `arrived_at` with the depot screen closed, "Done — continue route" completes + unlocks the next stop, **no SMS to anyone**, end-of-day depot still auto-logs-out.
+- [ ] On-device smoke gate: renders once, arrival stamps `arrived_at` with the depot screen closed, "Done — continue route" completes + unlocks the next stop, **SMS follows the driver's `auto_send_eta` flag** (nothing on a flag-off account), end-of-day depot still auto-logs-out.
 
-## August 4, 2026 — Kill auto-texting entirely; replace with an opt-in prompt on the next stop card — NOT STARTED
+### Auto-texting — SETTLED 2026-08-04, DO NOT REOPEN
 
-**Darren, 2026-08-04 (product rule): "nothing should ever auto-text a customer."** Today `profiles.auto_send_eta` (dashboard mig 097) auto-texts the next customer on stop **completion** — live for **1 of 11 profiles**. This is the feature behind the 2026-07-31 Route 1 incident, where v2.10.0 added a pre-checked opt-OUT checkbox as the fix.
+Darren first stated "nothing should ever auto-text a customer," then tested live and saw no auto-send — an apparent contradiction. **Both were true:** `auto_send_eta` is on for exactly one profile (**Cameron Keesler**, active driver); the other 10 including Darren's own are off, so his test correctly showed nothing. The auto-send is nonetheless real — 8 of Cameron's 9 OTW sends fired within 2.3s of a completion (min 0.71s) vs ≥8.4s for every flag-off driver, and the `2026-07-31 08:39:43` send at 1.25s with ETA "1 to 1.5 hours" **is the Route 1 incident, seen from the DB side**.
 
-New model: no flag, no checkbox, no send-on-complete. The driver opens the **next** stop card and gets an opt-**IN** prompt ("Text [customer] you're on the way?"); a text goes out only on a tap. This makes the Route 1 failure structurally impossible rather than merely disclosed — a text can't precede the driver actually working the next stop.
+**Decision: leave it as is.** The admin toggle (dashboard `admin/drivers/[driverId]` → "Auto-send ETA on stop complete", admin-gated, drivers can't self-serve) already gives per-driver control. `profiles.auto_send_eta` is the **single source of truth** — no session may hardcode auto-texting on or off, in either direction. A prior task proposing to retire the feature globally was **deleted** on Darren's instruction; do not resurrect it.
 
-- [ ] Remove `maybeFireAutoEta` from `runStopComplete` and `AutoEtaOptInRow` from both completion CTA blocks (`StopDetailScreen.tsx`).
-- [ ] Add the opt-in prompt to the next stop card. Per doctrine, a must-see control goes **inside the pinned CTA block**, never in a modal or below the manifest.
-- [ ] Retire `profiles.auto_send_eta` + the dashboard admin toggle (`PATCH /api/admin/drivers/[id]/preferences`) — or repurpose the flag to control whether the prompt appears at all. Decide at implementation.
-- [ ] The manual "Send ETA" button stays untouched.
-- [ ] Update the CLAUDE.md auto-ETA subsystem block + Known Landmine #1, which currently document send-on-complete as the shipped behavior.
+⚠ Useful for any future SMS audit: **`logEvent` is a console stub** (`EventLogger.ts:28`) and writes nothing to the DB. `stops.otw_status/otw_timestamp/otw_set_by` joined to `dispatch_stops` is the only trail that exists.
 
 ## July 24, 2026 — Generator Stop Actions Phase 1 — ON `main`; dashboard migs 107+108; VERSION 2.8.0 → 2.9.0
 
