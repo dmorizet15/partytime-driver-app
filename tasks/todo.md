@@ -1,6 +1,6 @@
 # Open Tasks — partytime-driver-app
 
-## August 6, 2026 — Field media Phase 2 — ON BRANCH `feat/field-media-phase2`, mig 031 APPLIED, VERSION 2.11.1 → 2.12.0
+## August 6, 2026 — Field media Phase 2 — ON `main` (`ee2c7d5`, PR #7), mig 031 APPLIED, VERSION 2.11.1 → 2.12.0
 
 Three changes in one pass: completed-stop window bounded to ~1 day, generic uploader on the driver profile, library picker alongside live capture. Architecture: `docs/claude/field-media-intake.md` → "Phase 2".
 

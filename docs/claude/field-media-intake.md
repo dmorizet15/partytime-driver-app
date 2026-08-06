@@ -1,6 +1,6 @@
 # Field media intake — driver → marketing
 
-Phase 1 shipped 2026-08-06, migration 030, v2.11.0 (`main` `4812ffa`, PR #6). Phase 2 the same day, migration 031, v2.12.0.
+Phase 1 shipped 2026-08-06, migration 030, v2.11.0 (`main` `4812ffa`, PR #6). Phase 2 the same day, migration 031, v2.12.0 (`main` `ee2c7d5`, PR #7).
 
 **Phase 2 adds:** a bounded window on the completed-stop tile, a generic (non-stop) uploader on the driver profile, and a library picker alongside live capture on the shared sheet.
 

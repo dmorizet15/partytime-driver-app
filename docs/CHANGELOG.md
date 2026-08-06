@@ -4,7 +4,7 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
-## 2026-08-06 (c) — Field media Phase 2: bounded window, generic uploader, library picker (branch `feat/field-media-phase2`; **mig 031**; VERSION 2.11.1 → 2.12.0)
+## 2026-08-06 (c) — Field media Phase 2: bounded window, generic uploader, library picker (on `main` `ee2c7d5` via PR #7; **mig 031**; VERSION 2.11.1 → 2.12.0)
 
 Three changes in one pass. All product decisions were pre-made; nothing was re-litigated.
 
