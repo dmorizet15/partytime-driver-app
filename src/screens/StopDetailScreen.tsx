@@ -2304,6 +2304,46 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
                 </div>
               </div>
             </div>
+
+            {/* Add Media stays available AFTER completion. Everything else in
+                the ActionCard is deliberately replaced by the Delivered card
+                above, but media is the one thing a driver has most reason to
+                capture once the stop is done — they tap Complete, step back,
+                and only then are they looking at the finished setup. Darren,
+                2026-08-06: "I should be able to go back and add it to a stop
+                as long as it's available on my phone."
+
+                Nothing server-side objects: /api/media/intake gates on route
+                crew, never on completion, so no API change was needed. */}
+            {showMediaTile && (
+              <button
+                onClick={() => setMediaSheetOpen(true)}
+                style={{
+                  marginTop: 10, width: '100%',
+                  background: C.paper,
+                  border: `1.5px solid rgba(10,11,20,0.12)`,
+                  borderRadius: 14, padding: '13px 16px',
+                  cursor: 'pointer', fontFamily: 'inherit',
+                  display: 'flex', alignItems: 'center', gap: 12,
+                }}
+                aria-label="Add media for marketing"
+              >
+                <MediaIcon size={22} color={C.ink}/>
+                <span style={{
+                  flex: 1, textAlign: 'left', fontSize: 13, fontWeight: 700,
+                  color: C.ink, lineHeight: 1.3,
+                }}>
+                  Add Media
+                  <span style={{
+                    display: 'block', fontSize: 11, fontWeight: 500, color: C.muted,
+                    marginTop: 1,
+                  }}>
+                    Got a good shot of the finished setup?
+                  </span>
+                </span>
+                <span style={{ fontSize: 16, lineHeight: 1, color: C.muted }}>›</span>
+              </button>
+            )}
           </div>
         ) : (
           <>

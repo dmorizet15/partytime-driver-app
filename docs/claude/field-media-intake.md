@@ -60,6 +60,10 @@ A 4th tile, **Add Media**, in Stop Detail's QuickAction grid (`repeat(2, 1fr)` w
 
 **It is deliberately NOT in the pinned CTA block.** That space is reserved for controls a driver must see to avoid harm (Landmine #1). This is optional and must not compete with the Complete button.
 
+**Add Media survives completion — deliberately, and it's the only action that does** (v2.11.1). `StopDetailScreen.tsx:2275` is a hard `isCompleted ?` ternary: once a stop is complete the entire ActionCard is replaced by the Delivered card, taking Open in Maps, View Order, POD Photo and Report an issue with it. That is wrong for media specifically — a driver taps Complete, steps back, and *only then* is looking at the finished setup worth photographing. So a second entry point renders inside the Delivered card. `/api/media/intake` needed no change: it gates on route crew, never on completion.
+
+⚠ The other four actions are still gone after completion. That was pre-existing and is untouched — but it has not been confirmed as intentional, so don't cite it as a rule.
+
 Consent is a **hard gate on the Send button**, not a soft prompt below it. The 2026-07-13 equipment-returns lesson applies: a prompt nobody reaches is a prompt that doesn't exist.
 
 ---

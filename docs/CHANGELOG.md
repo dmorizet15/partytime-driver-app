@@ -4,6 +4,18 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-08-06 (b) — Add Media stays available on a completed stop (no mig; VERSION 2.11.0 → 2.11.1)
+
+**Trigger:** Darren added himself to a live route to try the new feature, found the stop already completed, and couldn't attach anything. *"If that's the case, that shouldn't be. I should be able to go back and add it to a stop as long as it's available on my phone."*
+
+He's right, and the reason is structural rather than a bug in the media code. `StopDetailScreen.tsx:2275` is a hard `isCompleted ?` ternary: when a stop is complete the **entire** ActionCard is replaced by the small Delivered card, so Add Media disappeared along with Open in Maps, View Order, POD Photo and Report an issue. Media is the one action a driver has *most* reason to take after completing — they tap Complete, step back, and only then are they looking at the finished setup.
+
+**Fix:** a second Add Media entry point renders inside the Delivered card, gated on the same `showMediaTile` (delivery/pickup/service). **No API change was needed** — `/api/media/intake` gates on route crew and never on completion, so a completed stop was always acceptable server-side; only the UI was hiding the door.
+
+⚠ **The other four actions are still unavailable after completion.** That is pre-existing and untouched here. It may well be deliberate, but it has not been confirmed — flagged in `tasks/todo.md` rather than silently changed.
+
+---
+
 ## 2026-08-06 — Field media intake: drivers send photos/video to marketing, auto-tagged (on `main` `4812ffa` via PR #6; **mig 030**; VERSION 2.10.0 → 2.11.0)
 
 **Trigger:** kickoff doc `driver-app-media-upload-kickoff.md`. Marketing has a content pipeline but no supply — footage lives on drivers' phones, and anything that does arrive is an anonymous file nobody can attribute to a job. Short video is the new-audience play and the driver app is the only friction-free source of in-the-moment event footage.

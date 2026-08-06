@@ -24,6 +24,13 @@ export interface Release {
 // Newest FIRST. RELEASES[0] is the live version.
 export const RELEASES: readonly Release[] = [
   {
+    version: '2.11.1',
+    date: '2026-08-06',
+    bullets: [
+      `Add Media now stays on the stop after you've marked it complete — finish the job, step back, and grab the shot of the finished setup when it actually looks good`,
+    ],
+  },
+  {
     version: '2.11.0',
     date: '2026-08-06',
     bullets: [

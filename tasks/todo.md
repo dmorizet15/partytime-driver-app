@@ -23,6 +23,8 @@ Built on a branch at Darren's request mid-session (*"Do not push to main. Set th
   8. Android as well as iOS — the fleet is mixed, and the video mime differs (`video/mp4`/`video/3gpp` vs `video/quicktime`).
   9. **Regression:** POD photo still uploads after `compressImage` was extracted; `tools/intake.html` still uploads to the public bucket unchanged.
   10. **Generator fix:** a device with a genuinely stuck queued generator photo drains it on the next online load.
+- [x] **Add Media now stays on a completed stop** (v2.11.1) — Darren hit this on his first live look. `StopDetailScreen.tsx:2275`'s `isCompleted ?` ternary replaces the whole ActionCard, so a second entry point renders in the Delivered card. No API change needed.
+- [ ] **Open question for Darren:** the other four ActionCard items — **Open in Maps, View Order, POD Photo, Report an issue** — are *also* unavailable once a stop is completed, because of that same ternary. POD Photo and Report an issue in particular look like things a driver might legitimately need after the fact. Pre-existing, untouched, and not confirmed as deliberate. Worth a yes/no rather than assuming.
 - [ ] Not done, deliberately: no global "Add media" Tools entry (Darren chose stop-screen-only); no in-app video recorder; `generator-action-photos` and every other camera path still upload full-resolution originals with no size cap — worth a follow-up, untouched here.
 
 ## August 4, 2026 — Mid-route warehouse stop completion — DESIGN ONLY, NOT IMPLEMENTED
