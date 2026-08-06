@@ -12,6 +12,7 @@ import AvaChip from '@/components/AvaChip'
 import AvaPreferencesSection from '@/components/ava/AvaPreferencesSection'
 import CalendarSyncSection from '@/components/calendarSync/CalendarSyncSection'
 import UploadComplianceDocModal from './UploadComplianceDocModal'
+import MediaCaptureSheet from '@/components/media/MediaCaptureSheet'
 import {
   DOCUMENT_LABELS,
   DOCUMENT_TYPES,
@@ -65,6 +66,18 @@ function UploadIcon({ size = 14, color = C.muted }: { size?: number; color?: str
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
       <polyline points="17 8 12 3 7 8"/>
       <line x1="12" y1="3" x2="12" y2="15"/>
+    </svg>
+  )
+}
+// Film strip + spark. Same mark as the Add Media tile on Stop Detail, so the
+// two entry points read as the same feature.
+function MediaIcon({ size = 16, color = C.ink }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+         strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="2.5" y="5" width="14" height="14" rx="2"/>
+      <path d="M2.5 9h14M2.5 15h14M6.5 5v14M12.5 5v14"/>
+      <path d="M20 9.5l1.6 2.9 1.4.3-1.6 1.6.3 2.2-1.7-.9-1.7.9.3-2.2-1.6-1.6 1.4-.3z"/>
     </svg>
   )
 }
@@ -372,6 +385,17 @@ export default function ProfileScreen() {
   const [docs, setDocs] = useState<DriverDocSummary[] | null>(null)
   const [docsError, setDocsError] = useState<string | null>(null)
   const [uploadFor, setUploadFor] = useState<DocumentType | null>(null)
+
+  // Generic media uploader — the catch-all for footage NOT tied to a current
+  // stop (an older job, B-roll, something shot off-route). Stop Detail's Add
+  // Media covers anything on today's route; this covers everything else.
+  const [mediaOpen,  setMediaOpen]  = useState(false)
+  const [mediaToast, setMediaToast] = useState<string | null>(null)
+  useEffect(() => {
+    if (!mediaToast) return
+    const t = window.setTimeout(() => setMediaToast(null), 3200)
+    return () => window.clearTimeout(t)
+  }, [mediaToast])
 
   const loadDocs = useCallback(async () => {
     if (!user?.id) return
@@ -707,6 +731,41 @@ export default function ProfileScreen() {
           </div>
         </div>
 
+        {/* Marketing media — the non-stop catch-all. */}
+        <SectionEyebrow>Marketing</SectionEyebrow>
+        <div style={{ padding: '0 18px' }}>
+          <button
+            type="button"
+            onClick={() => setMediaOpen(true)}
+            style={{
+              width: '100%',
+              background: C.paper,
+              border: `1.5px solid ${C.ink}`,
+              borderRadius: 16,
+              padding: '14px 16px',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              fontSize: 14, fontWeight: 700, color: C.ink,
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+              textAlign: 'left',
+            }}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <MediaIcon size={16} color={C.ink}/>
+              <span>
+                Upload media
+                <span style={{
+                  display: 'block', fontSize: 11.5, fontWeight: 500, color: C.muted,
+                  marginTop: 2, letterSpacing: 0,
+                }}>
+                  A photo or clip that isn’t on today’s route
+                </span>
+              </span>
+            </span>
+            <span aria-hidden="true" style={{ color: C.muted, fontSize: 18, lineHeight: 1 }}>›</span>
+          </button>
+        </div>
+
         {/* Security */}
         <SectionEyebrow>Security</SectionEyebrow>
         <div style={{ padding: '0 18px' }}>
@@ -867,6 +926,32 @@ export default function ProfileScreen() {
       </div>
 
       <BottomNav/>
+
+      {mediaOpen && user?.id && (
+        <MediaCaptureSheet
+          mode="generic"
+          driverId={user.id}
+          onClose={() => setMediaOpen(false)}
+          onQueued={(mediaType) =>
+            setMediaToast(mediaType === 'video'
+              ? 'Clip saved — sending in the background'
+              : 'Photo saved — sending in the background')}
+        />
+      )}
+
+      {/* Sits above <FieldMediaChip/> (fixed at 88px) so the two never overlap. */}
+      {mediaToast && (
+        <div style={{
+          position: 'fixed', left: 12, right: 12,
+          bottom: 'calc(140px + env(safe-area-inset-bottom))',
+          maxWidth: 424, margin: '0 auto', zIndex: 155,
+          background: '#1A1A1A', border: '0.5px solid rgba(255,255,255,0.07)',
+          borderRadius: 999, padding: '11px 16px', textAlign: 'center',
+          color: '#fff', fontSize: 13, fontWeight: 600, fontFamily: FONT_BODY,
+        }}>
+          {mediaToast}
+        </div>
+      )}
 
       {uploadFor && user?.id && (
         <UploadComplianceDocModal

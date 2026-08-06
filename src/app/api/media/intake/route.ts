@@ -14,10 +14,21 @@
 // `marketing_media_intake` deliberately has NO INSERT policy (migration 030):
 // service role is the only writer, and this is the only route that writes.
 //
-// POST { stop_id, storage_path, media_type, mime_type, byte_size,
-//        duration_seconds, caption, consent }
+// TWO SOURCES (Phase 2), one table, so marketing reads one place:
+//   source 'stop'    — captured on a stop. Crew-gated, fully auto-tagged.
+//   source 'generic' — the profile uploader. No stop, so no crew gate and
+//                      nothing to derive; instead the driver's description is
+//                      MANDATORY and the object path must key on their own uid.
+//                      Every job-tag column stays null.
+// `source` is optional on the wire and defaults to 'stop' — a capture queued
+// before this deploy predates the field and was stop-tagged by construction.
+//
+// POST { source?, stop_id?, storage_path, media_type, mime_type, byte_size,
+//        duration_seconds, caption, category?, consent }
 //   → 200 { saved: true }
-//   401 unauthenticated · 400 bad_request / consent_required / bad_path
+//   401 unauthenticated
+//   400 bad_request / consent_required / bad_path / caption_required /
+//       generic_cannot_have_stop / stop_not_found
 //   403 not_crew · 500 server misconfiguration / insert failure
 //
 // Idempotent: storage_path is UNIQUE and a duplicate is treated as success,
@@ -28,7 +39,13 @@ import { NextRequest, NextResponse }     from 'next/server'
 import { cookies }                       from 'next/headers'
 import { createServerClient }            from '@supabase/ssr'
 import { createClient, SupabaseClient }  from '@supabase/supabase-js'
-import { FIELD_MEDIA_BUCKET, PHOTO_PREFIX, VIDEO_PREFIX } from '@/lib/fieldMedia/config'
+import {
+  FIELD_MEDIA_BUCKET,
+  GENERIC_PHOTO_PREFIX,
+  GENERIC_VIDEO_PREFIX,
+  PHOTO_PREFIX,
+  VIDEO_PREFIX,
+} from '@/lib/fieldMedia/config'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -87,13 +104,15 @@ const STOP_COLUMNS =
   'address, scheduled_date, event_start, event_end'
 
 interface PostBody {
-  stop_id?:          string
+  source?:           string
+  stop_id?:          string | null
   storage_path?:     string
   media_type?:       string
   mime_type?:        string
   byte_size?:        number
   duration_seconds?: number | null
   caption?:          string | null
+  category?:         string | null
   consent?:          boolean
 }
 
@@ -106,6 +125,17 @@ interface PostBody {
 function pathMatchesStop(path: string, stopId: string, mediaType: 'photo' | 'video'): boolean {
   const prefix = mediaType === 'video' ? VIDEO_PREFIX : PHOTO_PREFIX
   const re = new RegExp(`^${prefix}/stop-${stopId}__\\d+\\.[a-z0-9]{2,5}$`)
+  return re.test(path)
+}
+
+/**
+ * Generic captures have no stop to key on, so the path keys on the DRIVER —
+ * and it is matched against the authenticated uid, never anything the client
+ * sent. A caller therefore cannot file a row against another driver's object.
+ */
+function pathMatchesDriver(path: string, driverId: string, mediaType: 'photo' | 'video'): boolean {
+  const prefix = mediaType === 'video' ? GENERIC_VIDEO_PREFIX : GENERIC_PHOTO_PREFIX
+  const re = new RegExp(`^${prefix}/generic-${driverId}__\\d+\\.[a-z0-9]{2,5}$`)
   return re.test(path)
 }
 
@@ -122,58 +152,24 @@ export async function POST(req: NextRequest) {
   }
 
   const body = (await req.json().catch(() => null)) as PostBody | null
-  const stopId      = body?.stop_id
   const storagePath = body?.storage_path
   const mediaType   = body?.media_type
+  // Absent `source` means a Phase 1 client (or a queued capture enqueued before
+  // this deploy) — those were all stop-tagged, so default rather than reject.
+  const source      = body?.source ?? 'stop'
 
-  if (!stopId || !UUID_RE.test(stopId) || !storagePath
-      || (mediaType !== 'photo' && mediaType !== 'video')) {
+  if (!storagePath
+      || (mediaType !== 'photo' && mediaType !== 'video')
+      || (source !== 'stop' && source !== 'generic')) {
     return NextResponse.json({ saved: false, error: 'bad_request' }, { status: 400, headers: HEADERS })
   }
 
-  // Consent is not advisory. A capture without it must never reach marketing,
-  // and a client that forgets to send it is a bug we want to see loudly.
+  // Consent is not advisory, on either path. A capture without it must never
+  // reach marketing, and a client that forgets to send it is a bug we want to
+  // see loudly.
   if (body?.consent !== true) {
     return NextResponse.json({ saved: false, error: 'consent_required' }, { status: 400, headers: HEADERS })
   }
-
-  if (!pathMatchesStop(storagePath, stopId, mediaType)) {
-    return NextResponse.json({ saved: false, error: 'bad_path' }, { status: 400, headers: HEADERS })
-  }
-
-  const stopRes = await supabase
-    .from('dispatch_stops')
-    .select(STOP_COLUMNS)
-    .eq('id', stopId)
-    .maybeSingle()
-  if (stopRes.error) {
-    console.warn('[media-intake] stop query failed:', stopRes.error.message)
-    return NextResponse.json({ saved: false, error: 'stop_lookup_failed' }, { status: 500, headers: HEADERS })
-  }
-  const stop = stopRes.data as StopRow | null
-  if (!stop) {
-    return NextResponse.json({ saved: false, error: 'stop_not_found' }, { status: 400, headers: HEADERS })
-  }
-
-  // Crew gate — the caller must be on this stop's route. Mirrors the
-  // equipment-returns POST; service role does the write, the gate lives here.
-  const crewRes = await supabase
-    .from('route_crew')
-    .select('user_id')
-    .eq('route_id', stop.route_id!)
-    .eq('user_id', user.id)
-    .limit(1)
-  if (crewRes.error || (crewRes.data ?? []).length === 0) {
-    if (crewRes.error) console.warn('[media-intake] crew gate query failed:', crewRes.error.message)
-    return NextResponse.json({ saved: false, error: 'not_crew' }, { status: 403, headers: HEADERS })
-  }
-
-  const profRes = await supabase
-    .from('profiles')
-    .select('display_name')
-    .eq('id', user.id)
-    .maybeSingle()
-  const driverName = (profRes.data as { display_name?: string | null } | null)?.display_name ?? null
 
   const caption = typeof body?.caption === 'string' && body.caption.trim().length > 0
     ? body.caption.trim().slice(0, 140)
@@ -185,34 +181,115 @@ export async function POST(req: NextRequest) {
     ? Math.max(0, Math.floor(body.byte_size))
     : null
 
+  const profRes = await supabase
+    .from('profiles')
+    .select('display_name')
+    .eq('id', user.id)
+    .maybeSingle()
+  const driverName = (profRes.data as { display_name?: string | null } | null)?.display_name ?? null
+
+  // Columns every row carries regardless of where it came from.
+  const common = {
+    storage_bucket:    FIELD_MEDIA_BUCKET,
+    storage_path:      storagePath,
+    media_type:        mediaType,
+    mime_type:         body?.mime_type ?? null,
+    byte_size:         byteSize,
+    duration_seconds:  duration,
+    driver_id:         user.id,
+    driver_name:       driverName,
+    caption,
+    consent_confirmed: true,
+    consent_at:        new Date().toISOString(),
+  }
+
+  let row: Record<string, unknown>
+
+  if (source === 'generic') {
+    // ── Generic (profile uploader) ────────────────────────────────────────
+    // No stop, so there is no crew gate to apply and nothing to derive. What
+    // replaces it: the description is mandatory (without it marketing gets an
+    // unlabelled file, the exact problem this feature exists to solve), and
+    // the path must key on THIS driver's uid.
+    if (!caption) {
+      return NextResponse.json({ saved: false, error: 'caption_required' }, { status: 400, headers: HEADERS })
+    }
+    if (body?.stop_id) {
+      // A generic capture claiming a stop is incoherent — the DB check would
+      // reject it anyway; fail here with something readable.
+      return NextResponse.json({ saved: false, error: 'generic_cannot_have_stop' }, { status: 400, headers: HEADERS })
+    }
+    if (!pathMatchesDriver(storagePath, user.id, mediaType)) {
+      return NextResponse.json({ saved: false, error: 'bad_path' }, { status: 400, headers: HEADERS })
+    }
+
+    // Every job-tag column stays null. There is no job.
+    row = {
+      ...common,
+      source:   'generic',
+      category: typeof body?.category === 'string' && body.category.trim()
+        ? body.category.trim().slice(0, 40)
+        : null,
+    }
+  } else {
+    // ── Stop-tagged (unchanged from Phase 1) ──────────────────────────────
+    const stopId = body?.stop_id
+    if (!stopId || !UUID_RE.test(stopId)) {
+      return NextResponse.json({ saved: false, error: 'bad_request' }, { status: 400, headers: HEADERS })
+    }
+    if (!pathMatchesStop(storagePath, stopId, mediaType)) {
+      return NextResponse.json({ saved: false, error: 'bad_path' }, { status: 400, headers: HEADERS })
+    }
+
+    const stopRes = await supabase
+      .from('dispatch_stops')
+      .select(STOP_COLUMNS)
+      .eq('id', stopId)
+      .maybeSingle()
+    if (stopRes.error) {
+      console.warn('[media-intake] stop query failed:', stopRes.error.message)
+      return NextResponse.json({ saved: false, error: 'stop_lookup_failed' }, { status: 500, headers: HEADERS })
+    }
+    const stop = stopRes.data as StopRow | null
+    if (!stop) {
+      return NextResponse.json({ saved: false, error: 'stop_not_found' }, { status: 400, headers: HEADERS })
+    }
+
+    // Crew gate — the caller must be on this stop's route. Mirrors the
+    // equipment-returns POST; service role does the write, the gate lives here.
+    // Note it gates on crew membership only, never on completion: attaching
+    // media to an already-completed stop is expected (see v2.11.1).
+    const crewRes = await supabase
+      .from('route_crew')
+      .select('user_id')
+      .eq('route_id', stop.route_id!)
+      .eq('user_id', user.id)
+      .limit(1)
+    if (crewRes.error || (crewRes.data ?? []).length === 0) {
+      if (crewRes.error) console.warn('[media-intake] crew gate query failed:', crewRes.error.message)
+      return NextResponse.json({ saved: false, error: 'not_crew' }, { status: 403, headers: HEADERS })
+    }
+
+    row = {
+      ...common,
+      source:         'stop',
+      category:       null,
+      stop_id:        stop.id,
+      route_id:       stop.route_id,
+      reservation_id: stop.reservation_id,
+      company_name:   stop.company_name,
+      customer_name:  stop.customer_name,
+      client_company: stop.client_company,
+      address:        stop.address,
+      scheduled_date: stop.scheduled_date,
+      event_start:    stop.event_start,
+      event_end:      stop.event_end,
+    }
+  }
+
   const insertRes = await supabase
     .from('marketing_media_intake')
-    .upsert(
-      {
-        storage_bucket:    FIELD_MEDIA_BUCKET,
-        storage_path:      storagePath,
-        media_type:        mediaType,
-        mime_type:         body?.mime_type ?? null,
-        byte_size:         byteSize,
-        duration_seconds:  duration,
-        stop_id:           stop.id,
-        route_id:          stop.route_id,
-        reservation_id:    stop.reservation_id,
-        company_name:      stop.company_name,
-        customer_name:     stop.customer_name,
-        client_company:    stop.client_company,
-        address:           stop.address,
-        scheduled_date:    stop.scheduled_date,
-        event_start:       stop.event_start,
-        event_end:         stop.event_end,
-        driver_id:         user.id,
-        driver_name:       driverName,
-        caption,
-        consent_confirmed: true,
-        consent_at:        new Date().toISOString(),
-      },
-      { onConflict: 'storage_path', ignoreDuplicates: true },
-    )
+    .upsert(row, { onConflict: 'storage_path', ignoreDuplicates: true })
   if (insertRes.error) {
     console.error('[media-intake] insert failed:', insertRes.error.message)
     return NextResponse.json({ saved: false, error: 'insert_failed' }, { status: 500, headers: HEADERS })

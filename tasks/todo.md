@@ -1,5 +1,27 @@
 # Open Tasks — partytime-driver-app
 
+## August 6, 2026 — Field media Phase 2 — ON BRANCH `feat/field-media-phase2`, mig 031 APPLIED, VERSION 2.11.1 → 2.12.0
+
+Three changes in one pass: completed-stop window bounded to ~1 day, generic uploader on the driver profile, library picker alongside live capture. Architecture: `docs/claude/field-media-intake.md` → "Phase 2".
+
+- [x] Mig 031 — `source` (`'stop'|'generic'`, NOT NULL DEFAULT `'stop'`) + nullable `category` + the generic-shape CHECK. Previewed with 7 ROLLBACK assertions, applied, re-verified.
+- [x] `COMPLETED_STOP_MEDIA_DAYS = 1` + `withinCompletedMediaWindow` (fails closed). Route-list hide logic untouched.
+- [x] Profile → Marketing → **Upload media**; `source='generic'`, caption required (DB-enforced), optional category.
+- [x] Shared sheet: **Take now** + **Choose from library**, one `handlePick` funnel, library-specific rejection wording.
+- [x] `compressImage` honours EXIF orientation via `createImageBitmap`; GPS EXIF still deliberately stripped.
+- [x] Build green; 26/26 pure-logic assertions; live generic-prefix round-trip incl. privacy (public + anon GET both 400); all test data cleaned up.
+- [ ] **BLOCKING, unchanged from Phase 1 — Darren: raise the project-wide storage upload limit** (Supabase → Project Settings → Storage) to ~500 MB. Probed 49 MB → 200, 60 MB → 413. Video is capped at the 50 MB global until then, and this now applies to library picks too.
+- [ ] **Marketing side (outside this repo):** split on `source`. Generic rows have `stop_id` null, all job-tag columns null, a guaranteed non-empty `caption`, optional `category`, and live under `social/generic-intake/` + `social/generic-video-intake/`.
+- [ ] **On-device smoke gate (Phase 2 — nothing below is checkable from a terminal):**
+  1. Library pick of a photo on iOS **and** Android → uploads, tagged correctly. Android pickers sometimes hand back an empty `file.type`; the extension sniff in `inferMediaType` covers it, unverified live.
+  2. A genuinely sideways photo from the camera roll comes out **upright** (the `createImageBitmap` orientation path).
+  3. Library pick of a >60s clip → rejected up front with the "choose or trim" wording, nothing uploaded.
+  4. Deny the photo-library permission → the sheet stays open with both sources usable, no scary error. (There is no way to detect denial on web — this verifies it degrades quietly.)
+  5. Profile uploader end-to-end under a real driver JWT → row lands with `source='generic'`, caption, category, all job-tag columns null.
+  6. Send with the description blank → CTA stays disabled ("Add a short description"); confirm the DB CHECK is never actually reached from the UI.
+  7. Completed stop on **yesterday's** route still shows Add Media; one from **3+ days ago** does not.
+  8. **Regression:** a stop-tagged capture still works unchanged, and a capture queued before this deploy (no `source` field) still flushes — it must default to `'stop'`, not 400.
+
 ## August 6, 2026 — Field media intake — ON `main` (`4812ffa`, PR #6), mig 030 APPLIED, VERSION 2.10.0 → 2.11.0
 
 Drivers can send a photo or a ≤60s clip from a customer stop straight to marketing, auto-tagged with the stop / customer / reservation / event. Full architecture + the marketing handshake: `docs/claude/field-media-intake.md`.

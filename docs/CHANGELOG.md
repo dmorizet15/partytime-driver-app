@@ -4,6 +4,50 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-08-06 (c) — Field media Phase 2: bounded window, generic uploader, library picker (branch `feat/field-media-phase2`; **mig 031**; VERSION 2.11.1 → 2.12.0)
+
+Three changes in one pass. All product decisions were pre-made; nothing was re-litigated.
+
+### 1 — Completed-stop upload window bounded to ~1 day
+
+`COMPLETED_STOP_MEDIA_DAYS = 1`. An **open** stop always offers Add Media; a **completed** one offers it only on today's or yesterday's route (`withinCompletedMediaWindow`, keyed on `route.operating_date`, `completed_at` as fallback). Reaching further back put a live upload control on stops the route list intentionally hides. **Fails closed** on no signal — a missing date must not silently re-open every historical stop, which is the exact thing being bounded. The route-list hide logic is untouched.
+
+### 2 — Generic uploader on the driver profile
+
+New **Marketing → Upload media** entry on `ProfileScreen`, for footage with no stop behind it. Same sheet, same private bucket, same table — `source = 'generic'`, `stop_id` null, every job-tag column null, and the driver's description **required** because without a stop it is the only thing telling marketing what the file is.
+
+Migration 031 adds `source text NOT NULL DEFAULT 'stop'` and a nullable `category`, plus the contract as a **DB CHECK** rather than route-only validation:
+
+```sql
+CHECK (source <> 'generic' OR (stop_id IS NULL AND caption IS NOT NULL AND btrim(caption) <> ''))
+```
+
+Two judgement calls worth recording:
+- **`source` is optional on the wire and defaults to `'stop'`.** A capture already sitting in a driver's IndexedDB queue predates the field and was stop-tagged by construction — rejecting it would lose their footage.
+- **No mirror check** that `source='stop'` implies `stop_id IS NOT NULL`. `stop_id` carries `ON DELETE SET NULL`, which fires as an UPDATE and would re-evaluate the constraint, making a `dispatch_stops` delete fail. The asymmetry is deliberate.
+
+`category` was not in the brief's column list, but the brief did ask for a category picker; storing it as a nullable free-text column keeps marketing reading one place and means retuning the picker is not a migration.
+
+### 3 — Library picker alongside live capture
+
+The shared `MediaCaptureSheet` now offers **Take now** (Photo / Video) and **Choose from library** — the same `<input type="file">` minus `capture=`, which is what opens the iOS Photos picker / Android gallery. Both funnel through one `handlePick`, so caps, compression, duration probing, consent and upload cannot diverge. Library picks are rejected **before** anything is queued, worded for the situation ("choose or trim a clip under 60 seconds").
+
+**Honest note on permissions:** the brief asked for PHPicker / `expo-image-picker` library mode with graceful denial handling. This app is a **web PWA, not a native shell** — there is no such API to call and no permission state to query. The OS prompts per action on its own, and a denial is **indistinguishable from an ordinary cancel** (the change event simply never fires). `handlePick` returns early on no file and the sheet stays open with both sources intact. There is deliberately no "permission denied" error, because inventing one would show a scary message to everyone who merely changed their mind.
+
+**Orientation:** `compressImage` now prefers `createImageBitmap(blob, { imageOrientation: 'from-image' })`, which resolves EXIF rotation before rasterising — this matters much more for library picks than fresh captures. ⚠ The canvas re-encode still strips all *other* EXIF including **GPS**, which is deliberate: the coordinates of a customer's property have no business in a marketing library. Video passes through untouched.
+
+### Verified
+
+Build green. Migration previewed in `BEGIN … ROLLBACK` with 7 assertions — valid generic row accepted; missing caption, blank caption, generic-carrying-a-stop_id and an unknown `source` value all rejected; a stop row still inserts with no caption and defaults to `'stop'`. Applied and re-verified (NOT NULL + default, `category` present, 4 checks, index, **INSERT policies still 0**).
+
+**26/26 assertions** against the compiled `config.ts` — window boundaries incl. month rollover, future-dated preview routes, garbage input failing closed; all four path builders; mime→type for the library picker; and cross-checks that a generic path fails the stop regex, a stop path fails the generic regex, another driver's uid is rejected, and a `../` traversal is rejected.
+
+Live round-trip on the new prefix: upload 200, **public GET 400, anon GET 400**; the route's exact generic insert shape preserves caption/category/driver_name, defaults `review_status` to `new`, keeps **all ten job-tag columns null**, and a duplicate POST yields 1 row. All test objects and rows removed — bucket and table back to 0.
+
+**Not verified — needs a device.** Real library picks on iOS and Android, a genuinely sideways photo coming out upright, permission denial behaviour, and the profile uploader end-to-end under a driver's own JWT.
+
+---
+
 ## 2026-08-06 (b) — Add Media stays available on a completed stop (no mig; VERSION 2.11.0 → 2.11.1)
 
 **Trigger:** Darren added himself to a live route to try the new feature, found the stop already completed, and couldn't attach anything. *"If that's the case, that shouldn't be. I should be able to go back and add it to a stop as long as it's available on my phone."*
