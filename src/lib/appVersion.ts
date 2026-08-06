@@ -24,6 +24,15 @@ export interface Release {
 // Newest FIRST. RELEASES[0] is the live version.
 export const RELEASES: readonly Release[] = [
   {
+    version: '2.12.0',
+    date: '2026-08-06',
+    bullets: [
+      `You can now send a photo or clip you already shot — every Add Media screen has a Choose from library button next to the camera one`,
+      `New Upload media on your Profile page, for footage that isn't on today's route — an older job, or something you shot off the truck. Tell us what it is in one line and it goes to marketing the same way`,
+      `Add Media on a finished stop now only shows on today's and yesterday's routes, so it stops turning up on old jobs you've already put behind you`,
+    ],
+  },
+  {
     version: '2.11.1',
     date: '2026-08-06',
     bullets: [

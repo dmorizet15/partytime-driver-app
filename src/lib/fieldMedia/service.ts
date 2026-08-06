@@ -28,6 +28,7 @@ import {
   extForMime,
   fieldMediaPath,
   formatBytes,
+  genericMediaPath,
   type FieldMediaType,
 } from './config'
 import {
@@ -111,21 +112,32 @@ export function probeVideoDuration(blob: Blob): Promise<number | null> {
 
 export interface CaptureRejection { reason: string }
 
-/** Returns null when acceptable, or a driver-facing rejection message. */
+/**
+ * Returns null when acceptable, or a driver-facing rejection message.
+ *
+ * `fromLibrary` only changes the wording. A library pick is rejected BEFORE any
+ * upload starts — telling someone to "record a shorter one" when they just
+ * chose a file from their camera roll is the wrong instruction.
+ */
 export function validateCapture(
   mediaType: FieldMediaType,
   byteSize: number,
   durationSeconds: number | null,
+  fromLibrary = false,
 ): CaptureRejection | null {
   if (mediaType === 'video') {
     if (durationSeconds !== null && durationSeconds > MAX_VIDEO_SECONDS + 1) {
       return {
-        reason: `That clip is ${Math.round(durationSeconds)} seconds. Keep it to ${MAX_VIDEO_SECONDS} or under.`,
+        reason: fromLibrary
+          ? `That clip is ${Math.round(durationSeconds)} seconds. Please choose or trim a clip under ${MAX_VIDEO_SECONDS} seconds.`
+          : `That clip is ${Math.round(durationSeconds)} seconds. Keep it to ${MAX_VIDEO_SECONDS} or under.`,
       }
     }
     if (byteSize > MAX_VIDEO_BYTES) {
       return {
-        reason: `That clip is ${formatBytes(byteSize)} — too big to send. Record a shorter one, or set your camera to 1080p.`,
+        reason: fromLibrary
+          ? `That clip is ${formatBytes(byteSize)} — too big to send. Please choose a shorter one.`
+          : `That clip is ${formatBytes(byteSize)} — too big to send. Record a shorter one, or set your camera to 1080p.`,
       }
     }
     return null
@@ -146,10 +158,22 @@ export function validateCapture(
  */
 export async function queueCapture(capture: FieldMediaCapture): Promise<boolean> {
   const ext = extForMime(capture.mimeType, capture.mediaType)
+
+  // A generic capture keys on the driver; a stop capture keys on the stop.
+  // Both are stamped once here and never recomputed, so a retry lands on the
+  // same object instead of orphaning the first attempt.
+  const isGeneric = capture.source === 'generic' || !capture.stopId
+  const storagePath = isGeneric
+    ? genericMediaPath(capture.mediaType, capture.driverId, capture.capturedAtMs, ext)
+    : fieldMediaPath(capture.mediaType, capture.stopId!, capture.capturedAtMs, ext)
+  const id = isGeneric
+    ? fieldMediaKey(`generic:${capture.driverId}`, capture.capturedAtMs)
+    : fieldMediaKey(capture.stopId!, capture.capturedAtMs)
+
   const record: QueuedFieldMedia = {
     ...capture,
-    id:          fieldMediaKey(capture.stopId, capture.capturedAtMs),
-    storagePath: fieldMediaPath(capture.mediaType, capture.stopId, capture.capturedAtMs, ext),
+    id,
+    storagePath,
     attempts:    0,
     queuedAt:    new Date().toISOString(),
   }
@@ -245,6 +269,7 @@ async function postIntakeRow(record: QueuedFieldMedia): Promise<FieldMediaOutcom
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        source:           record.source,
         stop_id:          record.stopId,
         storage_path:     record.storagePath,
         media_type:       record.mediaType,
@@ -252,6 +277,7 @@ async function postIntakeRow(record: QueuedFieldMedia): Promise<FieldMediaOutcom
         byte_size:        record.byteSize,
         duration_seconds: record.durationSeconds,
         caption:          record.caption,
+        category:         record.category,
         consent:          record.consent,
       }),
     })

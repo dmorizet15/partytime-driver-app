@@ -42,6 +42,7 @@ import {
 import AvaNoteSheet from '@/components/ava/AvaNoteSheet'
 import MediaCaptureSheet from '@/components/media/MediaCaptureSheet'
 import { compressImage } from '@/lib/imageCompress'
+import { withinCompletedMediaWindow } from '@/lib/fieldMedia/config'
 import StopNotesPreSheet, { type StopNotesSections } from '@/components/ava/StopNotesPreSheet'
 import ItemCheckoffPanel, {
   type CheckoffPanelHandle,
@@ -1003,8 +1004,19 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   // Field media is offered on customer stops only. A depot leg has no
   // customer, reservation or event to tag a clip with, and an untagged upload
   // is the exact thing this feature exists to stop arriving.
-  const showMediaTile =
+  const isCustomerStop =
     stop.stop_type === 'delivery' || stop.stop_type === 'pickup' || stop.stop_type === 'service'
+
+  // On an OPEN stop the tile is always available. On a COMPLETED one it is
+  // bounded to the current route / yesterday (COMPLETED_STOP_MEDIA_DAYS):
+  // reaching further back puts a live upload control on stops the route list
+  // intentionally hides, which reads as confusing rather than useful. Older
+  // footage belongs on the profile uploader, which exists for exactly that.
+  // The route-list hide logic itself is untouched — this only bounds the tile.
+  const withinMediaWindow = withinCompletedMediaWindow(
+    route?.operating_date, stop.completed_at,
+  )
+  const showMediaTile = isCustomerStop && (!isCompleted || withinMediaWindow)
 
   const etaSentTime     = stop.on_the_way_sent_at ? formatSentAt(stop.on_the_way_sent_at) : null
   const etaQuotedSnippet = etaRange ? `We're ${etaRange} out.` : null
@@ -3758,10 +3770,12 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
         </div>
       )}
 
-      {mediaSheetOpen && stop && (
+      {mediaSheetOpen && stop && authUser && (
         <MediaCaptureSheet
+          mode="stop"
           stop={stop}
           routeId={routeId}
+          driverId={authUser.id}
           onClose={() => setMediaSheetOpen(false)}
           onQueued={(mediaType) =>
             setMediaToast(mediaType === 'video'

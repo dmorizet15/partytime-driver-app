@@ -5,10 +5,13 @@ import type { Stop } from '@/types'
 import { compressImage } from '@/lib/imageCompress'
 import {
   CAPTION_LIMIT,
+  GENERIC_CATEGORIES,
   MAX_VIDEO_SECONDS,
   PHOTO_ACCEPT,
   VIDEO_ACCEPT,
   formatBytes,
+  mediaTypeForFile,
+  type FieldMediaSource,
   type FieldMediaType,
 } from '@/lib/fieldMedia/config'
 import {
@@ -17,21 +20,35 @@ import {
   validateCapture,
 } from '@/lib/fieldMedia/service'
 
-// ─── Field media capture sheet ───────────────────────────────────────────────
-// Opened from the Add Media tile in Stop Detail's QuickAction grid.
+// ─── Field media capture sheet (shared) ──────────────────────────────────────
+// ONE sheet serves both entry points, so the validation, caps, consent gate and
+// upload path can never drift between them:
+//   • mode 'stop'    — the Add Media tile on Stop Detail. Auto-tagged.
+//   • mode 'generic' — the profile uploader. No stop, so the driver's own
+//                      description is REQUIRED; it is the only thing telling
+//                      marketing what the file is.
 //
-// THIS SHEET NEVER UPLOADS. It validates, enqueues and closes — the transfer
-// is driven from lib/fieldMedia/service so it survives the driver navigating
-// away, which they will do immediately. See that file's header.
+// THIS SHEET NEVER UPLOADS. It validates, enqueues and closes — the transfer is
+// driven from lib/fieldMedia/service so it survives the driver navigating away.
 //
-// Consent is a hard gate on the Send button rather than a soft prompt: this
-// is footage of a customer's home, and the whole design (private bucket,
-// server-derived tags, nothing auto-publishing) rests on someone having
-// actually confirmed it's OK to use.
+// TWO SOURCES (Phase 2): shoot live, or choose an existing file. Both run the
+// identical path from `handlePick` down; only where the Blob came from differs.
+// Live capture is `capture="environment"` (the OS camera); the library picker
+// is the same <input type="file"> WITHOUT that attribute, which is what opens
+// the iOS Photos picker / Android gallery.
+//
+// ⚠ Permissions: this is a web PWA, not a native shell — there is no
+// PHPicker/expo-image-picker call to make and no permission API to query. The
+// OS prompts for camera or photo-library access on its own, per action, and a
+// denial simply means the input's change event never fires. That is handled by
+// `handlePick` returning early on no file: the sheet stays open with its
+// buttons intact so the driver can try the other source. There is deliberately
+// no "permission denied" error state, because the browser gives us no way to
+// distinguish a denial from an ordinary cancel — inventing one would mean
+// showing a scary message to everyone who simply changed their mind.
 
 const C = {
   gold:     '#FFB800',
-  goldDeep: '#B07F00',
   coral:    '#FF5A3C',
   green:    '#1FBF6B',
 } as const
@@ -39,44 +56,79 @@ const C = {
 const FONT_DISPLAY = "var(--font-archivo), 'Archivo', 'Inter', system-ui, -apple-system, sans-serif"
 const FONT_BODY    = "var(--font-inter), 'Inter', system-ui, -apple-system, sans-serif"
 
+const LIBRARY_ACCEPT = `${PHOTO_ACCEPT},${VIDEO_ACCEPT}`
+
 interface Picked {
-  blob:      Blob
-  mediaType: FieldMediaType
-  mimeType:  string
-  byteSize:  number
-  duration:  number | null
+  blob:       Blob
+  mediaType:  FieldMediaType
+  mimeType:   string
+  byteSize:   number
+  duration:   number | null
   previewUrl: string
 }
 
 interface MediaCaptureSheetProps {
-  stop:    Stop
-  routeId: string
-  onClose: () => void
-  /** Fired after a capture is queued, so the screen can toast. */
+  mode:      FieldMediaSource
+  /** Required when mode === 'stop'. */
+  stop?:     Stop
+  routeId?:  string | null
+  driverId:  string
+  onClose:   () => void
   onQueued?: (mediaType: FieldMediaType) => void
 }
 
+/** Last-resort type sniff: some Android pickers hand back an empty file.type. */
+function inferMediaType(file: File): FieldMediaType | null {
+  const byMime = mediaTypeForFile(file.type)
+  if (byMime) return byMime
+  const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
+  if (['mp4', 'mov', 'm4v', '3gp', 'webm', 'avi', 'mkv'].includes(ext)) return 'video'
+  if (['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif', 'gif'].includes(ext)) return 'photo'
+  return null
+}
+
 export default function MediaCaptureSheet({
-  stop, routeId, onClose, onQueued,
+  mode, stop, routeId = null, driverId, onClose, onQueued,
 }: MediaCaptureSheetProps) {
-  const [picked,   setPicked]   = useState<Picked | null>(null)
-  const [busy,     setBusy]     = useState(false)
-  const [error,    setError]    = useState<string | null>(null)
-  const [caption,  setCaption]  = useState('')
-  const [consent,  setConsent]  = useState(false)
-  const [sending,  setSending]  = useState(false)
+  const [picked,  setPicked]  = useState<Picked | null>(null)
+  const [busy,    setBusy]    = useState(false)
+  const [error,   setError]   = useState<string | null>(null)
+  const [caption, setCaption] = useState('')
+  const [category, setCategory] = useState<string | null>(null)
+  const [consent, setConsent] = useState(false)
+  const [sending, setSending] = useState(false)
 
-  const photoRef = useRef<HTMLInputElement | null>(null)
-  const videoRef = useRef<HTMLInputElement | null>(null)
+  const photoRef   = useRef<HTMLInputElement | null>(null)
+  const videoRef   = useRef<HTMLInputElement | null>(null)
+  const libraryRef = useRef<HTMLInputElement | null>(null)
 
-  // Object URLs are revoked on replacement and on unmount. (The generator
-  // section leaks these — don't copy that part.)
+  const isGeneric = mode === 'generic'
+
+  // Object URLs are revoked on replacement and on unmount.
   useEffect(() => {
     return () => { if (picked) URL.revokeObjectURL(picked.previewUrl) }
   }, [picked])
 
-  async function handlePick(file: File | undefined, mediaType: FieldMediaType) {
+  /**
+   * The single funnel. Live capture and library picks both land here, so caps,
+   * compression, duration probing and the consent gate cannot diverge between
+   * the two sources.
+   */
+  async function handlePick(
+    file: File | undefined,
+    forcedType: FieldMediaType | null,
+    fromLibrary: boolean,
+  ) {
+    // No file = the user cancelled, or the OS denied the permission. Both look
+    // identical to us; leave the sheet exactly as it was.
     if (!file) return
+
+    const mediaType = forcedType ?? inferMediaType(file)
+    if (!mediaType) {
+      setError("That file isn't a photo or a video.")
+      return
+    }
+
     setError(null)
     setBusy(true)
     try {
@@ -90,14 +142,15 @@ export default function MediaCaptureSheet({
       }
 
       const duration = mediaType === 'video' ? await probeVideoDuration(blob) : null
-      const rejection = validateCapture(mediaType, blob.size, duration)
+
+      // Caps are checked BEFORE anything is queued, so an over-length library
+      // pick is refused up front instead of failing partway through an upload.
+      const rejection = validateCapture(mediaType, blob.size, duration, fromLibrary)
       if (rejection) { setError(rejection.reason); return }
 
       if (picked) URL.revokeObjectURL(picked.previewUrl)
       setPicked({
-        blob,
-        mediaType,
-        mimeType,
+        blob, mediaType, mimeType,
         byteSize: blob.size,
         duration,
         previewUrl: URL.createObjectURL(blob),
@@ -110,19 +163,26 @@ export default function MediaCaptureSheet({
     }
   }
 
+  const trimmedCaption = caption.trim()
+  const captionMissing = isGeneric && trimmedCaption.length === 0
+  const canSend = !!picked && consent && !captionMissing && !sending
+
   async function handleSend() {
-    if (!picked || !consent || sending) return
+    if (!canSend || !picked) return
     setSending(true)
     setError(null)
     const ok = await queueCapture({
-      stopId:          stop.stop_id,
-      routeId,
+      source:          mode,
+      stopId:          isGeneric ? null : (stop?.stop_id ?? null),
+      routeId:         isGeneric ? null : routeId,
+      driverId,
       mediaType:       picked.mediaType,
       blob:            picked.blob,
       mimeType:        picked.mimeType,
       byteSize:        picked.byteSize,
       durationSeconds: picked.duration,
-      caption:         caption.trim() || null,
+      caption:         trimmedCaption || null,
+      category:        isGeneric ? category : null,
       consent:         true,
       capturedAtMs:    Date.now(),
     })
@@ -137,7 +197,9 @@ export default function MediaCaptureSheet({
     onClose()
   }
 
-  const stopLabel = (stop.company_name?.trim() || stop.customer_name || 'this stop')
+  const stopLabel = stop
+    ? (stop.company_name?.trim() || stop.customer_name || 'this stop')
+    : null
 
   return (
     <div
@@ -166,39 +228,78 @@ export default function MediaCaptureSheet({
         }}/>
 
         <div style={{ marginBottom: 4, fontFamily: FONT_DISPLAY, fontSize: 19, fontWeight: 800 }}>
-          Add media
+          {isGeneric ? 'Upload media' : 'Add media'}
         </div>
         <div style={{ fontSize: 12.5, color: '#94A3B8', marginBottom: 16, lineHeight: 1.45 }}>
-          Goes to marketing tagged with <strong style={{ color: '#CBD5E1' }}>{stopLabel}</strong>.
-          Nothing is posted — someone reviews it first.
+          {isGeneric
+            ? <>Goes to marketing for review. Not tied to a stop, so tell us what it is below.</>
+            : <>Goes to marketing tagged with <strong style={{ color: '#CBD5E1' }}>{stopLabel}</strong>. Nothing is posted — someone reviews it first.</>}
         </div>
 
+        {/* Live camera */}
         <input
           ref={photoRef} type="file" accept={PHOTO_ACCEPT} capture="environment"
-          onChange={(e) => { void handlePick(e.target.files?.[0], 'photo'); e.target.value = '' }}
+          onChange={(e) => { void handlePick(e.target.files?.[0], 'photo', false); e.target.value = '' }}
           style={{ display: 'none' }}
         />
         <input
           ref={videoRef} type="file" accept={VIDEO_ACCEPT} capture="environment"
-          onChange={(e) => { void handlePick(e.target.files?.[0], 'video'); e.target.value = '' }}
+          onChange={(e) => { void handlePick(e.target.files?.[0], 'video', false); e.target.value = '' }}
+          style={{ display: 'none' }}
+        />
+        {/* Library — same element, no `capture`, which is what opens the
+            Photos picker / gallery instead of the camera. Accepts both kinds;
+            the file's own mime decides which path it takes. */}
+        <input
+          ref={libraryRef} type="file" accept={LIBRARY_ACCEPT}
+          onChange={(e) => { void handlePick(e.target.files?.[0], null, true); e.target.value = '' }}
           style={{ display: 'none' }}
         />
 
         {!picked && (
-          <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
-            <PickButton
-              label={busy ? 'Reading…' : 'Photo'}
-              sub="Finished setup"
+          <>
+            <div style={{
+              fontSize: 10.5, fontWeight: 800, letterSpacing: '0.14em',
+              textTransform: 'uppercase', color: '#64748B', marginBottom: 8,
+            }}>
+              Take now
+            </div>
+            <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+              <PickButton
+                label={busy ? 'Reading…' : 'Photo'}
+                sub="Use the camera"
+                disabled={busy}
+                onClick={() => photoRef.current?.click()}
+              />
+              <PickButton
+                label={busy ? 'Reading…' : 'Video'}
+                sub={`Up to ${MAX_VIDEO_SECONDS}s`}
+                disabled={busy}
+                onClick={() => videoRef.current?.click()}
+              />
+            </div>
+
+            <button
+              onClick={() => libraryRef.current?.click()}
               disabled={busy}
-              onClick={() => photoRef.current?.click()}
-            />
-            <PickButton
-              label={busy ? 'Reading…' : 'Video'}
-              sub={`Up to ${MAX_VIDEO_SECONDS}s`}
-              disabled={busy}
-              onClick={() => videoRef.current?.click()}
-            />
-          </div>
+              style={{
+                width: '100%', background: 'transparent',
+                border: '1px dashed #475569', borderRadius: 12,
+                padding: '14px 12px', marginBottom: 14,
+                cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1,
+                color: '#CBD5E1', fontSize: 13.5, fontWeight: 700,
+                fontFamily: FONT_BODY,
+              }}
+            >
+              Choose from library
+              <span style={{
+                display: 'block', fontSize: 11, fontWeight: 500,
+                color: '#64748B', marginTop: 2,
+              }}>
+                Something you already shot
+              </span>
+            </button>
+          </>
         )}
 
         {picked && (
@@ -223,7 +324,7 @@ export default function MediaCaptureSheet({
               <button
                 onClick={() => {
                   URL.revokeObjectURL(picked.previewUrl)
-                  setPicked(null); setConsent(false); setCaption('')
+                  setPicked(null); setConsent(false)
                 }}
                 style={{
                   background: 'none', border: 'none', color: '#94A3B8',
@@ -235,21 +336,54 @@ export default function MediaCaptureSheet({
             </div>
 
             <label style={{ display: 'block', fontSize: 11.5, color: '#94A3B8', marginBottom: 6 }}>
-              What is it? <span style={{ opacity: 0.7 }}>(optional)</span>
+              {isGeneric
+                ? <>What is it? <span style={{ color: C.gold }}>Required</span></>
+                : <>What is it? <span style={{ opacity: 0.7 }}>(optional)</span></>}
             </label>
             <input
               type="text"
               value={caption}
               maxLength={CAPTION_LIMIT}
               onChange={(e) => setCaption(e.target.value)}
-              placeholder="40x60 pole tent, finished"
+              placeholder="Finished sailcloth tent, Rhinebeck wedding"
               style={{
                 width: '100%', padding: '11px 12px', fontSize: 16,
-                borderRadius: 10, border: '1px solid #334155',
-                background: '#1E293B', color: '#fff', marginBottom: 14,
+                borderRadius: 10,
+                border: `1px solid ${captionMissing ? '#475569' : '#334155'}`,
+                background: '#1E293B', color: '#fff',
+                marginBottom: isGeneric ? 12 : 14,
                 fontFamily: FONT_BODY,
               }}
             />
+
+            {isGeneric && (
+              <>
+                <label style={{ display: 'block', fontSize: 11.5, color: '#94A3B8', marginBottom: 6 }}>
+                  Category <span style={{ opacity: 0.7 }}>(optional)</span>
+                </label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+                  {GENERIC_CATEGORIES.map((c) => {
+                    const on = category === c.key
+                    return (
+                      <button
+                        key={c.key}
+                        onClick={() => setCategory(on ? null : c.key)}
+                        style={{
+                          background: on ? C.gold : '#1E293B',
+                          border: `1px solid ${on ? C.gold : '#334155'}`,
+                          color: on ? '#1A1200' : '#CBD5E1',
+                          borderRadius: 999, padding: '8px 14px',
+                          fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
+                          fontFamily: FONT_BODY,
+                        }}
+                      >
+                        {c.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </>
+            )}
 
             <button
               onClick={() => setConsent((v) => !v)}
@@ -288,17 +422,18 @@ export default function MediaCaptureSheet({
 
         <button
           onClick={handleSend}
-          disabled={!picked || !consent || sending}
+          disabled={!canSend}
           style={{
             width: '100%', height: 48, borderRadius: 999, border: 'none',
-            background: (!picked || !consent) ? '#334155' : C.gold,
-            color: (!picked || !consent) ? '#94A3B8' : '#1A1200',
+            background: canSend ? C.gold : '#334155',
+            color: canSend ? '#1A1200' : '#94A3B8',
             fontFamily: FONT_DISPLAY, fontSize: 15, fontWeight: 800,
-            cursor: (!picked || !consent) ? 'default' : 'pointer',
+            cursor: canSend ? 'pointer' : 'default',
           }}
         >
           {sending ? 'Saving…'
-            : !picked ? 'Take a photo or video'
+            : !picked ? 'Take or choose something first'
+            : captionMissing ? 'Add a short description'
             : !consent ? 'Confirm it’s OK to use'
             : 'Send to marketing'}
         </button>

@@ -1,10 +1,15 @@
-import type { FieldMediaType } from './config'
+import type { FieldMediaSource, FieldMediaType } from './config'
 
-// What the capture sheet hands to the queue. The sheet never uploads — it
+// What a capture sheet hands to the queue. The sheet never uploads — it
 // validates, stamps, enqueues and closes.
 export interface FieldMediaCapture {
-  stopId:          string
+  source:          FieldMediaSource
+  /** null for a generic capture — there is no stop behind it. */
+  stopId:          string | null
   routeId:         string | null
+  /** Always present. For generic captures it is also what the storage path
+   *  keys on, since there is no stop to key on. */
+  driverId:        string
   mediaType:       FieldMediaType
   blob:            Blob
   mimeType:        string
@@ -12,14 +17,19 @@ export interface FieldMediaCapture {
   /** null when the browser could not decode the container to read a duration
    *  (real on iOS HEVC .mov) — the byte cap is the only guard in that case. */
   durationSeconds: number | null
+  /** Optional on a stop capture; REQUIRED on a generic one, where it is the
+   *  only thing telling marketing what the file is. */
   caption:         string | null
+  /** Generic captures only. Free text; see GENERIC_CATEGORIES. */
+  category:        string | null
   consent:         boolean
   capturedAtMs:    number
 }
 
 export interface QueuedFieldMedia extends Omit<FieldMediaCapture, 'blob'> {
-  /** `${stopId}:${capturedAtMs}` — unique per capture, so a stop can carry
-   *  several photos and clips without them overwriting each other. */
+  /** `${stopId | 'generic:'+driverId}:${capturedAtMs}` — unique per capture,
+   *  so a stop (or a driver) can carry several photos and clips without them
+   *  overwriting each other. */
   id:          string
   blob:        Blob
   /** Stamped at enqueue time and never recomputed, so a retry re-uploads to
