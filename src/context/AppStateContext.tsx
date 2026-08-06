@@ -16,6 +16,8 @@ import { stopStateService } from '@/services/StopStateService'
 import { flushCheckoffQueue } from '@/lib/checkoff/service'
 import { flushCompleteQueue } from '@/lib/completeQueue'
 import { flushEquipmentReturnQueue } from '@/lib/equipmentReturns/service'
+import { flushGeneratorActionQueue } from '@/lib/generatorActions/service'
+import { flushFieldMediaQueue } from '@/lib/fieldMedia/service'
 import { writeRouteCache, readRouteCache, pruneOldRouteCache, warmRouteShells } from '@/lib/routeCache'
 import { clearCachedUser, writeCachedProfile } from '@/lib/authCache'
 import { getUserRole } from '@/lib/auth'
@@ -255,6 +257,20 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       // And queued equipment-return upserts (delivery-side capture) —
       // fire-and-forget, dedupe-by-stop, retries until the upsert lands.
       if (user?.id) void flushEquipmentReturnQueue()
+
+      // And queued generator captures (IndexedDB — the photo is a Blob).
+      // ⚠ This call was MISSING from 2026-07-24 (Generator Stop Actions
+      // Phase 1) until 2026-08-06: flushGeneratorActionQueue() was written
+      // and its own header comment claimed loadDay flushed it, but it had
+      // zero call sites, so any capture that failed its live write sat in
+      // IndexedDB forever. Do not remove it again.
+      if (user?.id) void flushGeneratorActionQueue()
+
+      // And queued field media (photos/clips for marketing) — also IndexedDB.
+      // This is the ONLY thing that uploads them: the capture sheet
+      // deliberately never does, so a driver is never held on the stop screen
+      // waiting for a 90 MB clip. See lib/fieldMedia/service.ts.
+      if (user?.id) void flushFieldMediaQueue()
 
       // Read OTW status from Supabase for this batch of stops
       const supabaseOtw = await stopStateService.readOtwStatus(stopIds)

@@ -4,6 +4,7 @@ import './globals.css'
 import { AppStateProvider } from '@/context/AppStateContext'
 import { AuthProvider } from '@/context/AuthContext'
 import PwaUpdater from '@/components/pwa/PwaUpdater'
+import FieldMediaChip from '@/components/media/FieldMediaChip'
 
 const inter = Inter({
   subsets: ['latin'],
@@ -67,6 +68,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               {/* App-wide SW update banner (Feature 2) — fixed, shows only when a
                   new service worker is waiting. Renders null otherwise. */}
               <PwaUpdater />
+              {/* App-wide field-media upload chip. Mounted here, not on a
+                  screen, so a clip keeps uploading while the driver navigates
+                  to the next stop (App Router unmounts screens). Renders null
+                  when nothing is queued or in flight. */}
+              <FieldMediaChip />
               {children}
             </div>
           </AppStateProvider>

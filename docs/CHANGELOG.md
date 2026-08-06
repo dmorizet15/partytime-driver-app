@@ -4,6 +4,43 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-08-06 — Field media intake: drivers send photos/video to marketing, auto-tagged (branch `feat/field-media-intake`; **mig 030**; VERSION 2.10.0 → 2.11.0)
+
+**Trigger:** kickoff doc `driver-app-media-upload-kickoff.md`. Marketing has a content pipeline but no supply — footage lives on drivers' phones, and anything that does arrive is an anonymous file nobody can attribute to a job. Short video is the new-audience play and the driver app is the only friction-free source of in-the-moment event footage.
+
+**⚠ Not on `main`.** Mid-session Darren said: *"Do not push to main. Set this up in a branch so I can preview it and pull a PR."* That supersedes the repo's standing no-branches rule for this feature. Migration 030 **is** applied to the shared prod DB — additive, nothing reads it, and a Vercel preview of the branch needs the bucket and table to exist.
+
+### Investigation (before any code)
+
+- `marketing-media` is **`public: true`** — a bucket-wide flag, so nothing private can live in it. Darren's call: driver media takes a **private path**, and marketing promotes an asset to public only on his approval of a specific post.
+- That bucket's only INSERT policies are **`TO anon`**. Postgres roles don't inherit, so a signed-in driver (`authenticated`) could never have written there anyway.
+- `social/video-intake/` in the public bucket: **zero objects. Never used.**
+- No `marketing_media_intake` table existed; no media/content/post tables anywhere in the DB — the Content Ledger is Notion-only.
+- **Pre-flight probe that changed the design:** service-role uploads of **49 MB → 200** and **60 MB → 400 `EntityTooLarge`/413**. The project-wide storage upload limit was **50 MB**, and a bucket's `file_size_limit` cannot exceed it — tus does not bypass it either. A 60s clip is ~40 MB at 1080p HEVC but ~190 MB at 4K, so most clips would have been rejected after the driver had already shot them. Darren agreed to raise the global to ~500 MB; the bucket and `config.ts` are set to match and are inert until he does.
+
+### Decisions (Darren, 2026-08-06)
+
+Photo **and** video in v1 · 60s cap · stop screen only, no global Tools entry · every driver · **private bucket + consent tap** · native camera + **resumable (tus)** upload · auto-send in the background, **must never block the driver** · optional caption · fix the generator-queue bug in the same session · mixed iPhone/Android fleet.
+
+One correction issued mid-decision: the "wait for Wi-Fi" option I had recommended rests on the Network Information API, which **Safari/iOS does not implement**. On an iPhone the app cannot tell Wi-Fi from LTE, so that option was undeliverable as stated and Darren re-picked auto-send with a visible size + Cancel.
+
+### What shipped
+
+- **Migration 030** — private `field-media-intake` bucket (500 MB, photo + video mimes incl. `video/quicktime` for iOS `.mov`), 4 storage policies (authenticated insert, owner select, super_admin select, owner delete), and `public.marketing_media_intake` with RLS and **deliberately no INSERT policy**.
+- **`src/lib/fieldMedia/*`** — `config` (one home for bucket/caps/path builder), `offlineQueue` (IndexedDB `ptd-field-media`), `resumableUpload` (tus, 6 MB chunks), `service` (validation, upload, POST, flush, and the store the chip reads).
+- **`src/lib/imageCompress.ts`** — `compressImage` extracted out of `StopDetailScreen.tsx:1651` so POD and field media share one implementation.
+- **`POST /api/media/intake`** — the only writer of the table. Takes `stop_id` + `storage_path` and derives every customer/event column itself under the service role behind the `equipment-returns` crew gate.
+- **`MediaCaptureSheet`** (4th QuickAction tile, customer stops only) and **`FieldMediaChip`** (mounted in `layout.tsx`, app-wide, with Cancel).
+- **Fixed: `flushGeneratorActionQueue()` had zero call sites** since it shipped on 2026-07-24 — its own header comment claimed `loadDay` flushed it. Every generator capture that failed its live write has been stuck in IndexedDB for six weeks. Now wired alongside the new field-media flush. See `tasks/lessons.md`.
+
+### Verified this session
+
+`npx next build` green, `/api/media/intake` registered. Migration previewed in `BEGIN … ROLLBACK` then applied; bucket confirmed `public = false`, 4 storage policies, 2 table policies, **0 INSERT policies**, RLS on. Round-trip against a real stop: all three names captured correctly (`Orvis Sandanona  - 10/7/2026, WCAMPWA` / `Jordan Hoener` / `Orvis Sandanona Shooting Grounds`), `reservation_id` captured, `driver_name` resolved, `review_status` defaults `new`. Duplicate POST → **1 row** (idempotent). Owner reads own row (1), another driver reads **0**, a simulated `authenticated` forged insert blocked **42501**. Public GET and anon GET on the private object both **400**. Path regex rejects another stop's id, `../` traversal, and a photo claiming the video prefix. All probe and test objects deleted; `marketing_media_intake` and the bucket both back to 0 rows.
+
+**Not verified — needs a device.** Real camera capture on iOS and Android, tus resume across a real connection drop, the authenticated storage INSERT policy under a driver's own JWT, and the generator-queue fix draining a genuinely stuck record. See `tasks/todo.md`.
+
+---
+
 ## 2026-08-04 — Mid-route warehouse completion: investigation + approved design (NO CODE CHANGED; no mig; VERSION unchanged at v2.10.0)
 
 **Trigger:** Darren reported that a driver who returns to the warehouse mid-route — to reload or swap trucks before continuing — has no way to mark that stop complete. His stated belief: an arrival trigger already auto-completes warehouse stops, and the gap was a missing manual fallback.

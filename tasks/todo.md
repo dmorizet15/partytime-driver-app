@@ -1,5 +1,30 @@
 # Open Tasks — partytime-driver-app
 
+## August 6, 2026 — Field media intake — BUILT, ON BRANCH `feat/field-media-intake`, NOT MERGED, mig 030 APPLIED, VERSION 2.10.0 → 2.11.0
+
+Drivers can send a photo or a ≤60s clip from a customer stop straight to marketing, auto-tagged with the stop / customer / reservation / event. Full architecture + the marketing handshake: `docs/claude/field-media-intake.md`.
+
+**⚠ Darren, mid-session: "Do not push to main. Set this up in a branch so I can preview it and pull a PR."** That supersedes the standing no-branches rule for this feature. Build is green; migration 030 IS applied to prod (additive, nothing reads it, and a Vercel preview needs it).
+
+- [ ] **BLOCKING — Darren: raise the project-wide storage upload limit** in Supabase → Project Settings → Storage → "Upload file size limit" to ~500 MB. Probed live 2026-08-06: **49 MB → 200, 60 MB → 400 `EntityTooLarge`**, so the global was 50 MB. The bucket and `fieldMedia/config.ts` are already set to 500 MB and are **inert until this is raised**. A 60s clip is ~40 MB at 1080p HEVC but ~190 MB at 4K — without this, most clips fail after the driver has already shot them. tus does NOT bypass it.
+- [ ] **Marketing side (outside this repo):** point the weekly sweep at the private `field-media-intake` bucket, read with the service role, mint signed URLs, and join `marketing_media_intake` on `storage_path` for context. `review_status` (`new`→`kept`/`rejected`/`published`) is the triage column. Contract is written up in `docs/claude/field-media-intake.md`.
+- [x] Migration 030 — private bucket + 4 storage policies + `marketing_media_intake` (no INSERT policy; service-role writes only). Previewed with `BEGIN … ROLLBACK`, applied, verified.
+- [x] `src/lib/fieldMedia/{config,types,offlineQueue,resumableUpload,service}.ts`, `src/lib/imageCompress.ts` (extracted from `StopDetailScreen`), `POST /api/media/intake`, `MediaCaptureSheet`, `FieldMediaChip`.
+- [x] **Fixed `flushGeneratorActionQueue()` — it had ZERO call sites since 2026-07-24.** Generator captures that failed their live write have been stuck in IndexedDB for six weeks. See `tasks/lessons.md`.
+- [x] `npx next build` green. DB-layer verification done (idempotency, RLS reads, forged-insert blocked 42501, path regex, private-object 400 on public + anon GET). All test objects and rows cleaned up.
+- [ ] **On-device smoke gate (THE gate — nothing below can be checked from a terminal):**
+  1. Photo on a live delivery stop → object in `field-media-intake`, row in `marketing_media_intake` with the right company/customer/reservation/event/driver and `consent_confirmed = true`.
+  2. **The non-blocking rule:** shoot a ~30s clip, then immediately navigate away and complete another stop while the chip is still uploading. The upload must survive and the driver must never be held up. This is the requirement Darren stated explicitly — if it fails, the feature is wrong regardless of anything else.
+  3. Clip over 60s → rejected with the real duration, nothing uploaded. An HEVC `.mov` whose duration won't probe must fall through to the byte cap, **not** a false rejection.
+  4. Airplane-mode capture → queued in IndexedDB; reconnect → `loadDay` flushes it.
+  5. Kill the network mid-video-upload → tus **resumes** rather than restarting.
+  6. Cancel on the chip → upload stops, queue entry removed, no orphan object left in the bucket.
+  7. **The authenticated storage INSERT policy under a real driver JWT** — only the service-role path was exercised from here. It mirrors `ava_stop_notes_authenticated_insert` and `generator_action_photos_authenticated_insert`, both proven in prod, but it is unproven for this bucket.
+  8. Android as well as iOS — the fleet is mixed, and the video mime differs (`video/mp4`/`video/3gpp` vs `video/quicktime`).
+  9. **Regression:** POD photo still uploads after `compressImage` was extracted; `tools/intake.html` still uploads to the public bucket unchanged.
+  10. **Generator fix:** a device with a genuinely stuck queued generator photo drains it on the next online load.
+- [ ] Not done, deliberately: no global "Add media" Tools entry (Darren chose stop-screen-only); no in-app video recorder; `generator-action-photos` and every other camera path still upload full-resolution originals with no size cap — worth a follow-up, untouched here.
+
 ## August 4, 2026 — Mid-route warehouse stop completion — DESIGN ONLY, NOT IMPLEMENTED
 
 Darren reported drivers can't mark a mid-route warehouse return complete. Investigation confirmed it and found the premise of the report was wrong in an important way. **Full design + evidence: `docs/superpowers/specs/2026-08-04-mid-route-warehouse-completion-design.md`.** Design approved 2026-08-04; Darren signed off for the night before implementation. **Pick this up next session.**

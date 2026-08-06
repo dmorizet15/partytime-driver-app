@@ -24,6 +24,16 @@ export interface Release {
 // Newest FIRST. RELEASES[0] is the live version.
 export const RELEASES: readonly Release[] = [
   {
+    version: '2.11.0',
+    date: '2026-08-06',
+    bullets: [
+      `New Add Media button on delivery and pickup stops — grab a photo or a short clip of a finished setup and it goes to marketing already labelled with the job, so nobody has to chase you for it later`,
+      `It sends in the background, so you can close the stop and carry on driving while it uploads. There's a Cancel on it if you change your mind`,
+      `Clips need to be a minute or under, and you confirm the customer is OK with us using it before it sends`,
+      `Fixed: generator photos taken with no signal were getting stuck on your phone instead of uploading when you got back online`,
+    ],
+  },
+  {
     version: '2.10.0',
     date: '2026-07-31',
     bullets: [

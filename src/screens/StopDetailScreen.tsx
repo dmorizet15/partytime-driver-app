@@ -40,6 +40,8 @@ import {
   type StopNoteRow,
 } from '@/lib/ava/stopNotesClient'
 import AvaNoteSheet from '@/components/ava/AvaNoteSheet'
+import MediaCaptureSheet from '@/components/media/MediaCaptureSheet'
+import { compressImage } from '@/lib/imageCompress'
 import StopNotesPreSheet, { type StopNotesSections } from '@/components/ava/StopNotesPreSheet'
 import ItemCheckoffPanel, {
   type CheckoffPanelHandle,
@@ -322,6 +324,18 @@ function CameraIcon({ size = 18, color = C.ink }: IconProps) {
     </svg>
   )
 }
+// Film strip + spark — reads as "media for marketing", deliberately distinct
+// from CameraIcon so it is never confused with the POD photo tile beside it.
+function MediaIcon({ size = 18, color = C.ink }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+         strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="2.5" y="5" width="14" height="14" rx="2"/>
+      <path d="M2.5 9h14M2.5 15h14M6.5 5v14M12.5 5v14"/>
+      <path d="M20 9.5l1.6 2.9 1.4.3-1.6 1.6.3 2.2-1.7-.9-1.7.9.3-2.2-1.6-1.6 1.4-.3z"/>
+    </svg>
+  )
+}
 function ArrowIcon({ size = 18, color = C.ink }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
@@ -431,6 +445,16 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
   const [navMessage, setNavMessage] = useState<string | null>(null)
   const [pod, setPod] = useState<PodState>({ status: 'idle' })
   const photoInputRef = useRef<HTMLInputElement>(null)
+  // Field media (marketing capture). Optional and never gates completion —
+  // it lives in the QuickAction grid, deliberately NOT in the pinned CTA
+  // block, which is reserved for controls a driver must see to avoid harm.
+  const [mediaSheetOpen, setMediaSheetOpen] = useState(false)
+  const [mediaToast, setMediaToast] = useState<string | null>(null)
+  useEffect(() => {
+    if (!mediaToast) return
+    const t = window.setTimeout(() => setMediaToast(null), 3200)
+    return () => window.clearTimeout(t)
+  }, [mediaToast])
   const [etaStatus, setEtaStatus] = useState<EtaStatus>('idle')
   const [etaRange, setEtaRange] = useState<string | null>(null)
   const [etaError, setEtaError] = useState<string | null>(null)
@@ -975,6 +999,12 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
     && !isCompleted
     && checkoffCommitted !== true
     && canComplete
+
+  // Field media is offered on customer stops only. A depot leg has no
+  // customer, reservation or event to tag a clip with, and an untagged upload
+  // is the exact thing this feature exists to stop arriving.
+  const showMediaTile =
+    stop.stop_type === 'delivery' || stop.stop_type === 'pickup' || stop.stop_type === 'service'
 
   const etaSentTime     = stop.on_the_way_sent_at ? formatSentAt(stop.on_the_way_sent_at) : null
   const etaQuotedSnippet = etaRange ? `We're ${etaRange} out.` : null
@@ -1648,30 +1678,9 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
 
   function handleTakePhotoTap() { photoInputRef.current?.click() }
 
-  async function compressImage(file: File): Promise<File> {
-    return new Promise((resolve) => {
-      const img = new Image()
-      const url = URL.createObjectURL(file)
-      img.onload = () => {
-        URL.revokeObjectURL(url)
-        const MAX = 1200
-        let { width, height } = img
-        if (width > MAX || height > MAX) {
-          if (width > height) { height = Math.round((height * MAX) / width); width = MAX }
-          else { width = Math.round((width * MAX) / height); height = MAX }
-        }
-        const canvas = document.createElement('canvas')
-        canvas.width = width; canvas.height = height
-        canvas.getContext('2d')!.drawImage(img, 0, 0, width, height)
-        canvas.toBlob((blob) => {
-          if (!blob) { resolve(file); return }
-          resolve(new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' }))
-        }, 'image/jpeg', 0.8)
-      }
-      img.onerror = () => { URL.revokeObjectURL(url); resolve(file) }
-      img.src = url
-    })
-  }
+  // compressImage used to be a private closure here. It now lives in
+  // @/lib/imageCompress so the field-media capture sheet reuses the same
+  // implementation instead of forking a second one. Behaviour unchanged.
 
   async function handlePhotoSelected(e: React.ChangeEvent<HTMLInputElement>) {
     if (!stop) return
@@ -2866,10 +2875,14 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
                 </>
                 )}
 
-                {/* 3-button grid */}
+                {/* Action grid. 2×2 on customer stops (Add Media is the 4th
+                    tile); 3-across on depot legs, where there is no customer
+                    or event to tag a clip with and the tile is hidden. */}
                 <div style={{
                   marginTop: 12,
-                  display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10,
+                  display: 'grid',
+                  gridTemplateColumns: showMediaTile ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
+                  gap: 10,
                 }}>
                   <QuickAction
                     icon={<NavigateIcon size={22} color={C.ink}/>}
@@ -2898,6 +2911,13 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
                     onClick={handleTakePhotoTap}
                     loading={pod.status === 'uploading'}
                   />
+                  {showMediaTile && (
+                    <QuickAction
+                      icon={<MediaIcon size={22} color={C.ink}/>}
+                      label="Add Media"
+                      onClick={() => setMediaSheetOpen(true)}
+                    />
+                  )}
                 </div>
 
                 {/* Report an issue — subtle red-bordered link below the
@@ -3695,6 +3715,34 @@ export default function StopDetailScreen({ routeId, stopId }: StopDetailScreenPr
               Got it
             </button>
           </div>
+        </div>
+      )}
+
+      {mediaSheetOpen && stop && (
+        <MediaCaptureSheet
+          stop={stop}
+          routeId={routeId}
+          onClose={() => setMediaSheetOpen(false)}
+          onQueued={(mediaType) =>
+            setMediaToast(mediaType === 'video'
+              ? 'Clip saved — sending in the background'
+              : 'Photo saved — sending in the background')}
+        />
+      )}
+
+      {/* Confirmation pill. Sits ABOVE <FieldMediaChip/> (which is fixed at
+          88px) so the two never overlap. A photo can finish uploading before
+          the driver looks up, so the chip alone isn't enough acknowledgement. */}
+      {mediaToast && (
+        <div style={{
+          position: 'fixed', left: 12, right: 12,
+          bottom: 'calc(140px + env(safe-area-inset-bottom))',
+          maxWidth: 424, margin: '0 auto', zIndex: 155,
+          background: '#1A1A1A', border: '0.5px solid rgba(255,255,255,0.07)',
+          borderRadius: 999, padding: '11px 16px', textAlign: 'center',
+          color: '#fff', fontSize: 13, fontWeight: 600, fontFamily: FONT_BODY,
+        }}>
+          {mediaToast}
         </div>
       )}
 
