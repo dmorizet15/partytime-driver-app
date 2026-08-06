@@ -10,7 +10,7 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 **Branch, then PR, then `main` — a one-off.** Mid-session Darren said: *"Do not push to main. Set this up in a branch so I can preview it and pull a PR."* That superseded the repo's standing no-branches rule for this feature. Built on `feat/field-media-intake`, opened as PR #6, rebase-merged to `main` (`4812ffa`) the same day and the branch deleted. Migration 030 was applied to the shared prod DB before the merge — additive, nothing read it, and a Vercel preview of the branch needed the bucket and table to exist.
 
-**One CI note:** the `version-guard` check failed red on the PR, but not on the version — GitHub Actions couldn't fetch its own action (`Failed to resolve action download info. Error: Service Unavailable`) and the script never ran. Verified locally against `origin/main`: `✓ version-guard: VERSION bumped 2.10.0 → 2.11.0`. The blocking gate is the local `.githooks/pre-push` hook, which passed on push; CI is a reminder, not the gate.
+**One CI note:** `version-guard` first went red on the PR, but not on the version — GitHub Actions couldn't fetch its own action (`Failed to resolve action download info. Error: Service Unavailable`) and the script never ran. Verified locally against `origin/main` (`✓ version-guard: VERSION bumped 2.10.0 → 2.11.0`), then re-ran the check: **SUCCESS**, alongside Vercel and Vercel Preview Comments. Worth remembering next time this check goes red — read the log before assuming the version is wrong, and note that the blocking gate is the local `.githooks/pre-push` hook (which passed), not CI.
 
 ### Investigation (before any code)
 
@@ -38,6 +38,8 @@ One correction issued mid-decision: the "wait for Wi-Fi" option I had recommende
 ### Verified this session
 
 `npx next build` green, `/api/media/intake` registered. Migration previewed in `BEGIN … ROLLBACK` then applied; bucket confirmed `public = false`, 4 storage policies, 2 table policies, **0 INSERT policies**, RLS on. Round-trip against a real stop: all three names captured correctly (`Orvis Sandanona  - 10/7/2026, WCAMPWA` / `Jordan Hoener` / `Orvis Sandanona Shooting Grounds`), `reservation_id` captured, `driver_name` resolved, `review_status` defaults `new`. Duplicate POST → **1 row** (idempotent). Owner reads own row (1), another driver reads **0**, a simulated `authenticated` forged insert blocked **42501**. Public GET and anon GET on the private object both **400**. Path regex rejects another stop's id, `../` traversal, and a photo claiming the video prefix. All probe and test objects deleted; `marketing_media_intake` and the bucket both back to 0 rows.
+
+**Production deploy:** both Vercel production builds Ready (`kwq940sga` 51s for the merge, `ipv8sjm0t` 36s for the docs commit). Live check against `partytime-driver-app.vercel.app`: `POST /api/media/intake` returns **`{"saved":false,"error":"unauthenticated"}`** — the route's own 401, and a non-existent sibling under the same prefix returns 404, so the route is genuinely running rather than sitting behind a platform auth wall.
 
 **Not verified — needs a device.** Real camera capture on iOS and Android, tus resume across a real connection drop, the authenticated storage INSERT policy under a driver's own JWT, and the generator-queue fix draining a genuinely stuck record. See `tasks/todo.md`.
 
