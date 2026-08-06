@@ -1,10 +1,10 @@
 # Open Tasks — partytime-driver-app
 
-## August 6, 2026 — Field media intake — BUILT, ON BRANCH `feat/field-media-intake`, NOT MERGED, mig 030 APPLIED, VERSION 2.10.0 → 2.11.0
+## August 6, 2026 — Field media intake — ON `main` (`4812ffa`, PR #6), mig 030 APPLIED, VERSION 2.10.0 → 2.11.0
 
 Drivers can send a photo or a ≤60s clip from a customer stop straight to marketing, auto-tagged with the stop / customer / reservation / event. Full architecture + the marketing handshake: `docs/claude/field-media-intake.md`.
 
-**⚠ Darren, mid-session: "Do not push to main. Set this up in a branch so I can preview it and pull a PR."** That supersedes the standing no-branches rule for this feature. Build is green; migration 030 IS applied to prod (additive, nothing reads it, and a Vercel preview needs it).
+Built on a branch at Darren's request mid-session (*"Do not push to main. Set this up in a branch so I can preview it and pull a PR"* — a one-off that superseded the standing no-branches rule), reviewed as PR #6, **rebase-merged to `main` the same day** and the branch deleted. Build green; migration 030 applied to prod.
 
 - [ ] **BLOCKING — Darren: raise the project-wide storage upload limit** in Supabase → Project Settings → Storage → "Upload file size limit" to ~500 MB. Probed live 2026-08-06: **49 MB → 200, 60 MB → 400 `EntityTooLarge`**, so the global was 50 MB. The bucket and `fieldMedia/config.ts` are already set to 500 MB and are **inert until this is raised**. A 60s clip is ~40 MB at 1080p HEVC but ~190 MB at 4K — without this, most clips fail after the driver has already shot them. tus does NOT bypass it.
 - [ ] **Marketing side (outside this repo):** point the weekly sweep at the private `field-media-intake` bucket, read with the service role, mint signed URLs, and join `marketing_media_intake` on `storage_path` for context. `review_status` (`new`→`kept`/`rejected`/`published`) is the triage column. Contract is written up in `docs/claude/field-media-intake.md`.

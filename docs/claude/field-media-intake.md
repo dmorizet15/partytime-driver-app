@@ -1,6 +1,6 @@
 # Field media intake — driver → marketing
 
-Shipped 2026-08-06, driver-app migration 030, v2.11.0. Branch `feat/field-media-intake`.
+Shipped 2026-08-06, driver-app migration 030, v2.11.0. On `main` (`4812ffa`, via PR #6).
 
 Drivers capture a photo or a clip on a customer stop and it reaches marketing already labelled with the job. Nothing auto-publishes.
 

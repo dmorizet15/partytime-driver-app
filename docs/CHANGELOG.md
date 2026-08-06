@@ -4,11 +4,13 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
-## 2026-08-06 — Field media intake: drivers send photos/video to marketing, auto-tagged (branch `feat/field-media-intake`; **mig 030**; VERSION 2.10.0 → 2.11.0)
+## 2026-08-06 — Field media intake: drivers send photos/video to marketing, auto-tagged (on `main` `4812ffa` via PR #6; **mig 030**; VERSION 2.10.0 → 2.11.0)
 
 **Trigger:** kickoff doc `driver-app-media-upload-kickoff.md`. Marketing has a content pipeline but no supply — footage lives on drivers' phones, and anything that does arrive is an anonymous file nobody can attribute to a job. Short video is the new-audience play and the driver app is the only friction-free source of in-the-moment event footage.
 
-**⚠ Not on `main`.** Mid-session Darren said: *"Do not push to main. Set this up in a branch so I can preview it and pull a PR."* That supersedes the repo's standing no-branches rule for this feature. Migration 030 **is** applied to the shared prod DB — additive, nothing reads it, and a Vercel preview of the branch needs the bucket and table to exist.
+**Branch, then PR, then `main` — a one-off.** Mid-session Darren said: *"Do not push to main. Set this up in a branch so I can preview it and pull a PR."* That superseded the repo's standing no-branches rule for this feature. Built on `feat/field-media-intake`, opened as PR #6, rebase-merged to `main` (`4812ffa`) the same day and the branch deleted. Migration 030 was applied to the shared prod DB before the merge — additive, nothing read it, and a Vercel preview of the branch needed the bucket and table to exist.
+
+**One CI note:** the `version-guard` check failed red on the PR, but not on the version — GitHub Actions couldn't fetch its own action (`Failed to resolve action download info. Error: Service Unavailable`) and the script never ran. Verified locally against `origin/main`: `✓ version-guard: VERSION bumped 2.10.0 → 2.11.0`. The blocking gate is the local `.githooks/pre-push` hook, which passed on push; CI is a reminder, not the gate.
 
 ### Investigation (before any code)
 
