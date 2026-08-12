@@ -315,7 +315,7 @@ function ArcadeCard({ onTap }: { onTap: () => void }) {
         <div style={{
           marginTop: 4, fontSize: 12, color: C.arcadeDetail, lineHeight: 1.4,
         }}>
-          Route Rush · Tent Tetris · Party Kong
+          Route Rush · Tent Tetris · Party Kong · Load Out
         </div>
       </div>
     </button>

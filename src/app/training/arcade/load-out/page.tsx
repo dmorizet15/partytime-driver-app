@@ -3,17 +3,17 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
-import TentTetrisGame from '@/components/arcade/TentTetrisGame'
+import LoadOutGame from '@/components/arcade/LoadOutGame'
 
 const pageStyle = {
   minHeight: '100dvh',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  backgroundColor: '#04040A',
+  backgroundColor: '#080814',
 } as const
 
-export default function TentTetrisPage() {
+export default function LoadOutPage() {
   const router = useRouter()
   const { user, loading } = useAuth()
 
@@ -30,5 +30,5 @@ export default function TentTetrisPage() {
     )
   }
 
-  return <TentTetrisGame />
+  return <LoadOutGame />
 }

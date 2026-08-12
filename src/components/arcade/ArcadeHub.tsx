@@ -25,7 +25,7 @@ type Tile = {
   name:      string
   tagline:   string
   href:      string
-  art:       'truck' | 'tetromino' | 'kong'
+  art:       'truck' | 'tetromino' | 'kong' | 'loadout'
   comingSoon?: boolean
 }
 
@@ -51,6 +51,13 @@ const TILES: Tile[] = [
     href:    '/training/arcade/party-kong',
     art:     'kong',
   },
+  {
+    id:      'load_out',
+    name:    'Load Out',
+    tagline: 'Merge the rentals · load the 40×100 tent',
+    href:    '/training/arcade/load-out',
+    art:     'loadout',
+  },
 ]
 
 export default function ArcadeHub() {
@@ -59,6 +66,7 @@ export default function ArcadeHub() {
     route_rush: null,
     tent_tetris: null,
     party_kong: null,
+    load_out: null,
   })
 
   useEffect(() => {
@@ -68,7 +76,7 @@ export default function ArcadeHub() {
       const uid = sess.session?.user.id
       if (!uid) return
 
-      const types: ArcadeGameType[] = ['route_rush', 'tent_tetris', 'party_kong']
+      const types: ArcadeGameType[] = ['route_rush', 'tent_tetris', 'party_kong', 'load_out']
       const results = await Promise.all(
         types.map(async (gt) => {
           const { data } = await supabase
@@ -336,6 +344,30 @@ function ArcadeArt({ kind, dim }: { kind: Tile['art']; dim: boolean }) {
         <div style={{ gridArea: '2 / 1 / 3 / 3', background: '#FFB800', borderRadius: 2 }} />
         <div style={{ gridArea: '3 / 2 / 4 / 4', background: '#0000EE', borderRadius: 2 }} />
         <div style={{ gridArea: '4 / 1 / 5 / 5', background: '#FF6600', borderRadius: 2 }} />
+      </div>
+    )
+  }
+  if (kind === 'loadout') {
+    // Merge-tile art: two small tiles stacking into a gold big-top tent.
+    return (
+      <div
+        style={{
+          width: 72, height: 72, borderRadius: 14,
+          background: 'linear-gradient(135deg, #14142e 0%, #08081a 100%)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          flexShrink: 0,
+          opacity,
+        }}
+      >
+        <svg width="44" height="44" viewBox="0 0 44 44" fill="none">
+          {/* two feeder tiles */}
+          <rect x="6"  y="24" width="12" height="12" rx="2" fill="#3B4FE8"/>
+          <rect x="26" y="24" width="12" height="12" rx="2" fill="#C42FA6"/>
+          {/* big-top tent (merge result) */}
+          <path d="M22 6 8 18h28z" fill="#FFB800"/>
+          <path d="M8 18h28v4H8z" fill="#FFC94D"/>
+          <path d="M18 22h8v-4h-8z" fill="#0A0A14"/>
+        </svg>
       </div>
     )
   }

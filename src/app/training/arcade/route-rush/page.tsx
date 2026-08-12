@@ -15,8 +15,9 @@ const pageStyle = {
 
 export default function RouteRushPage() {
   const router = useRouter()
-  const { user, roles, loading } = useAuth()
+  const { user, loading } = useAuth()
 
+  // Games are open to every signed-in employee — no role gate.
   useEffect(() => {
     if (!loading && !user) router.replace('/login')
   }, [loading, user, router])
@@ -25,18 +26,6 @@ export default function RouteRushPage() {
     return (
       <div style={pageStyle}>
         <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 14 }}>Loading…</p>
-      </div>
-    )
-  }
-
-  if (
-    !roles?.includes('driver') &&
-    !roles?.includes('super_admin') &&
-    !roles?.includes('tools_only')
-  ) {
-    return (
-      <div style={pageStyle}>
-        <p style={{ color: '#EF4444', fontSize: 14 }}>Access denied.</p>
       </div>
     )
   }
