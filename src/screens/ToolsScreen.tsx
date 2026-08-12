@@ -456,6 +456,59 @@ function ReportIssueCard({ onTap }: { onTap: () => void }) {
   )
 }
 
+// ─── Games / Arcade card — ungated; every signed-in employee ────────────────
+// The PartyTime Arcade lives under the Training screen, but will_call holders
+// lose the Training nav tab (Will Call takes its slot), so the arcade was
+// unreachable for them. This card puts it one tap from the Tools tab — which
+// every role sees — so Games is available to all employees.
+function GamepadIcon({ size = 22, color = C.white }: IconProps) {
+  return (
+    <IconSvg size={size} color={color}>
+      <path d="M6 12h4M8 10v4" />
+      <line x1="15" y1="11" x2="15.01" y2="11" />
+      <line x1="18" y1="13" x2="18.01" y2="13" />
+      <path d="M17.32 5H6.68a4 4 0 0 0 -3.98 3.6l-.72 7a3 3 0 0 0 5.5 1.9l.6 -.9a2 2 0 0 1 1.66 -.9h4.92a2 2 0 0 1 1.66 .9l.6 .9a3 3 0 0 0 5.5 -1.9l-.72 -7a4 4 0 0 0 -3.98 -3.6z" />
+    </IconSvg>
+  )
+}
+
+function GamesCard({ onTap }: { onTap: () => void }) {
+  return (
+    <div style={{ padding: '12px 18px 0' }}>
+      <button
+        onClick={onTap}
+        aria-label="PartyTime Arcade"
+        style={{
+          background: C.card,
+          border: `0.5px solid ${C.cardBorder}`,
+          borderRadius: 14,
+          padding: '16px 14px',
+          cursor: 'pointer', fontFamily: 'inherit',
+          textAlign: 'left',
+          display: 'flex', alignItems: 'center', gap: 14,
+          color: C.white,
+          width: '100%',
+        }}
+      >
+        <IconWrap bg="rgba(255,184,0,0.16)">
+          <GamepadIcon size={22} color={C.gold} />
+        </IconWrap>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontFamily: FONT_DISPLAY, fontSize: 16, fontWeight: 800,
+            color: C.white, letterSpacing: '-0.01em', lineHeight: 1.2,
+          }}>
+            Games
+          </div>
+          <div style={{ marginTop: 4, fontSize: 12, color: C.muted, lineHeight: 1.4 }}>
+            PartyTime Arcade · beat the crew&apos;s high score
+          </div>
+        </div>
+      </button>
+    </div>
+  )
+}
+
 // ─── Work Orders card — technician-only ─────────────────────────────────────
 // Mirrors FleetMaintenanceCard. Renders null without work_order_technician;
 // red pill surfaces the open + in_progress count (hidden at zero).
@@ -670,6 +723,9 @@ export default function ToolsScreen() {
 
         {/* Report an Issue — ungated; any signed-in user can file */}
         <ReportIssueCard onTap={() => router.push('/tools/report-issue')} />
+
+        {/* Games / Arcade — ungated; every employee reaches it from the Tools tab */}
+        <GamesCard onTap={() => router.push('/training/arcade')} />
 
         {/* Work Orders — technician-only; renders null without access */}
         <WorkOrdersCard onTap={() => router.push('/tools/work-orders')} />

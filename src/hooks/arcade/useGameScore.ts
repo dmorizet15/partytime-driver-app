@@ -3,7 +3,7 @@
 import { useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 
-export type ArcadeGameType = 'route_rush' | 'tent_tetris' | 'party_kong'
+export type ArcadeGameType = 'route_rush' | 'tent_tetris' | 'party_kong' | 'load_out'
 
 export function useGameScore() {
   const submitScore = useCallback(async (gameType: ArcadeGameType, score: number) => {

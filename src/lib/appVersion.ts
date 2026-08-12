@@ -24,6 +24,14 @@ export interface Release {
 // Newest FIRST. RELEASES[0] is the live version.
 export const RELEASES: readonly Release[] = [
   {
+    version: '2.13.0',
+    date: '2026-08-12',
+    bullets: [
+      `New arcade game — Load Out. Swipe to merge rentals up the ladder, from folding chairs all the way to the 40×100 tent, and load the biggest score you can`,
+      `The Arcade is now open to everyone — find it under the Tools tab (Games), plus its usual spot on the Training screen`,
+    ],
+  },
+  {
     version: '2.12.0',
     date: '2026-08-06',
     bullets: [
