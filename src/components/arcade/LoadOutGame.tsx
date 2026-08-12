@@ -361,6 +361,10 @@ export default function LoadOutGame() {
             position: 'relative', width: '100%', aspectRatio: '1',
             background: C.board, border: `1px solid ${C.boardBd}`,
             borderRadius: 16, overflow: 'hidden', touchAction: 'none',
+            // Size container so every tile's `cqw` unit is BOARD-relative — this
+            // is what makes the number big (≈9% of the board) with the gear icon
+            // as a large watermark behind it, matching the prototype.
+            containerType: 'size',
           }}
         >
           {/* empty cells */}
@@ -507,7 +511,10 @@ function Tile({ t }: { t: TileT }) {
   const g = GEAR[t.v] || LADDER[LADDER.length - 1]
   const digits = String(t.v).length
   const tf = `translate(${(t.c * STEP / TILE) * 100}%, ${(t.r * STEP / TILE) * 100}%)`
-  const numSize = digits >= 4 ? '5.7cqw' : digits === 3 ? '7.2cqw' : '8.8cqw'
+  // Units are `cqw` (board-relative — the board is the size container), so the
+  // number reads as a big centered figure with the gear icon as a watermark
+  // behind it. Bumped larger than the prototype per feedback.
+  const numSize = digits >= 4 ? '6.6cqw' : digits === 3 ? '8.4cqw' : '10cqw'
   return (
     <div
       className={`lo-tile${t.fresh ? ' lo-new' : ''}${t.merged ? ' lo-merged' : ''}`}
@@ -518,35 +525,38 @@ function Tile({ t }: { t: TileT }) {
         transform: tf,
         // @ts-expect-error custom property for keyframes
         '--t': tf,
-        containerType: 'size',
         boxShadow: t.v === TOP_VALUE
-          ? '0 0 0 2px #FFB800, 0 0 22px rgba(255,184,0,0.55)'
-          : '0 2px 0 rgba(0,0,0,0.28)',
+          ? '0 0 0 2px #FFB800, 0 0 22px rgba(255,184,0,0.55), inset 0 1px 0 rgba(255,255,255,0.35)'
+          : '0 2px 0 rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.12)',
       }}
     >
+      {/* gear icon — large watermark behind the number */}
       <svg
         viewBox="0 0 24 24" aria-hidden="true"
         style={{
-          position: 'absolute', left: '50%', top: '45%', transform: 'translate(-50%,-50%)',
-          width: '18.5cqw', height: '18.5cqw', strokeWidth: 1.4, fill: 'none',
-          stroke: 'currentColor', strokeLinecap: 'round', strokeLinejoin: 'round', opacity: 0.18,
+          position: 'absolute', left: '50%', top: '44%', transform: 'translate(-50%,-50%)',
+          width: '21cqw', height: '21cqw', strokeWidth: 1.4, fill: 'none',
+          stroke: 'currentColor', strokeLinecap: 'round', strokeLinejoin: 'round', opacity: 0.22,
         }}
         dangerouslySetInnerHTML={{ __html: ICONS[g.icon] }}
       />
+      {/* the number is the hero */}
       <span
         style={{
           position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          paddingBottom: '3.2cqw', fontWeight: 800, fontSize: numSize, lineHeight: 1,
-          fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em',
+          paddingBottom: '3cqw', fontWeight: 800, fontSize: numSize, lineHeight: 1,
+          fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.03em',
+          textShadow: g.fg === '#FFFFFF' ? '0 1px 2px rgba(0,0,0,0.25)' : 'none',
         }}
       >
         {t.v}
       </span>
+      {/* item name caption along the bottom edge */}
       <span
         style={{
-          position: 'absolute', left: 0, right: 0, bottom: '1.7cqw', textAlign: 'center',
-          fontWeight: 700, fontSize: '2.7cqw', textTransform: 'uppercase', letterSpacing: '0.06em',
-          opacity: 0.72, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', padding: '0 .8cqw',
+          position: 'absolute', left: 0, right: 0, bottom: '1.6cqw', textAlign: 'center',
+          fontWeight: 700, fontSize: '2.8cqw', textTransform: 'uppercase', letterSpacing: '0.06em',
+          opacity: 0.75, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', padding: '0 .8cqw',
         }}
       >
         {g.name}
