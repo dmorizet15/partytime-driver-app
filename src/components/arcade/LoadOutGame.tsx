@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useGameScore } from '@/hooks/arcade/useGameScore'
+import * as sound from '@/lib/arcade/sound'
 import GameLeaderboard from './GameLeaderboard'
 
 // ─── Difficulty (tunable — exposed at top, do not bury) ───────────────────────
@@ -94,6 +95,11 @@ export default function LoadOutGame() {
   const wonRef       = useRef<boolean>(false)
   const deadRef      = useRef<boolean>(false)
   const moveCountRef = useRef<number>(0)
+  const prevMaxRef   = useRef<number>(0)   // highest tile made so far (level-up detector)
+  const levelUpRef   = useRef<number>(0)   // count of new-highest-tile events this run
+  const fxIdRef      = useRef<number>(0)
+  const audioInitRef = useRef<boolean>(false)
+  const boardRef     = useRef<HTMLDivElement | null>(null)
 
   const [tiles, setTiles]     = useState<TileT[]>([])
   const [loaded, setLoaded]   = useState<Record<number, number>>({})
@@ -102,6 +108,38 @@ export default function LoadOutGame() {
   const [isNewBest, setNewB]  = useState<boolean>(false)
   const [overlay, setOverlay] = useState<Overlay>('none')
   const [userId, setUserId]   = useState<string | null>(null)
+  const [muted, setMutedState] = useState<boolean>(false)
+  const [fx, setFx]           = useState<{ id: number; n: number; finale: boolean } | null>(null)
+
+  // Start audio on the first gesture (browsers block it before one).
+  const ensureAudio = useCallback(() => {
+    if (audioInitRef.current) return
+    audioInitRef.current = true
+    sound.unlock()
+    if (!sound.isMuted()) sound.startMusic()
+  }, [])
+
+  const toggleMute = useCallback(() => {
+    sound.unlock()
+    const next = !sound.isMuted()
+    sound.setMuted(next)
+    setMutedState(next)
+    if (next) sound.stopMusic()
+    else sound.startMusic()
+  }, [])
+
+  // Escalating level-up celebration + board shake (imperative so it re-fires).
+  const triggerFx = useCallback((n: number, finale: boolean) => {
+    setFx({ id: ++fxIdRef.current, n, finale })
+    const i = finale ? 6 : Math.min(5, n)
+    const el = boardRef.current
+    if (el && i >= 3 && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      const cls = finale ? 'lo-shk3' : i >= 5 ? 'lo-shk3' : 'lo-shk2'
+      el.classList.remove('lo-shk2', 'lo-shk3')
+      void el.offsetWidth
+      el.classList.add(cls)
+    }
+  }, [])
 
   // Load personal best + user on mount.
   useEffect(() => {
@@ -154,10 +192,13 @@ export default function LoadOutGame() {
     wonRef.current    = false
     deadRef.current   = false
     moveCountRef.current = 0
+    levelUpRef.current = 0
     setNewB(false)
+    setFx(null)
     setOverlay('none')
     addTile()
     addTile()
+    prevMaxRef.current = tilesRef.current.reduce((m, t) => Math.max(m, t.v), 0)
     commit()
   }, [addTile, commit])
 
@@ -174,6 +215,7 @@ export default function LoadOutGame() {
 
   const move = useCallback((dir: Dir) => {
     if (deadRef.current || overlay === 'gameover') return
+    ensureAudio()
     const grid = gridRef.current
     const [dr, dc] = VEC[dir]
     const rs = Array.from({ length: SIZE }, (_, i) => i)
@@ -182,6 +224,7 @@ export default function LoadOutGame() {
     if (dir === 'right') cs.reverse()
 
     let moved = false
+    let mergedMax = 0
     for (const t of tilesRef.current) { t.fresh = false; t.merged = false }
 
     for (const r of rs) for (const c of cs) {
@@ -199,7 +242,7 @@ export default function LoadOutGame() {
         loadedRef.current[target.v] = (loadedRef.current[target.v] || 0) + 1
         tilesRef.current = tilesRef.current.filter((x) => x !== t)
         scoreRef.current += target.v
-        if (target.v === TOP_VALUE && !wonRef.current) { wonRef.current = true; setOverlay('win') }
+        if (target.v > mergedMax) mergedMax = target.v
         moved = true
       } else if (nr !== r || nc !== c) {
         grid[r][c] = null
@@ -214,8 +257,30 @@ export default function LoadOutGame() {
     addTile()
     if (topTile() >= SURGE_TILE && moveCountRef.current % SURGE_EVERY === 0) addTile()
     commit()
+
+    // sound: swipe every move, merge clank scaled to the tile just made
+    sound.sfx.swipe()
+    if (mergedMax > 0) sound.sfx.merge(Math.max(0, LADDER.findIndex((g) => g.v === mergedMax)))
+
+    // level-up = a merge produced a NEW highest tile (not a spawned 2/4)
+    if (mergedMax > prevMaxRef.current) {
+      prevMaxRef.current = mergedMax
+      levelUpRef.current += 1
+      const n = levelUpRef.current
+      const finale = mergedMax === TOP_VALUE && !wonRef.current
+      if (finale) wonRef.current = true
+      triggerFx(n, finale)
+      if (finale) {
+        sound.sfx.finale()
+        // let the finale burst play over the board before the win card
+        setTimeout(() => setOverlay('win'), 1500)
+      } else if (n % 3 === 0) {
+        sound.sfx.milestone()
+      }
+    }
+
     if (!canMove()) setTimeout(() => finishGame(), 160)
-  }, [addTile, commit, finishGame, overlay])
+  }, [addTile, commit, ensureAudio, finishGame, overlay, triggerFx])
 
   const topTile = () => tilesRef.current.reduce((m, t) => Math.max(m, t.v), 0)
   const canMove = () => {
@@ -231,6 +296,12 @@ export default function LoadOutGame() {
 
   // Start a fresh board on mount.
   useEffect(() => { newGame() }, [newGame])
+
+  // Reflect the saved mute preference; stop music when leaving the game.
+  useEffect(() => {
+    setMutedState(sound.isMuted())
+    return () => { sound.stopMusic() }
+  }, [])
 
   // Keyboard.
   useEffect(() => {
@@ -288,8 +359,23 @@ export default function LoadOutGame() {
         @keyframes lo-thump{ 0% { transform: var(--t) scale(1) } 45% { transform: var(--t) scale(1.14) } 100% { transform: var(--t) scale(1) } }
         .lo-new   { animation: lo-pop  .16s ease-out; }
         .lo-merged{ animation: lo-thump .16s ease-out; }
+
+        /* level-up celebration */
+        @keyframes lo-flash { from { opacity: var(--op); } to { opacity: 0; } }
+        @keyframes lo-ring  { 0% { opacity:.9; transform:translate(-50%,-50%) scale(.15);} 100% { opacity:0; transform:translate(-50%,-50%) scale(var(--sc));} }
+        @keyframes lo-part  { 0% { opacity:1; transform:translate(-50%,-50%);} 100% { opacity:0; transform:translate(calc(-50% + var(--dx)), calc(-50% + var(--dy)));} }
+        @keyframes lo-shk2  { 0%,100%{transform:translate(0,0)} 20%{transform:translate(-3px,1px)} 40%{transform:translate(3px,-1px)} 60%{transform:translate(-2px,1px)} 80%{transform:translate(2px,-1px)} }
+        @keyframes lo-shk3  { 0%,100%{transform:translate(0,0)} 15%{transform:translate(-6px,2px)} 30%{transform:translate(6px,-2px)} 45%{transform:translate(-5px,2px)} 60%{transform:translate(5px,-2px)} 75%{transform:translate(-3px,1px)} 90%{transform:translate(3px,-1px)} }
+        .lo-shk2 { animation: lo-shk2 .34s ease-out; }
+        .lo-shk3 { animation: lo-shk3 .5s ease-out; }
+        .lo-ring { position:absolute; left:50%; top:50%; border-radius:50%; border:3px solid #FFB800; pointer-events:none; }
+        .lo-part { position:absolute; left:50%; top:50%; border-radius:50%; pointer-events:none; }
+
         @media (prefers-reduced-motion: reduce) {
           .lo-tile, .lo-new, .lo-merged { transition: none !important; animation: none !important; }
+          .lo-shk2, .lo-shk3 { animation: none !important; }
+          .lo-part { display: none !important; }
+          .lo-ring { animation: none !important; opacity: .5 !important; transform: translate(-50%,-50%) scale(1.6) !important; }
         }
       `}</style>
 
@@ -313,8 +399,24 @@ export default function LoadOutGame() {
         >
           ← Arcade
         </button>
-        <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '0.28em', color: C.gold, textTransform: 'uppercase' }}>
-          Load Out
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '0.28em', color: C.gold, textTransform: 'uppercase' }}>
+            Load Out
+          </div>
+          <button
+            type="button"
+            onClick={toggleMute}
+            aria-label={muted ? 'Turn sound on' : 'Turn sound off'}
+            aria-pressed={!muted}
+            style={{
+              background: muted ? 'rgba(255,255,255,0.06)' : C.gold,
+              color: muted ? C.muted : C.ink, border: `1px solid ${muted ? C.panelBd : C.gold}`,
+              borderRadius: 999, cursor: 'pointer', width: 44, height: 44, minHeight: 44,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0,
+            }}
+          >
+            <SpeakerIcon muted={muted} />
+          </button>
         </div>
       </div>
 
@@ -354,6 +456,7 @@ export default function LoadOutGame() {
 
         {/* Board */}
         <div
+          ref={boardRef}
           onTouchStart={onTouchStart}
           onTouchMove={onTouchMove}
           onTouchEnd={onTouchEnd}
@@ -386,6 +489,9 @@ export default function LoadOutGame() {
           {tiles.map((t) => (
             <Tile key={t.id} t={t} />
           ))}
+
+          {/* escalating level-up celebration */}
+          {fx && <LevelFx key={fx.id} n={fx.n} finale={fx.finale} onDone={() => setFx(null)} />}
 
           {/* WIN overlay (dismissable, play continues) */}
           {overlay === 'win' && (
@@ -503,6 +609,107 @@ function Readout({ label, value, accent }: { label: string; value: string; accen
       >
         {value}
       </div>
+    </div>
+  )
+}
+
+function SpeakerIcon({ muted }: { muted: boolean }) {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M11 5 6 9H3v6h3l5 4z" fill="currentColor" stroke="none" />
+      {muted ? (
+        <>
+          <line x1="17" y1="9" x2="22" y2="15" />
+          <line x1="22" y1="9" x2="17" y2="15" />
+        </>
+      ) : (
+        <>
+          <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+          <path d="M18.5 6a8 8 0 0 1 0 12" />
+        </>
+      )}
+    </svg>
+  )
+}
+
+// Escalating level-up celebration: bigger flash, more rings + sparks and a
+// board shake as the run climbs, culminating in the finale burst at the top tile.
+function LevelFx({ n, finale, onDone }: { n: number; finale: boolean; onDone: () => void }) {
+  const i = finale ? 6 : Math.min(5, n)
+  const rings = finale ? 4 : i <= 1 ? 1 : i <= 3 ? 2 : 3
+  const flashOp = finale ? 0.55 : 0.1 + i * 0.05
+  const dur = finale ? 1500 : 700
+  const partCount = finale ? 30 : i <= 2 ? 0 : i * 3
+  const ringScale = finale ? 4 : 2.4 + i * 0.3
+
+  const parts = useRef(
+    Array.from({ length: partCount }, (_, k) => {
+      const ang = (Math.PI * 2 * k) / Math.max(1, partCount) + Math.random() * 0.6
+      const dist = (finale ? 120 : 46 + i * 12) * (0.6 + Math.random() * 0.6)
+      return {
+        dx: Math.cos(ang) * dist,
+        dy: Math.sin(ang) * dist,
+        size: finale ? 5 + Math.random() * 5 : 3 + Math.random() * 3,
+        delay: Math.random() * 0.08,
+        color: Math.random() < 0.3 ? '#FFFFFF' : '#FFB800',
+      }
+    }),
+  ).current
+
+  useEffect(() => {
+    const id = setTimeout(onDone, dur + 250)
+    return () => clearTimeout(id)
+  }, [onDone, dur])
+
+  return (
+    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 4, overflow: 'hidden' }}>
+      <div
+        style={{
+          position: 'absolute', inset: 0,
+          background: finale
+            ? 'radial-gradient(circle at 50% 50%, rgba(255,255,255,0.65), rgba(255,184,0,0.5) 42%, transparent 76%)'
+            : 'radial-gradient(circle at 50% 50%, rgba(255,184,0,0.9), transparent 70%)',
+          // @ts-expect-error css custom property
+          '--op': flashOp,
+          animation: `lo-flash ${dur}ms ease-out forwards`,
+        }}
+      />
+      {Array.from({ length: rings }).map((_, k) => (
+        <span
+          key={k}
+          className="lo-ring"
+          style={{
+            width: finale ? 80 : 54, height: finale ? 80 : 54, borderWidth: finale ? 4 : 3, opacity: 0,
+            // @ts-expect-error css custom property
+            '--sc': ringScale,
+            animation: `lo-ring ${dur}ms ease-out ${k * (finale ? 140 : 110)}ms forwards`,
+          }}
+        />
+      ))}
+      {finale && (
+        <span
+          className="lo-ring"
+          style={{
+            width: 60, height: 60, borderColor: '#FFFFFF', borderWidth: 5, opacity: 0,
+            // @ts-expect-error css custom property
+            '--sc': 3,
+            animation: 'lo-ring 900ms ease-out forwards',
+          }}
+        />
+      )}
+      {parts.map((p, k) => (
+        <span
+          key={k}
+          className="lo-part"
+          style={{
+            width: p.size, height: p.size, background: p.color, boxShadow: `0 0 6px ${p.color}`, opacity: 0,
+            // @ts-expect-error css custom property
+            '--dx': `${p.dx}px`, '--dy': `${p.dy}px`,
+            animation: `lo-part ${dur}ms ease-out ${p.delay}s forwards`,
+          }}
+        />
+      ))}
     </div>
   )
 }

@@ -28,6 +28,7 @@ export const RELEASES: readonly Release[] = [
     date: '2026-08-12',
     bullets: [
       `New arcade game — Load Out. Swipe to merge rentals up the ladder, from folding chairs all the way to the 40×100 tent, and load the biggest score you can`,
+      `Load Out has sound — an industrial background track and effects on every move, with a speaker button to turn it all off. Each new piece you unlock sets off a bigger gold burst, building to a finale when you load the big top`,
       `The Arcade is now open to everyone — find it under the Tools tab (Games), plus its usual spot on the Training screen`,
     ],
   },
