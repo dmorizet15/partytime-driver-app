@@ -80,6 +80,14 @@ const money = (n: number) => '$' + Math.floor(n).toLocaleString('en-US')
 type TileT = { id: number; r: number; c: number; v: number; fresh: boolean; merged: boolean }
 type Dir = 'up' | 'down' | 'left' | 'right'
 type Overlay = 'none' | 'win' | 'gameover'
+// A level-up effect: n = which level-up (1st, 2nd…), origin = the leveled-up
+// tile as a board-% (leftPct/topPct) and as a viewport point (vx/vy) for the
+// full-screen confetti layer.
+type FxState = {
+  id: number; n: number; finale: boolean
+  leftPct: number; topPct: number
+  vx: number; vy: number; hasVp: boolean
+}
 const VEC: Record<Dir, [number, number]> = { up: [-1, 0], down: [1, 0], left: [0, -1], right: [0, 1] }
 
 export default function LoadOutGame() {
@@ -98,6 +106,7 @@ export default function LoadOutGame() {
   const prevMaxRef   = useRef<number>(0)   // highest tile made so far (level-up detector)
   const levelUpRef   = useRef<number>(0)   // count of new-highest-tile events this run
   const fxIdRef      = useRef<number>(0)
+  const fxClearRef   = useRef<ReturnType<typeof setTimeout> | null>(null)
   const audioInitRef = useRef<boolean>(false)
   const boardRef     = useRef<HTMLDivElement | null>(null)
 
@@ -109,7 +118,7 @@ export default function LoadOutGame() {
   const [overlay, setOverlay] = useState<Overlay>('none')
   const [userId, setUserId]   = useState<string | null>(null)
   const [muted, setMutedState] = useState<boolean>(false)
-  const [fx, setFx]           = useState<{ id: number; n: number; finale: boolean } | null>(null)
+  const [fx, setFx]           = useState<FxState | null>(null)
 
   // Start audio on the first gesture (browsers block it before one).
   const ensureAudio = useCallback(() => {
@@ -128,17 +137,33 @@ export default function LoadOutGame() {
     else sound.startMusic()
   }, [])
 
-  // Escalating level-up celebration + board shake (imperative so it re-fires).
-  const triggerFx = useCallback((n: number, finale: boolean) => {
-    setFx({ id: ++fxIdRef.current, n, finale })
-    const i = finale ? 6 : Math.min(5, n)
+  // Escalating level-up celebration, ORIGINATED ON THE TILE that leveled up.
+  // Board-local burst always; from the 3rd level-up a full-screen party
+  // confetti explosion is layered on, growing to a storm at the finale.
+  const triggerFx = useCallback((n: number, finale: boolean, cr: number, cc: number) => {
     const el = boardRef.current
+    const leftPct = cc * STEP + TILE / 2
+    const topPct  = cr * STEP + TILE / 2
+    let vx = 0, vy = 0, hasVp = false
+    if (el) {
+      const rect = el.getBoundingClientRect()
+      vx = rect.left + (leftPct / 100) * rect.width
+      vy = rect.top + (topPct / 100) * rect.height
+      hasVp = true
+    }
+    setFx({ id: ++fxIdRef.current, n, finale, leftPct, topPct, vx, vy, hasVp })
+
+    const i = finale ? 6 : Math.min(5, n)
     if (el && i >= 3 && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      const cls = finale ? 'lo-shk3' : i >= 5 ? 'lo-shk3' : 'lo-shk2'
+      const cls = i >= 5 || finale ? 'lo-shk3' : 'lo-shk2'
       el.classList.remove('lo-shk2', 'lo-shk3')
       void el.offsetWidth
       el.classList.add(cls)
     }
+
+    if (fxClearRef.current) clearTimeout(fxClearRef.current)
+    const life = finale ? 2800 : n >= 3 ? 2300 : 1050
+    fxClearRef.current = setTimeout(() => setFx(null), life)
   }, [])
 
   // Load personal best + user on mount.
@@ -225,6 +250,7 @@ export default function LoadOutGame() {
 
     let moved = false
     let mergedMax = 0
+    let mergedR = 0, mergedC = 0   // cell of the highest tile made this move
     for (const t of tilesRef.current) { t.fresh = false; t.merged = false }
 
     for (const r of rs) for (const c of cs) {
@@ -242,7 +268,7 @@ export default function LoadOutGame() {
         loadedRef.current[target.v] = (loadedRef.current[target.v] || 0) + 1
         tilesRef.current = tilesRef.current.filter((x) => x !== t)
         scoreRef.current += target.v
-        if (target.v > mergedMax) mergedMax = target.v
+        if (target.v > mergedMax) { mergedMax = target.v; mergedR = ar; mergedC = ac }
         moved = true
       } else if (nr !== r || nc !== c) {
         grid[r][c] = null
@@ -269,7 +295,7 @@ export default function LoadOutGame() {
       const n = levelUpRef.current
       const finale = mergedMax === TOP_VALUE && !wonRef.current
       if (finale) wonRef.current = true
-      triggerFx(n, finale)
+      triggerFx(n, finale, mergedR, mergedC)
       if (finale) {
         sound.sfx.finale()
         // let the finale burst play over the board before the win card
@@ -300,7 +326,10 @@ export default function LoadOutGame() {
   // Reflect the saved mute preference; stop music when leaving the game.
   useEffect(() => {
     setMutedState(sound.isMuted())
-    return () => { sound.stopMusic() }
+    return () => {
+      sound.stopMusic()
+      if (fxClearRef.current) clearTimeout(fxClearRef.current)
+    }
   }, [])
 
   // Keyboard.
@@ -364,6 +393,7 @@ export default function LoadOutGame() {
         @keyframes lo-flash { from { opacity: var(--op); } to { opacity: 0; } }
         @keyframes lo-ring  { 0% { opacity:.9; transform:translate(-50%,-50%) scale(.15);} 100% { opacity:0; transform:translate(-50%,-50%) scale(var(--sc));} }
         @keyframes lo-part  { 0% { opacity:1; transform:translate(-50%,-50%);} 100% { opacity:0; transform:translate(calc(-50% + var(--dx)), calc(-50% + var(--dy)));} }
+        @keyframes lo-confetti { 0% { opacity:1; transform:translate(-50%,-50%) rotate(0deg);} 85% { opacity:1; } 100% { opacity:0; transform:translate(calc(-50% + var(--fx)), calc(-50% + var(--fy))) rotate(var(--rot));} }
         @keyframes lo-shk2  { 0%,100%{transform:translate(0,0)} 20%{transform:translate(-3px,1px)} 40%{transform:translate(3px,-1px)} 60%{transform:translate(-2px,1px)} 80%{transform:translate(2px,-1px)} }
         @keyframes lo-shk3  { 0%,100%{transform:translate(0,0)} 15%{transform:translate(-6px,2px)} 30%{transform:translate(6px,-2px)} 45%{transform:translate(-5px,2px)} 60%{transform:translate(5px,-2px)} 75%{transform:translate(-3px,1px)} 90%{transform:translate(3px,-1px)} }
         .lo-shk2 { animation: lo-shk2 .34s ease-out; }
@@ -490,8 +520,8 @@ export default function LoadOutGame() {
             <Tile key={t.id} t={t} />
           ))}
 
-          {/* escalating level-up celebration */}
-          {fx && <LevelFx key={fx.id} n={fx.n} finale={fx.finale} onDone={() => setFx(null)} />}
+          {/* escalating level-up celebration, centered on the leveled-up tile */}
+          {fx && <LevelFx key={fx.id} n={fx.n} finale={fx.finale} leftPct={fx.leftPct} topPct={fx.topPct} />}
 
           {/* WIN overlay (dismissable, play continues) */}
           {overlay === 'win' && (
@@ -573,6 +603,11 @@ export default function LoadOutGame() {
         </button>
       </div>
 
+      {/* Full-screen party confetti — from the 3rd level-up, storm at the finale */}
+      {fx && fx.hasVp && (fx.finale || fx.n >= 3) && (
+        <ConfettiBurst key={`cf${fx.id}`} x={fx.vx} y={fx.vy} n={fx.n} finale={fx.finale} />
+      )}
+
       {/* GAME OVER — full-screen modal with leaderboard */}
       {overlay === 'gameover' && (
         <GameOverModal
@@ -633,34 +668,32 @@ function SpeakerIcon({ muted }: { muted: boolean }) {
   )
 }
 
-// Escalating level-up celebration: bigger flash, more rings + sparks and a
-// board shake as the run climbs, culminating in the finale burst at the top tile.
-function LevelFx({ n, finale, onDone }: { n: number; finale: boolean; onDone: () => void }) {
+const PARTY_COLORS = ['#FFB800', '#3B4FE8', '#FF5A3C', '#1FBF6B', '#FF4FA3', '#7B3FE4', '#FFFFFF']
+
+// Board-local burst centered on the tile that leveled up: gold flash, shockwave
+// rings and sparks that grow as the run climbs, biggest at the finale.
+function LevelFx({ n, finale, leftPct, topPct }: { n: number; finale: boolean; leftPct: number; topPct: number }) {
   const i = finale ? 6 : Math.min(5, n)
   const rings = finale ? 4 : i <= 1 ? 1 : i <= 3 ? 2 : 3
   const flashOp = finale ? 0.55 : 0.1 + i * 0.05
-  const dur = finale ? 1500 : 700
-  const partCount = finale ? 30 : i <= 2 ? 0 : i * 3
+  const dur = finale ? 1400 : 700
+  const partCount = finale ? 28 : i <= 1 ? 6 : i * 5
   const ringScale = finale ? 4 : 2.4 + i * 0.3
+  const L = `${leftPct}%`, T = `${topPct}%`
 
   const parts = useRef(
     Array.from({ length: partCount }, (_, k) => {
       const ang = (Math.PI * 2 * k) / Math.max(1, partCount) + Math.random() * 0.6
-      const dist = (finale ? 120 : 46 + i * 12) * (0.6 + Math.random() * 0.6)
+      const dist = (finale ? 120 : 40 + i * 12) * (0.6 + Math.random() * 0.6)
       return {
         dx: Math.cos(ang) * dist,
         dy: Math.sin(ang) * dist,
         size: finale ? 5 + Math.random() * 5 : 3 + Math.random() * 3,
         delay: Math.random() * 0.08,
-        color: Math.random() < 0.3 ? '#FFFFFF' : '#FFB800',
+        color: finale ? PARTY_COLORS[(Math.random() * PARTY_COLORS.length) | 0] : (Math.random() < 0.3 ? '#FFFFFF' : '#FFB800'),
       }
     }),
   ).current
-
-  useEffect(() => {
-    const id = setTimeout(onDone, dur + 250)
-    return () => clearTimeout(id)
-  }, [onDone, dur])
 
   return (
     <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 4, overflow: 'hidden' }}>
@@ -668,8 +701,8 @@ function LevelFx({ n, finale, onDone }: { n: number; finale: boolean; onDone: ()
         style={{
           position: 'absolute', inset: 0,
           background: finale
-            ? 'radial-gradient(circle at 50% 50%, rgba(255,255,255,0.65), rgba(255,184,0,0.5) 42%, transparent 76%)'
-            : 'radial-gradient(circle at 50% 50%, rgba(255,184,0,0.9), transparent 70%)',
+            ? `radial-gradient(circle at ${L} ${T}, rgba(255,255,255,0.65), rgba(255,184,0,0.5) 42%, transparent 76%)`
+            : `radial-gradient(circle at ${L} ${T}, rgba(255,184,0,0.9), transparent 62%)`,
           // @ts-expect-error css custom property
           '--op': flashOp,
           animation: `lo-flash ${dur}ms ease-out forwards`,
@@ -680,6 +713,7 @@ function LevelFx({ n, finale, onDone }: { n: number; finale: boolean; onDone: ()
           key={k}
           className="lo-ring"
           style={{
+            left: L, top: T,
             width: finale ? 80 : 54, height: finale ? 80 : 54, borderWidth: finale ? 4 : 3, opacity: 0,
             // @ts-expect-error css custom property
             '--sc': ringScale,
@@ -691,6 +725,7 @@ function LevelFx({ n, finale, onDone }: { n: number; finale: boolean; onDone: ()
         <span
           className="lo-ring"
           style={{
+            left: L, top: T,
             width: 60, height: 60, borderColor: '#FFFFFF', borderWidth: 5, opacity: 0,
             // @ts-expect-error css custom property
             '--sc': 3,
@@ -703,10 +738,61 @@ function LevelFx({ n, finale, onDone }: { n: number; finale: boolean; onDone: ()
           key={k}
           className="lo-part"
           style={{
+            left: L, top: T,
             width: p.size, height: p.size, background: p.color, boxShadow: `0 0 6px ${p.color}`, opacity: 0,
             // @ts-expect-error css custom property
             '--dx': `${p.dx}px`, '--dy': `${p.dy}px`,
             animation: `lo-part ${dur}ms ease-out ${p.delay}s forwards`,
+          }}
+        />
+      ))}
+    </div>
+  )
+}
+
+// Full-screen party confetti explosion, bursting from the leveled-up tile's
+// screen position. Kicks in at the 3rd level-up and grows to a storm at the
+// finale — a truck-load of party. Skipped under reduced-motion (the board
+// burst already gives a static cue there).
+function ConfettiBurst({ x, y, n, finale }: { x: number; y: number; n: number; finale: boolean }) {
+  const reduce = typeof window !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches
+  const count = finale ? 150 : n <= 3 ? 46 : n === 4 ? 66 : 92
+  const baseDur = finale ? 2100 : 1500
+
+  const pieces = useRef(
+    Array.from({ length: count }, () => {
+      const ang = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 1.7 // upward-biased spray
+      const speed = (finale ? 300 : 170) * (0.45 + Math.random())
+      const gravity = 130 + Math.random() * (finale ? 560 : 360)
+      const streamer = Math.random() < 0.28
+      const size = 6 + Math.random() * (finale ? 8 : 6)
+      return {
+        fx: Math.cos(ang) * speed,
+        fy: Math.sin(ang) * speed + gravity,
+        rot: (Math.random() * 8 - 4) * 180,
+        w: streamer ? Math.max(3, size * 0.45) : size,
+        h: streamer ? size * 2.6 : size,
+        round: !streamer && Math.random() < 0.5,
+        color: PARTY_COLORS[(Math.random() * PARTY_COLORS.length) | 0],
+        delay: Math.random() * 0.14,
+        dur: baseDur * (0.7 + Math.random() * 0.5),
+      }
+    }),
+  ).current
+
+  if (reduce) return null
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 60, overflow: 'hidden' }}>
+      {pieces.map((p, k) => (
+        <span
+          key={k}
+          style={{
+            position: 'absolute', left: x, top: y, width: p.w, height: p.h,
+            background: p.color, borderRadius: p.round ? '50%' : 2, opacity: 0,
+            // @ts-expect-error css custom properties
+            '--fx': `${p.fx}px`, '--fy': `${p.fy}px`, '--rot': `${p.rot}deg`,
+            animation: `lo-confetti ${p.dur}ms cubic-bezier(.12,.66,.3,1) ${p.delay}s forwards`,
           }}
         />
       ))}
