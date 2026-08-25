@@ -1,5 +1,17 @@
 # Open Tasks — partytime-driver-app
 
+## August 25, 2026 — Load Out + Games-for-everyone — ON `main` (`81f3df8`, PR #8), mig 032 APPLIED, VERSION 2.12.0 → 2.13.0
+
+Built 2026-08-12/13 on `claude/driver-app-game-creation-u3f5oz`; shipped 2026-08-25 after the investigation found the branch had never gotten a PR. Branch deleted.
+
+- [x] Mig 032 — `game_scores.game_type` CHECK widened to `'load_out'`. Previewed `BEGIN … ROLLBACK` (accept / no-regression / reject with real rows), applied via MCP, verified: 49 rows untouched.
+- [x] PR #8 rebase-merged; local build green end-to-end; Vercel production deploy READY.
+- [ ] **On-device smoke gate (Load Out):**
+  1. iOS PWA: sound starts after the first tap (web audio unlocks on a user gesture) and the speaker toggle mutes/unmutes everything.
+  2. A full game on a real phone — swipe input, tile sizing, confetti performance, reduced-motion honored.
+  3. A finished game writes a `load_out` row to `game_scores` and the best score shows on the ArcadeHub tile (mig 032 landed 2026-08-25; scores played before that were silently dropped by design).
+  4. A `will_call`-role holder reaches the Arcade via Tools → Games and can play (pre-2.13.0 they hit "Access denied").
+
 ## August 6, 2026 — Field media Phase 2 — ON `main` (`ee2c7d5`, PR #7), mig 031 APPLIED, VERSION 2.11.1 → 2.12.0
 
 Three changes in one pass: completed-stop window bounded to ~1 day, generic uploader on the driver profile, library picker alongside live capture. Architecture: `docs/claude/field-media-intake.md` → "Phase 2".

@@ -4,6 +4,21 @@ Per-session work log. Most recent entry on top. Architecture decisions, rules, a
 
 ---
 
+## 2026-08-25 — Load Out shipped: PR #8 merged, mig 032 applied (on `main` `81f3df8`; VERSION 2.12.0 → 2.13.0)
+
+Deployment session — no new feature code written. Darren asked where his "2048 game" was; the investigation found **Load Out** fully built 2026-08-12/13 on `claude/driver-app-game-creation-u3f5oz` (4 commits, preview deployments READY, v2.13.0 entry staged, 0 commits behind `main`) but stalled for 12 days because **no PR was ever opened** — the branch was "held for Darren's review" with no reviewable artifact. Darren approved shipping; this session executed it.
+
+What shipped (all built earlier on the branch):
+- **Load Out** — 4th Arcade game at `/training/arcade/load-out` (~1,000-line `LoadOutGame.tsx` + `src/lib/arcade/sound.ts`): 2048-style swipe-to-merge from folding chairs to the 40×100 tent, industrial music + per-move SFX with a speaker toggle, escalating level-up FX, full-screen confetti finale (reduced-motion safe).
+- **Games open to all employees** — the `/training/arcade` role gate (`driver`/`super_admin`/`tools_only`) removed; ungated **Games card on the Tools tab**; Training's Arcade card lists Load Out. Closes the gap where `will_call` holders (Training nav tab replaced by Will Call, 2026-06-12) had no path to the Arcade at all — they hit "Access denied" even via Tools → Training.
+- **Mig 032 `game_scores_add_load_out`** — widens the `game_scores.game_type` CHECK. Previewed `BEGIN … ROLLBACK` with real rows (accept `load_out`; no-regression `route_rush`; reject invalid type → 23514), applied via MCP `apply_migration`, verified: 49 existing rows untouched, tracker row `20260812032_game_scores_add_load_out`. Blast radius: none — no new column/FK/enum; only INSERT validation widens.
+
+Process: mig applied first (additive-safe; until it landed, `load_out` score inserts were silently dropped by the old CHECK) → PR #8 opened → local verification (`npx tsc --noEmit` clean; full `npx next build` green end-to-end with env stubs — see the new lesson) → rebase-merged (the #6/#7 pattern) → Vercel production deploy verified READY → branch deleted.
+
+Outstanding: on-device smoke for Load Out (audio unlock on iOS, leaderboard write, will_call access path) — block at the top of `tasks/todo.md`.
+
+---
+
 ## 2026-08-06 (c) — Field media Phase 2: bounded window, generic uploader, library picker (on `main` `ee2c7d5` via PR #7; **mig 031**; VERSION 2.11.1 → 2.12.0)
 
 Three changes in one pass. All product decisions were pre-made; nothing was re-litigated.

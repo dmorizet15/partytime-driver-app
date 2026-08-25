@@ -989,3 +989,19 @@ The last two lines ran post-mount and overrode the JSX's `width: 100%; height: 1
 **Why:** Same session. The first design put the auto-ETA opt-out in the completion `ConfirmationModal`. But `StopDetailScreen` has **three** completion entry points, and delivery/pickup stops with a manifest — i.e. essentially every customer stop, including both of Cameron's — go through `handleInlineCheckoffComplete`, the one-tap pinned CTA that shows **no confirmation modal at all**. The control would have rendered for nobody who needed it. This is the 2026-07-13 equipment-prompt failure repeating in a new shape: that prompt *was* rendering correctly and was simply never reached, because the gold CTA is pinned to the viewport and nothing below the item list is ever scrolled to.
 
 **How to apply:** Before placing UI in a flow, enumerate every entry point into that flow and check which one real users actually take — grep for all callers of the shared handler, not just the one you were reading. Put anything that must be seen inside the pinned block that owns the action, adjacent to the button, never in normal document flow below content of unbounded length.
+
+---
+
+## A feature "held for review" without a PR is not staged — it is stalled. Opening the PR is part of staging, in the same session.
+
+**Why:** 2026-08-25. Load Out was finished 2026-08-13 on a branch — build green, four preview deployments READY, migration written, v2.13.0 release entry staged, the migration header even saying "held for Darren's review" — and then sat invisible for 12 days, because the review artifact was never created. Darren's mental model was "we shipped that"; the repo's reality was an unmerged branch in nobody's queue. Under the branch-and-PR workflow (#6/#7), a branch without a PR has no owner, no reviewer, and no deadline.
+
+**How to apply:** the moment a branch is ready for Darren, open the PR and hand him the preview URL in the same message — "staged for review" with no PR is not a state this repo uses. And any branch ahead of `main` at session close gets recorded in `CLAUDE.md`'s build-state block; the 8/13 session ended without doing that, which is why this one had to rediscover the branch by archaeology.
+
+---
+
+## `next build` in a fresh sandbox dies at "Collecting page data" without env vars — stub them and rerun before blaming the code. And never pipe the build through `tail`.
+
+**Why:** 2026-08-25 pre-merge verification. The build failed on `/api/ava/route-weather` — a route untouched since v2.1.1 — because the page-data phase imports every route module and module init wants Supabase env; the sandbox has no `.env.local`. With dummy values for the 12 `process.env.*` names in `src/` (`NEXT_PUBLIC_SUPABASE_URL=https://dummy.supabase.co`, etc.) the same commit built green end-to-end, `/training/arcade/load-out` in the manifest. Separately, piping the build through `tail` swallowed both the non-zero exit code (pipes report the last command's status) and every earlier phase of the log — the failure initially looked like a mystery instead of the obvious env gap.
+
+**How to apply:** in a sandbox, run the pre-push build with the full env-stub prefix and capture unpiped output; treat "Failed to collect page data" on an untouched route as an environment signal first. Confirmation pattern: compile + typecheck phases green, failure only at page-data, and the same SHA green on Vercel.
